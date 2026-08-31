@@ -5,6 +5,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/collapsible_section.dart';
 import '../../domain/quiz.dart';
+import '../../domain/quiz_category.dart';
 
 /// 回答後の解説。
 ///
@@ -27,6 +28,7 @@ class QuizExplanationView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final explanation = quiz.explanation;
+    final isTerm = quiz.category == QuizCategory.terminology;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -36,21 +38,22 @@ class QuizExplanationView extends StatelessWidget {
         const SizedBox(height: AppSpacing.sm),
         const _MoreLabel(),
         const SizedBox(height: AppSpacing.sm),
+        // 用語問題は状況を伴わないので、見出しも言葉の説明に合わせる。
         CollapsibleSection(
-          icon: Icons.functions_rounded,
-          title: 'GTO視点',
+          icon: isTerm ? Icons.psychology_outlined : Icons.functions_rounded,
+          title: isTerm ? 'なぜ大事か' : 'GTO視点',
           body: explanation.gtoView,
           accent: AppColors.info,
         ),
         CollapsibleSection(
           icon: Icons.sports_esports_rounded,
-          title: '実戦での調整',
+          title: isTerm ? '実戦での使いどころ' : '実戦での調整',
           body: explanation.practicalView,
           accent: AppColors.warning,
         ),
         CollapsibleSection(
           icon: Icons.error_outline_rounded,
-          title: 'よくある初心者のミス',
+          title: isTerm ? 'よくある勘違い' : 'よくある初心者のミス',
           body: explanation.commonMistake,
           accent: AppColors.danger,
         ),
@@ -105,7 +108,9 @@ class _ResultBanner extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '正しいアクション: ${quiz.correctChoice.label}',
+                  quiz.category == QuizCategory.terminology
+                      ? '正解: ${quiz.correctChoice.label}'
+                      : '正しいアクション: ${quiz.correctChoice.label}',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,

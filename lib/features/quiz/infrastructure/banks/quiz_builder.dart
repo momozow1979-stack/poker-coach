@@ -84,3 +84,37 @@ Quiz buildQuiz({
 List<String> _splitCards(String cards) => cards.isEmpty
     ? const []
     : cards.split(' ').where((card) => card.isNotEmpty).toList();
+
+/// 用語問題を組み立てる。
+///
+/// 卓の状況を伴わないので [Quiz.situation] は null になる。
+/// 用語の暗記で終わらせないよう、「なぜその概念が重要か」を必ず書く。
+Quiz buildTermQuiz({
+  required String id,
+  required QuizDifficulty difficulty,
+  required String question,
+  required List<String> choices,
+  required int correctIndex,
+  required String meaning,
+  required String whyItMatters,
+  required String inPractice,
+  required String misconception,
+}) {
+  return Quiz(
+    id: id,
+    category: QuizCategory.terminology,
+    difficulty: difficulty,
+    question: question,
+    choices: [
+      for (var i = 0; i < choices.length; i++)
+        QuizChoice(id: '$id-c$i', label: choices[i]),
+    ],
+    correctChoiceId: '$id-c$correctIndex',
+    explanation: QuizExplanation(
+      shortReason: meaning,
+      gtoView: whyItMatters,
+      practicalView: inPractice,
+      commonMistake: misconception,
+    ),
+  );
+}

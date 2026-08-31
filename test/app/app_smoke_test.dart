@@ -1,5 +1,6 @@
 import 'package:ai_poker_coach/app/app.dart';
 import 'package:ai_poker_coach/features/quiz/presentation/widgets/quiz_choice_button.dart';
+import 'package:ai_poker_coach/shared/widgets/collapsible_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -62,10 +63,12 @@ void main() {
     await tester.tap(find.byType(QuizChoiceButton).first);
     await tester.pumpAndSettle();
 
-    for (final section in ['理由', 'GTO視点', '実戦での調整', 'よくある初心者のミス']) {
-      await _scrollTo(tester, find.text(section));
-      expect(find.text(section), findsOneWidget, reason: section);
-    }
+    // 見出しは問題の種類で変わる（用語問題は「なぜ大事か」など）ので、
+    // 文言ではなく「理由 + 折りたたみ3つ」で確認する。
+    await _scrollTo(tester, find.text('理由'));
+    expect(find.text('理由'), findsOneWidget);
+    await _scrollTo(tester, find.byType(CollapsibleSection));
+    expect(find.byType(CollapsibleSection), findsNWidgets(3));
 
     await _scrollTo(tester, find.text('次の問題へ'));
     await tester.tap(find.text('次の問題へ'));

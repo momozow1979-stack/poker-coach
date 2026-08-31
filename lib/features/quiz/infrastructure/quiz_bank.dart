@@ -8,6 +8,7 @@ import 'banks/position_quizzes.dart';
 import 'banks/pot_odds_quizzes.dart';
 import 'banks/preflop_quizzes.dart';
 import 'banks/river_quizzes.dart';
+import 'banks/terminology_quizzes.dart';
 import 'banks/turn_quizzes.dart';
 import 'banks/value_bluff_quizzes.dart';
 
@@ -38,5 +39,6 @@ abstract final class QuizBank {
     ...ValueBluffQuizzes.all,
     ...GtoQuizzes.all,
     ...ExploitQuizzes.all,
+    ...TerminologyQuizzes.all,
   ]);
 }
