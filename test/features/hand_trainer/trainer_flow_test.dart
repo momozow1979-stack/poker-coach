@@ -1,4 +1,5 @@
 import 'package:ai_poker_coach/app/app.dart';
+import 'package:ai_poker_coach/features/hand_trainer/domain/trainer_scenario.dart';
 import 'package:ai_poker_coach/features/hand_trainer/infrastructure/bundled_trainer_repository.dart';
 import 'package:ai_poker_coach/features/hand_trainer/presentation/widgets/trainer_option_button.dart';
 import 'package:ai_poker_coach/shared/models/position.dart';
@@ -62,6 +63,48 @@ void main() {
 
     test('シナリオがある', () {
       expect(scenarios, isNotEmpty);
+    });
+
+    test('10本以上ある', () {
+      expect(scenarios.length, greaterThanOrEqualTo(10));
+    });
+
+    test('偏りがない（難易度・ポジション・ボード・スタック・卓の人数）', () {
+      // シナリオを足すときに、同じような形ばかりにならないよう機械的に見張る。
+      final difficulties = scenarios.map((s) => s.difficulty).toSet();
+      expect(
+        difficulties,
+        hasLength(TrainerDifficulty.values.length),
+        reason: '難易度が3段階そろっていません',
+      );
+
+      final inPosition = scenarios.where((s) => s.heroInPosition);
+      final outOfPosition = scenarios.where((s) => !s.heroInPosition);
+      expect(inPosition.length, greaterThanOrEqualTo(3), reason: 'IP が少なすぎます');
+      expect(
+        outOfPosition.length,
+        greaterThanOrEqualTo(3),
+        reason: 'OOP が少なすぎます',
+      );
+
+      final styles = scenarios.map((s) => s.boardStyle).toSet();
+      for (final style in [
+        BoardStyle.dry,
+        BoardStyle.wet,
+        BoardStyle.paired,
+        BoardStyle.monotone,
+      ]) {
+        expect(styles, contains(style), reason: '${style.label} のボードがありません');
+      }
+
+      final stacks = scenarios.map((s) => s.startingStackBb).toSet();
+      expect(stacks.length, greaterThanOrEqualTo(3), reason: 'スタックの深さが単調です');
+
+      final tables = scenarios.map((s) => s.tableType).toSet();
+      expect(tables, hasLength(2), reason: '6MAX と 9MAX の両方が必要です');
+
+      final villains = scenarios.map((s) => s.villainProfile).toSet();
+      expect(villains.length, greaterThanOrEqualTo(3), reason: '相手タイプが単調です');
     });
 
     test('ID が重複していない', () {
