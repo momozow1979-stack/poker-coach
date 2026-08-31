@@ -99,9 +99,21 @@ void main() {
     expect(find.text('実戦での調整'), findsOneWidget);
   });
 
-  testWidgets('レビュータブは未入力だと実行できない', (tester) async {
+  testWidgets('レビュータブで2つのモードから選べる', (tester) async {
     await _pumpApp(tester);
     await _openTab(tester, 'レビュー');
+
+    expect(find.text('意思決定トレーナー'), findsOneWidget);
+    expect(find.text('自分のハンドをレビュー'), findsOneWidget);
+  });
+
+  testWidgets('レビュータブ → 自分のハンド入力は未入力だと実行できない', (tester) async {
+    await _pumpApp(tester);
+    await _openTab(tester, 'レビュー');
+
+    await _scrollTo(tester, find.text('入力を始める'));
+    await tester.tap(find.text('入力を始める'));
+    await tester.pumpAndSettle();
 
     await _scrollTo(tester, find.text('AIレビューを実行'));
 

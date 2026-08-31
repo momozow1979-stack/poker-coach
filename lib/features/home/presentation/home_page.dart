@@ -122,7 +122,7 @@ class HomePage extends ConsumerWidget {
             SectionHeader(
               title: '最近のハンドレビュー',
               action: TextButton(
-                onPressed: () => context.go(AppRoutes.review),
+                onPressed: () => context.go(AppRoutes.reviewInput),
                 child: const Text('レビューする'),
               ),
             ),
@@ -134,7 +134,7 @@ class HomePage extends ConsumerWidget {
                   title: 'まだレビューがありません',
                   message: '気になったハンドを1つ入力すると、AIが振り返りを作ります。',
                   action: FilledButton(
-                    onPressed: () => context.go(AppRoutes.review),
+                    onPressed: () => context.go(AppRoutes.reviewInput),
                     child: const Text('ハンドをレビューする'),
                   ),
                 ),
@@ -144,7 +144,7 @@ class HomePage extends ConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.only(bottom: AppSpacing.md),
                   child: AppCard(
-                    onTap: () => context.go(AppRoutes.review),
+                    onTap: () => context.go(AppRoutes.reviewInput),
                     child: Row(
                       children: [
                         Container(

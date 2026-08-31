@@ -30,7 +30,7 @@ class HandReviewResultPage extends ConsumerWidget {
         title: const Text('レビュー結果'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go(AppRoutes.review),
+          onPressed: () => context.go(AppRoutes.reviewInput),
         ),
       ),
       body: SafeArea(

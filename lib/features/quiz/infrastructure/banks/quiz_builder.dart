@@ -2,41 +2,24 @@ import '../../../../shared/models/playing_card.dart';
 import '../../../../shared/models/position.dart';
 import '../../../../shared/models/street.dart';
 import '../../../../shared/models/table_type.dart';
+import '../../../../shared/models/villain_style.dart';
 import '../../domain/quiz.dart';
 import '../../domain/quiz_category.dart';
 
 /// 相手タイプの定型文。
 ///
-/// ポーカーの最適解はスタック深さ・相手のタイプ・レーキで変わるため、
-/// 「正解が一つに決まる」問題にするには相手の前提を固定する必要がある。
-/// 問題文ごとに書き分けるとブレるので、ここに集約している。
+/// 実体は [VillainStyles]。既存の問題バンクが `VillainProfile.reg` の形で
+/// 参照しているため、名前だけをここに残して委譲している。
 abstract final class VillainProfile {
-  /// 極端な偏りのない相手。GTO 寄りの基礎を問う問題で使う。
-  static const reg = 'レギュラー（標準的で、極端な偏りはない）';
-
-  /// 初対面。母集団の平均として扱う。
-  static const unknown = '情報なし（初対面。母集団の平均として扱う）';
-
-  /// 参加は絞るが、参加したら攻めてくる。
-  static const tightAggressive = 'タイト・アグレッシブ（参加を絞り、参加したら攻める）';
-
-  /// 参加が少なく、強い手以外は降りる。
-  static const nit = 'タイト・パッシブ（参加が少なく、強い手以外は降りる）';
-
-  /// コールが多く、めったに降りない。
-  static const station = 'コーリングステーション（コールが多く、めったに降りない）';
-
-  /// 広く参加するが、自分からはあまり打たない。
-  static const loosePassive = 'ルース・パッシブ（広く参加するが、自分からは打たない）';
-
-  /// 広く参加し、ブラフも多い。
-  static const looseAggressive = 'ルース・アグレッシブ（広く参加し、ブラフも多い）';
-
-  /// 極端に攻撃的で、ブラフが非常に多い。
-  static const maniac = 'マニアック（極端に攻撃的で、ブラフが非常に多い）';
-
-  /// 降りすぎる。ベットへの抵抗が弱い。
-  static const overFolder = 'フォールドしすぎる相手（ベットへの抵抗が弱い）';
+  static const reg = VillainStyles.reg;
+  static const unknown = VillainStyles.unknown;
+  static const tightAggressive = VillainStyles.tightAggressive;
+  static const nit = VillainStyles.nit;
+  static const station = VillainStyles.station;
+  static const loosePassive = VillainStyles.loosePassive;
+  static const looseAggressive = VillainStyles.looseAggressive;
+  static const maniac = VillainStyles.maniac;
+  static const overFolder = VillainStyles.overFolder;
 }
 
 /// 1 問を組み立てるヘルパー。
