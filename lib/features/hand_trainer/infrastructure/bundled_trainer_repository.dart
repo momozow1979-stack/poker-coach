@@ -1,6 +1,8 @@
 import '../domain/trainer_repository.dart';
 import '../domain/trainer_scenario.dart';
 import 'scenarios/bb_middle_pair_defense.dart';
+import 'scenarios/bb_threebet_paired_board.dart';
+import 'scenarios/btn_ak_monotone.dart';
 import 'scenarios/btn_aq_dry_board.dart';
 import 'scenarios/co_draw_wet_board.dart';
 
@@ -15,6 +17,8 @@ class BundledTrainerRepository implements TrainerScenarioRepository {
     btnAqDryBoard,
     bbMiddlePairDefense,
     coDrawWetBoard,
+    btnAkMonotone,
+    bbThreeBetPairedBoard,
   ]);
 
   @override

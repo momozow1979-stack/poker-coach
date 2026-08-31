@@ -47,6 +47,29 @@ abstract final class TrainerTerms {
     meaning: 'ストレートやフラッシュのドローが多く、次のカードで順位が入れ替わりやすいボード。',
   );
 
+  static const monotoneBoard = TermNote(
+    term: 'モノトーンボード',
+    meaning:
+        'フロップの3枚が全部同じスートのボード。'
+        '相手がその色を2枚持っていれば、その時点でフラッシュが完成しています。',
+  );
+
+  static const threeBetPot = TermNote(
+    term: '3ベットポット',
+    meaning:
+        'プリフロップでレイズにレイズし返して作られたポット。'
+        '最初から大きいので、フロップの時点で残りスタックとの差が小さく、'
+        '1回の判断が重くなります。',
+  );
+
+  static const rangeCap = TermNote(
+    term: 'レンジが上限で止まっている',
+    meaning:
+        'その相手が、一番強い手の並びをもう持っていない状態のこと。'
+        '例えばプリフロップでレイズし返さなかった側は、'
+        'AA や KK を持っている可能性がぐっと下がります。',
+  );
+
   static const potOdds = TermNote(
     term: 'ポットオッズ',
     meaning:
