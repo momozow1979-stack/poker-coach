@@ -64,6 +64,23 @@ flutter:
   # the material Icons class.
   uses-material-design: true
 
+  # 日本語フォントを同梱する。
+  #
+  # 同梱しないと、Flutter Web は実行時に Google Fonts から
+  # フォールバック用のフォントを取りにいく。ネットワークが塞がれていると
+  # 日本語がすべて豆腐（□）になり、通っていても初回表示で一瞬崩れる。
+  # UI がほぼ全部日本語のアプリなので、外部の取得に依存させない。
+  #
+  # ThemeData.fontFamily に指定している 'Noto Sans JP' と同じ family 名にする。
+  # weight は 400 と 700 の2つだけ。w800 を指定している箇所は 700 が使われる。
+  fonts:
+    - family: Noto Sans JP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansJP-Bold.ttf
+          weight: 700
+
   # To add assets to your application, add an assets section, like this:
   # assets:
   #   - images/a_dot_burr.jpeg
