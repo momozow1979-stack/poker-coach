@@ -76,7 +76,7 @@ class Quiz {
     required this.id,
     required this.category,
     required this.difficulty,
-    required this.situation,
+    this.situation,
     required this.question,
     required this.choices,
     required this.correctChoiceId,
@@ -86,7 +86,11 @@ class Quiz {
   final String id;
   final QuizCategory category;
   final QuizDifficulty difficulty;
-  final QuizSituation situation;
+
+  /// 提示するゲーム状況。
+  ///
+  /// 用語問題のように、卓の状況を伴わない出題では null になる。
+  final QuizSituation? situation;
   final String question;
   final List<QuizChoice> choices;
   final String correctChoiceId;

@@ -53,7 +53,9 @@ class AccountCard extends ConsumerWidget {
           ),
           const SizedBox(height: AppSpacing.sm),
           _SyncStatusLine(status: sync),
-          if (user == null && failure != null) ...[
+          // 同期状況の行が既に事情を説明しているときは重ねない。
+          // 同じ原因の文言が2つ並ぶと、深刻な問題が起きたように見える。
+          if (user == null && failure != null && sync.message == null) ...[
             const SizedBox(height: AppSpacing.sm),
             Text(
               failure.message,

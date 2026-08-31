@@ -125,8 +125,10 @@ class _QuizQuestionView extends StatelessWidget {
           ],
         ),
         const SizedBox(height: AppSpacing.md),
-        QuizSituationCard(situation: quiz.situation),
-        const SizedBox(height: AppSpacing.lg),
+        if (quiz.situation case final situation?) ...[
+          QuizSituationCard(situation: situation),
+          const SizedBox(height: AppSpacing.lg),
+        ],
         Text(
           quiz.question,
           style: const TextStyle(

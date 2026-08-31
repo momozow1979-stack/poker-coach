@@ -4,6 +4,9 @@ import 'package:go_router/go_router.dart';
 
 import '../features/hand_review/presentation/hand_review_page.dart';
 import '../features/hand_review/presentation/hand_review_result_page.dart';
+import '../features/hand_review/presentation/review_home_page.dart';
+import '../features/hand_trainer/presentation/trainer_list_page.dart';
+import '../features/hand_trainer/presentation/trainer_play_page.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/profile/presentation/profile_page.dart';
 import '../features/quiz/presentation/quiz_page.dart';
@@ -16,8 +19,19 @@ abstract final class AppRoutes {
   static const home = '/home';
   static const quiz = '/quiz';
   static const range = '/range';
+
+  /// レビュータブの入り口。トレーニングと自分のハンド入力を選ぶ。
   static const review = '/review';
-  static const reviewResult = '/review/result';
+
+  /// 意思決定トレーナーのシナリオ一覧。
+  static const trainer = '/review/trainer';
+
+  /// 自分のハンドを入力してレビューする画面。
+  static const reviewInput = '/review/input';
+  static const reviewResult = '/review/input/result';
+
+  /// 意思決定トレーナーのプレイ画面。
+  static String trainerPlay(String scenarioId) => '/review/trainer/$scenarioId';
   static const profile = '/profile';
   static const settings = '/settings';
 
@@ -64,11 +78,30 @@ final routerProvider = Provider<GoRouter>((ref) {
             routes: [
               GoRoute(
                 path: AppRoutes.review,
-                builder: (context, state) => const HandReviewPage(),
+                builder: (context, state) => const ReviewHomePage(),
                 routes: [
                   GoRoute(
-                    path: 'result',
-                    builder: (context, state) => const HandReviewResultPage(),
+                    path: 'trainer',
+                    builder: (context, state) => const TrainerListPage(),
+                    routes: [
+                      GoRoute(
+                        path: ':scenarioId',
+                        builder: (context, state) => TrainerPlayPage(
+                          scenarioId: state.pathParameters['scenarioId'] ?? '',
+                        ),
+                      ),
+                    ],
+                  ),
+                  GoRoute(
+                    path: 'input',
+                    builder: (context, state) => const HandReviewPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'result',
+                        builder: (context, state) =>
+                            const HandReviewResultPage(),
+                      ),
+                    ],
                   ),
                 ],
               ),

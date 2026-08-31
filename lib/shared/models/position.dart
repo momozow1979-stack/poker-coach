@@ -41,10 +41,29 @@ enum Position {
     Position.bb,
   ];
 
+  /// プリフロップの行動順。UTG から始まり、ブラインドが最後になる。
   static List<Position> orderFor(TableType tableType) => switch (tableType) {
     TableType.sixMax => sixMaxOrder,
     TableType.nineMax => nineMaxOrder,
   };
+
+  /// フロップ以降の行動順。SB から始まり、BTN が最後になる。
+  ///
+  /// 「どちらが後に行動できるか（IP / OOP）」はこちらで判定する。
+  /// プリフロップの順番で比べると、BTN が BB より先に見えてしまう。
+  static List<Position> postflopOrderFor(TableType tableType) {
+    final seats = orderFor(tableType);
+    final start = seats.indexOf(Position.sb);
+    return [
+      for (var i = 0; i < seats.length; i++) seats[(start + i) % seats.length],
+    ];
+  }
+
+  /// フロップ以降で [other] より後に行動できるか。
+  bool isInPositionAgainst(Position other, TableType tableType) {
+    final order = postflopOrderFor(tableType);
+    return order.indexOf(this) > order.indexOf(other);
+  }
 
   static Position fromLabel(String label) =>
       Position.values.firstWhere((position) => position.label == label);

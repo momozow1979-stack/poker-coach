@@ -9,7 +9,8 @@ enum QuizCategory {
   potOdds('pot_odds', 'ポットオッズ', 'オッズ'),
   valueBluff('value_bluff', 'バリュー / ブラフ', 'V/B'),
   gto('gto', 'GTO', 'GTO'),
-  exploit('exploit', 'エクスプロイト', 'EXP');
+  exploit('exploit', 'エクスプロイト', 'EXP'),
+  terminology('terminology', '用語', '用語');
 
   const QuizCategory(this.id, this.label, this.shortLabel);
 

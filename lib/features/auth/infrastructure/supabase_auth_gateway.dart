@@ -1,3 +1,5 @@
+import '../../../core/errors/friendly_error.dart';
+
 import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -45,7 +47,20 @@ class SupabaseAuthGateway implements AuthGateway {
       _lastFailure = _mapAnonymousError(error);
       return null;
     } catch (error) {
-      _lastFailure = AuthFailure('サインインに失敗しました: $error');
+      // 例外の文字列をそのまま出すと、接続先の URL や内部の型名が画面に出る。
+      // 初心者には意味が分からないうえ、不安にさせるだけなので出さない。
+      _lastFailure = AuthFailure(
+        friendlyErrorMessage(
+          error,
+          offline:
+              'いまネットワークに接続できていません。'
+              '学習の記録はこの端末に保存されるので、このまま続けて大丈夫です。'
+              'オンラインに戻ると自動で同期します。',
+          fallback:
+              'サインインできませんでした。'
+              '学習の記録はこの端末に保存されるので、このまま続けて大丈夫です。',
+        ),
+      );
       return null;
     }
   }
@@ -134,7 +149,21 @@ class SupabaseAuthGateway implements AuthGateway {
         isAnonymousSignInDisabled: true,
       );
     }
-    return AuthFailure('サインインに失敗しました（${error.message}）。');
+    // AuthException のメッセージには、下位の例外（ClientException など）が
+    // そのまま入っていることがある。接続先の URL ごと画面に出てしまうので、
+    // 通信できないだけのときは日本語の説明に置き換える。
+    return AuthFailure(
+      friendlyErrorMessage(
+        error.message,
+        offline:
+            'いまネットワークに接続できていません。'
+            '学習の記録はこの端末に保存されるので、このまま続けて大丈夫です。'
+            'オンラインに戻ると自動で同期します。',
+        fallback:
+            'サインインできませんでした。'
+            '学習の記録はこの端末に保存されるので、このまま続けて大丈夫です。',
+      ),
+    );
   }
 
   String _registerMessage(AuthException error) {
@@ -143,7 +172,13 @@ class SupabaseAuthGateway implements AuthGateway {
       'user_already_exists' => 'このメールアドレスは既に登録されています。「ログイン」から入ってください。',
       'weak_password' => 'パスワードが弱すぎます。6文字以上で設定してください。',
       'validation_failed' => '入力内容を確認してください（${error.message}）。',
-      _ => '登録に失敗しました（${error.message}）。',
+      _ => friendlyErrorMessage(
+        error.message,
+        offline:
+            'ネットワークに接続できませんでした。'
+            '通信できる場所で、もう一度お試しください。',
+        fallback: '登録できませんでした。時間をおいて、もう一度お試しください。',
+      ),
     };
   }
 
@@ -151,7 +186,13 @@ class SupabaseAuthGateway implements AuthGateway {
     return switch (error.code) {
       'invalid_credentials' => 'メールアドレスまたはパスワードが違います。',
       'email_not_confirmed' => 'メールの確認が済んでいません。確認メールのリンクを開いてください。',
-      _ => 'ログインに失敗しました（${error.message}）。',
+      _ => friendlyErrorMessage(
+        error.message,
+        offline:
+            'ネットワークに接続できませんでした。'
+            '通信できる場所で、もう一度お試しください。',
+        fallback: 'ログインできませんでした。時間をおいて、もう一度お試しください。',
+      ),
     };
   }
 }
