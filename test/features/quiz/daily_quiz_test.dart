@@ -1,5 +1,6 @@
 import 'package:ai_poker_coach/features/quiz/application/quiz_providers.dart';
 import 'package:ai_poker_coach/features/quiz/domain/quiz_category.dart';
+import 'package:ai_poker_coach/features/quiz/domain/quiz_repository.dart';
 import 'package:ai_poker_coach/features/quiz/infrastructure/mock_quiz_repository.dart';
 import 'package:ai_poker_coach/features/quiz/infrastructure/quiz_bank.dart';
 import 'package:ai_poker_coach/features/profile/application/learning_providers.dart';
@@ -56,20 +57,19 @@ void main() {
       );
     });
 
-    test('苦手カテゴリが先頭に来る', () {
+    test('苦手カテゴリは10問中4問までに制限される', () {
       final quizzes = repository.dailyQuizzes(
         DateTime(2026, 8, 29),
-        weakCategories: const [QuizCategory.river],
+        weakCategories: const [QuizCategory.river, QuizCategory.turn],
       );
-      final riverCount = QuizBank.all
-          .where((quiz) => quiz.category == QuizCategory.river)
+      final weakCount = quizzes
+          .where(
+            (quiz) =>
+                quiz.category == QuizCategory.river ||
+                quiz.category == QuizCategory.turn,
+          )
           .length;
-      expect(
-        quizzes
-            .take(riverCount)
-            .every((quiz) => quiz.category == QuizCategory.river),
-        isTrue,
-      );
+      expect(weakCount, lessThanOrEqualTo(weakQuotaOf(10)));
     });
   });
 

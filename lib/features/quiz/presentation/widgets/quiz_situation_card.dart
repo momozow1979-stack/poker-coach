@@ -28,6 +28,8 @@ class QuizSituationCard extends StatelessWidget {
               _MetaPill(text: '${situation.effectiveStackBb.toInt()}BB'),
             ],
           ),
+          const SizedBox(height: AppSpacing.sm),
+          _VillainProfile(text: situation.villainProfile),
           const SizedBox(height: AppSpacing.md),
           PokerTableView(
             tableType: situation.tableType,
@@ -97,6 +99,37 @@ class QuizSituationCard extends StatelessWidget {
 
   static String _formatBb(double value) =>
       value == value.roundToDouble() ? value.toInt().toString() : '$value';
+}
+
+/// 相手のタイプ。前提が変われば正解も変わるため、状況の一部として明示する。
+class _VillainProfile extends StatelessWidget {
+  const _VillainProfile({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 1, right: AppSpacing.xs),
+          child: Icon(Icons.person_outline, size: 14, color: AppColors.info),
+        ),
+        Expanded(
+          child: Text(
+            '相手: $text',
+            style: const TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _FieldLabel extends StatelessWidget {

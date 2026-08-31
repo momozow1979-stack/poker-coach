@@ -13,15 +13,22 @@ final quizRepositoryProvider = Provider<QuizRepository>(
   (ref) => const MockQuizRepository(),
 );
 
-/// 「今日の10問」。苦手カテゴリを優先して出題する。
+/// 「今日の10問」。
+///
+/// 苦手カテゴリを一定数まで優先しつつ、直近に出した問題は除外する。
 class DailyQuizController extends Notifier<DailyQuizSession> {
   @override
   DailyQuizSession build() {
     final today = DateTime.now().dateOnly;
-    final weakCategories = ref.read(learningStatsProvider).weakCategories();
+    // build 時に read で固定する。回答して履歴が増えても出題は組み直さない。
+    final stats = ref.read(learningStatsProvider);
     final quizzes = ref
         .read(quizRepositoryProvider)
-        .dailyQuizzes(today, weakCategories: weakCategories);
+        .dailyQuizzes(
+          today,
+          weakCategories: stats.weakCategories(),
+          lastAnsweredAt: stats.lastAnsweredAt,
+        );
     return DailyQuizSession(date: today, quizzes: quizzes);
   }
 

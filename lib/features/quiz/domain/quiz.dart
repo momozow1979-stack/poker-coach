@@ -17,6 +17,7 @@ class QuizSituation {
     this.board = const [],
     this.actionHistory = const [],
     this.blindsLabel = 'SB 0.5 / BB 1',
+    this.villainProfile = 'レギュラー（標準的な相手）',
   });
 
   final TableType tableType;
@@ -31,6 +32,12 @@ class QuizSituation {
   /// 「BTN raise 2.5BB」のような、そこまでのアクション履歴。
   final List<String> actionHistory;
   final String blindsLabel;
+
+  /// 相手のタイプ。
+  ///
+  /// ポーカーの最適解は相手次第で変わるため、
+  /// 「正解」を一つに決める問題では前提として必ず提示する。
+  final String villainProfile;
 }
 
 /// 回答の選択肢。

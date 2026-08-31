@@ -80,6 +80,20 @@ class LearningStats {
     return stats;
   }
 
+  /// 問題 ID ごとの、最後に回答した日時。
+  ///
+  /// 「今日の10問」で直近に出した問題を除外するために使う。
+  Map<String, DateTime> get lastAnsweredAt {
+    final result = <String, DateTime>{};
+    for (final attempt in attempts) {
+      final current = result[attempt.quizId];
+      if (current == null || attempt.answeredAt.isAfter(current)) {
+        result[attempt.quizId] = attempt.answeredAt;
+      }
+    }
+    return result;
+  }
+
   /// 苦手分野。正答率が低く、かつ十分な回答数があるカテゴリ。
   List<QuizCategory> weakCategories({int limit = 3}) => [
     for (final stat in categoryStats)
