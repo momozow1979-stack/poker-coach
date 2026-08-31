@@ -12,6 +12,9 @@ enum GameType {
 
   final String id;
   final String label;
+
+  static GameType fromId(String id) =>
+      GameType.values.firstWhere((type) => type.id == id, orElse: () => cash);
 }
 
 /// 相手の傾向。実戦調整の解説を切り替えるために使う。
@@ -26,6 +29,11 @@ enum VillainProfile {
 
   final String id;
   final String label;
+
+  static VillainProfile fromId(String id) => VillainProfile.values.firstWhere(
+    (profile) => profile.id == id,
+    orElse: () => unknown,
+  );
 }
 
 /// プレイ環境。
@@ -37,6 +45,11 @@ enum PlayEnvironment {
 
   final String id;
   final String label;
+
+  static PlayEnvironment fromId(String id) => PlayEnvironment.values.firstWhere(
+    (environment) => environment.id == id,
+    orElse: () => online,
+  );
 }
 
 /// ポストフロップ 1 ストリート分の入力。
@@ -51,6 +64,36 @@ class StreetInput {
   StreetInput copyWith({List<PlayingCard>? cards, List<HandAction>? actions}) =>
       StreetInput(cards: cards ?? this.cards, actions: actions ?? this.actions);
 }
+
+/// `hero_position` のような、保存済み JSON からのポジション復元。
+Position _positionFromLabel(Object? label, Position fallback) {
+  if (label is! String) return fallback;
+  try {
+    return Position.fromLabel(label);
+  } on StateError {
+    return fallback;
+  }
+}
+
+List<PlayingCard> _cardsFrom(Object? value) {
+  if (value is! List) return const [];
+  final cards = <PlayingCard>[];
+  for (final code in value) {
+    if (code is! String) continue;
+    try {
+      cards.add(PlayingCard.parse(code));
+    } on Exception {
+      // 壊れた保存データで履歴全体が読めなくならないよう、その 1 枚だけ捨てる。
+    }
+  }
+  return cards;
+}
+
+List<HandAction> _actionsFrom(Object? value) => [
+  if (value is List)
+    for (final action in value)
+      if (action is Map<String, dynamic>) HandAction.fromJson(action),
+];
 
 /// ハンドレビューの入力。仕様書 5-2 の JSON と 1 対 1 で対応する。
 class HandReviewInput {
@@ -137,6 +180,60 @@ class HandReviewInput {
       turn: turn ?? this.turn,
       river: river ?? this.river,
       userQuestion: userQuestion ?? this.userQuestion,
+    );
+  }
+
+  /// [toJson] で書き出した JSON から復元する。保存済み履歴の読み戻しに使う。
+  factory HandReviewInput.fromJson(Map<String, dynamic> json) {
+    final turnCard = json['turn'] is Map<String, dynamic>
+        ? (json['turn'] as Map<String, dynamic>)['card']
+        : null;
+    final riverCard = json['river'] is Map<String, dynamic>
+        ? (json['river'] as Map<String, dynamic>)['card']
+        : null;
+    final flop = json['flop'] as Map<String, dynamic>? ?? const {};
+
+    return HandReviewInput(
+      gameType: GameType.fromId(json['game_type'] as String? ?? ''),
+      tableType: TableType.values.firstWhere(
+        (type) => type.id == json['table_type'],
+        orElse: () => TableType.sixMax,
+      ),
+      smallBlind: (json['small_blind'] as num?)?.toDouble() ?? 0.5,
+      bigBlind: (json['big_blind'] as num?)?.toDouble() ?? 1,
+      effectiveStackBb: (json['effective_stack_bb'] as num?)?.toDouble() ?? 100,
+      heroPosition: _positionFromLabel(json['hero_position'], Position.btn),
+      heroHand: _cardsFrom(json['hero_hand']),
+      villainPosition: _positionFromLabel(
+        json['villain_position'],
+        Position.bb,
+      ),
+      villainProfile: VillainProfile.fromId(
+        json['villain_profile'] as String? ?? '',
+      ),
+      environment: PlayEnvironment.fromId(json['environment'] as String? ?? ''),
+      preflop: _actionsFrom(json['preflop']),
+      flop: StreetInput(
+        cards: _cardsFrom(flop['board']),
+        actions: _actionsFrom(flop['actions']),
+      ),
+      turn: StreetInput(
+        cards: _cardsFrom(turnCard == null ? const [] : [turnCard]),
+        actions: _actionsFrom(
+          json['turn'] is Map<String, dynamic>
+              ? (json['turn'] as Map<String, dynamic>)['actions']
+              : null,
+        ),
+      ),
+      river: StreetInput(
+        cards: _cardsFrom(riverCard == null ? const [] : [riverCard]),
+        actions: _actionsFrom(
+          json['river'] is Map<String, dynamic>
+              ? (json['river'] as Map<String, dynamic>)['actions']
+              : null,
+        ),
+      ),
+      userQuestion: json['user_question'] as String? ?? '',
     );
   }
 

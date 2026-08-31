@@ -9,8 +9,6 @@ class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   static const _roadmap = [
-    ('Phase 3', 'Supabase Authentication と DB スキーマの導入'),
-    ('Phase 4', 'クイズ回答・学習統計のサーバー保存'),
     ('Phase 5', 'レンジ表の DB 連携'),
     ('Phase 6', 'Edge Function 経由の AI ハンドレビュー'),
     ('Phase 7', '学習履歴に基づく AI コーチ'),
@@ -35,8 +33,9 @@ class SettingsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   const Text(
-                    '現在はアプリ内のモックデータで動作しています。'
-                    'アプリを再起動すると学習履歴は初期状態に戻ります。',
+                    '学習履歴はまず端末に保存し、通信できるタイミングで Supabase へ同期します。'
+                    '圏外でもクイズは解けて、オンラインに戻ったときにまとめて送られます。'
+                    'メールアドレスを登録すると、別の端末でも同じ履歴を続けられます。',
                     style: TextStyle(
                       fontSize: 13,
                       height: 1.7,

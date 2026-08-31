@@ -5,9 +5,16 @@ import '../../quiz/domain/quiz_attempt.dart';
 import '../../quiz/infrastructure/quiz_bank.dart';
 import '../domain/learning_record.dart';
 
-/// 起動直後でも画面が意味を持つように、過去の学習履歴を用意する。
+/// デバッグ用のダミー学習履歴。
 ///
-/// Phase 3 で Supabase の実データに置き換える。
+/// **本番の起動パスからは呼ばれない。**
+/// `--dart-define=USE_MOCK_SEED=true` を付けたデバッグビルドで、ローカルの履歴が
+/// 空のときにだけ流し込まれる（`LearningSyncController._seedForDebug`）。
+/// リリースビルドでは [AppConfig.useMockSeed] が定数 false になるため、
+/// このクラスごと tree-shake される。
+///
+/// 偽の統計を実データとして見せないために、通常の起動では
+/// 履歴が空なら空状態を出す。
 abstract final class MockLearningSeed {
   /// カテゴリごとの想定正答率。苦手分野が意図どおり検出されるようにする。
   static const Map<String, double> _accuracyByCategory = {

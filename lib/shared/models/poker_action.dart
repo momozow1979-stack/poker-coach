@@ -30,6 +30,13 @@ enum PokerActionType {
   ];
 
   /// ポストフロップのハンドレビュー入力で並べるアクション。
+  /// ラベル（`Bet 33%` など）から復元する。保存済み JSON の読み戻しに使う。
+  static PokerActionType fromLabel(String label) =>
+      PokerActionType.values.firstWhere(
+        (action) => action.label == label,
+        orElse: () => PokerActionType.check,
+      );
+
   static const List<PokerActionType> postflopChoices = [
     PokerActionType.fold,
     PokerActionType.check,
@@ -60,6 +67,12 @@ class HandAction {
   String get actorLabel => isHero ? 'あなた' : actor;
 
   static const String heroActor = 'hero';
+
+  factory HandAction.fromJson(Map<String, dynamic> json) => HandAction(
+    actor: json['actor'] as String? ?? heroActor,
+    action: PokerActionType.fromLabel(json['action'] as String? ?? ''),
+    sizeBb: (json['size_bb'] as num?)?.toDouble(),
+  );
 
   Map<String, dynamic> toJson() => {
     'actor': actor,

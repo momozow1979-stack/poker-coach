@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/widgets/app_card.dart';
@@ -10,6 +11,7 @@ import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/stat_tile.dart';
 import '../../../shared/widgets/tag_chip.dart';
 import '../../../shared/widgets/trend_chart.dart';
+import '../../auth/presentation/account_card.dart';
 import '../application/learning_providers.dart';
 import 'widgets/category_accuracy_list.dart';
 
@@ -92,6 +94,20 @@ class ProfilePage extends ConsumerWidget {
                 ],
               ),
             ),
+            if (stats.totalAnswered == 0 && reviews.isEmpty) ...[
+              const SizedBox(height: AppSpacing.lg),
+              AppCard(
+                child: EmptyState(
+                  icon: Icons.hourglass_empty_rounded,
+                  title: 'まだ学習データがありません',
+                  message: '今日の10問を解くと、連続日数・正答率・苦手分野がここに記録されます。',
+                  action: FilledButton(
+                    onPressed: () => context.go(AppRoutes.quiz),
+                    child: const Text('今日の10問を始める'),
+                  ),
+                ),
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
             Row(
               children: [
@@ -160,6 +176,13 @@ class ProfilePage extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: AppSpacing.xl),
+            const SectionHeader(
+              title: 'アカウントと保存状況',
+              subtitle: '履歴がどこに保存されているか',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            const AccountCard(),
             const SizedBox(height: AppSpacing.xl),
             const SectionHeader(title: '得意 / 苦手', subtitle: '各カテゴリ3問以上で判定します'),
             const SizedBox(height: AppSpacing.md),

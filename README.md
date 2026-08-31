@@ -8,19 +8,32 @@
 
 ## 現在の状態
 
-仕様書の **Phase 1 / Phase 2 が完了**した状態。
-バックエンド未接続で、すべての画面が Mock データで動作する。
+仕様書の **Phase 1〜4 が完了**した状態。
+学習履歴は端末に保存され、Supabase へ同期される（アプリを再起動しても消えない）。
+レンジ表・クイズ問題・AI レビューはまだアプリ同梱のデータで動作する。
 
 | Phase | 内容 | 状態 |
 | --- | --- | --- |
 | 1 | プロジェクト / Riverpod / GoRouter / Theme / BottomNavigation | 完了 |
 | 2 | Home / Quiz / Range / Hand Review / Profile の UI | 完了 |
-| 3 | Supabase Auth / DB / Repository 実装 | 未着手（`supabase/schema.sql` を用意済み） |
-| 4 | クイズ回答・学習統計のサーバー保存 | 未着手 |
+| 3 | Supabase Auth（匿名ファースト + メール登録） | 完了 |
+| 4 | クイズ回答・ハンドレビュー・学習統計の保存と同期 | 完了 |
 | 5 | レンジ表の DB 連携 | 未着手 |
 | 6 | Edge Function 経由の AI ハンドレビュー | 未着手（`docs/ai-prompts.md` に設計済み） |
 | 7 | 学習履歴に基づく AI コーチ | ローカル実装のみ |
-| 8 | エラーハンドリング / Analytics | 一部（Empty State / Loading） |
+| 8 | エラーハンドリング / Analytics | 一部（Empty State / Loading / 同期状態表示） |
+
+### データの保存
+
+- **オフラインファースト。** 書き込みはまず端末（`shared_preferences` 上の JSON 行）へ、
+  そのあと Supabase へ送る。圏外でもクイズは解けて、通信が戻ったときにまとめて送られる
+- **読み込みはローカル優先。** 起動時にローカルを読んで画面を出し、
+  Supabase から取れ次第あとから差し替える
+- **匿名ファースト。** 初回起動時に匿名サインインし、登録なしで使い始められる。
+  マイページからメール／パスワードを登録すると、user_id を保ったまま昇格するので
+  学習履歴はそのまま引き継がれ、別端末からもログインできる
+- モックの学習履歴（`MockLearningSeed`）は本番の起動パスから外してあり、
+  `--dart-define=USE_MOCK_SEED=true` を付けたデバッグビルドでのみ流し込まれる
 
 ## 実装済みの機能
 
@@ -92,7 +105,8 @@
 | Framework | Flutter 3.47 / Dart 3.13（iOS / Android / Web） |
 | State Management | Riverpod 3（`Notifier` / `Provider`） |
 | Routing | GoRouter 18（`StatefulShellRoute.indexedStack`） |
-| Backend | Supabase（Phase 3 以降） |
+| Backend | Supabase（`supabase_flutter` 2.17・publishable key 形式） |
+| Local Storage | `shared_preferences`（レコード 1 件 = JSON 1 行） |
 | AI | OpenAI API（Supabase Edge Function 経由・Phase 6 以降） |
 
 ## ディレクトリ構成
@@ -109,10 +123,10 @@ lib/
     home/ quiz/ range_chart/ hand_review/ coach/ profile/ settings/
 ```
 
-`auth/` は Phase 3（Supabase Authentication 導入）で同じ 4 層構成で追加する。
+`auth/` が Supabase Authentication を担当する（同じ 4 層構成）。
 
 - `domain/` … モデルとリポジトリの**インターフェース**。Flutter に依存しない
-- `infrastructure/` … Mock 実装。Phase 3 以降ここだけを Supabase 実装に差し替える
+- `infrastructure/` … 具体実装（Supabase / ローカル保存 / Mock）。差し替えはここだけ
 - `application/` … Riverpod のプロバイダとコントローラ
 - `presentation/` … 画面とウィジェット
 
@@ -156,15 +170,29 @@ GitHub が自動生成する `github-pages` 環境は、既定でデフォルト
 
 ## 開発
 
+接続情報は `--dart-define` で渡す。**既定値は無い**（設定なしで起動すると、
+保存できていないのに動いているように見えてしまうため、起動時に弾いて設定画面を出す）。
+
 ```bash
 flutter pub get
-flutter run                 # iOS / Android
-flutter run -d chrome       # ブラウザ
+
+# 毎回打つのが面倒なら --dart-define-from-file=env.json でもよい
+flutter run \
+  --dart-define=SUPABASE_URL=https://xxxx.supabase.co \
+  --dart-define=SUPABASE_PUBLISHABLE_KEY=sb_publishable_xxx
+
+flutter run -d chrome --dart-define=...   # ブラウザ
 
 dart format lib test        # CI で差分チェックあり
 flutter analyze             # 警告ゼロを維持する
-flutter test                # 80 テスト
+flutter test                # 167 テスト
 ```
+
+`SUPABASE_PUBLISHABLE_KEY` は**クライアントに載せる前提の公開鍵**で、保護は RLS で行う。
+`sb_secret_` で始まる秘密鍵は絶対に渡さないこと（渡すと起動時チェックで弾かれる）。
+
+デバッグ時にダミーの学習履歴が欲しいときだけ `--dart-define=USE_MOCK_SEED=true` を足す。
+リリースビルドでは無効化され、シード生成コードごと tree-shake される。
 
 ### テスト
 
@@ -179,6 +207,16 @@ flutter test                # 80 テスト
 | `test/features/profile/daily_accuracy_test.dart` | 日別正答率の集計 |
 | `test/shared/visual_widgets_test.dart` | 図・グラフ・折りたたみの挙動、キャンバス文字のフォント |
 | `test/app/app_smoke_test.dart` | 5 画面の表示とタブ遷移 |
+| `test/core/app_config_test.dart` | `--dart-define` の検証（秘密鍵の混入を弾く） |
+| `test/features/profile/json_learning_store_test.dart` | ローカル保存・同期キュー・破損行の扱い |
+| `test/features/profile/learning_sync_service_test.dart` | 圏外 → 復帰、重複防止、アカウント切替 |
+| `test/features/profile/learning_persistence_test.dart` | 再起動しても履歴が残ること |
+| `test/features/profile/profile_page_empty_state_test.dart` | 空状態とアカウント導線 |
+| `test/features/auth/account_controller_test.dart` | 匿名サインインとメール登録での昇格 |
+| `test/features/hand_review/hand_review_json_test.dart` | 保存した履歴の読み戻し |
+
+Supabase クライアントは `test/support/fakes.dart` のフェイクに差し替えている。
+実通信に依存するテストは書いていない。
 
 `flutter analyze` / `flutter test` / `dart format` は push と PR で CI が自動実行する
 （`.github/workflows/ci.yml`）。
@@ -186,10 +224,20 @@ flutter test                # 80 テスト
 ## バックエンド接続時の注意
 
 1. **OpenAI の API キーはアプリに埋め込まない。** Edge Function からのみ呼ぶ
-2. **レンジデータと AI 解説は分離する。** レンジは DB、解説は AI という役割分担を崩さない
-3. **AI に正確な GTO 頻度を創作させない。** ソルバー出力が入力にないときは頻度を出さない
+2. **`sb_secret_` で始まる Supabase の秘密鍵はクライアントに載せない。** 公開鍵 + RLS で守る
+3. **レンジデータと AI 解説は分離する。** レンジは DB、解説は AI という役割分担を崩さない
+4. **AI に正確な GTO 頻度を創作させない。** ソルバー出力が入力にないときは頻度を出さない
 
 DB スキーマは `supabase/schema.sql`、プロンプト設計は `docs/ai-prompts.md` を参照。
+
+### Supabase 側の設定
+
+- **Authentication → Sign In / Providers → Anonymous sign-ins を有効にする。**
+  無効だと匿名サインインが 401 / 422 で失敗し、マイページに理由が表示される
+  （その場合もローカル保存だけで動き続ける）
+- 既存プロジェクトには `supabase/migrations/0001_app_bundled_quizzes_and_sync.sql` を
+  SQL Editor から流す。クイズ 300 問はアプリ同梱のままなので、`quiz_attempts` は
+  `quizzes` への外部キーではなくアプリ内の問題 ID（`quiz_key`）で記録する
 
 ## 今後追加したい機能
 

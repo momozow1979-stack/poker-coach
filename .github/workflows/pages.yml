@@ -54,11 +54,23 @@ jobs:
       # 既定の Service Worker はアプリをキャッシュするため、デプロイ後に
       # リロードしても古い画面が出てしまう（1 回目は旧版、2 回目でようやく新版）。
       # 常に最新を見せたいプレビュー用途では邪魔になる。
+      #
+      # SUPABASE_* はビルド時に --dart-define で埋め込む。
+      # publishable key はクライアントに載せる前提の公開鍵で、保護は RLS で行う
+      # （秘密鍵 sb_secret_… は絶対にここへ置かないこと）。
+      # 別プロジェクトを指したいときは
+      #   Settings → Secrets and variables → Actions → Variables
+      # に SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY を作れば上書きされる。
       - name: Build web
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://rfxcovghfifmagnbjayl.supabase.co' }}
+          SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_CzNFlmiqxeZU5XLxsU285A_fF7-5bJ3' }}
         run: |
           flutter build web --release \
             --no-web-resources-cdn \
             --pwa-strategy=none \
+            --dart-define=SUPABASE_URL="$SUPABASE_URL" \
+            --dart-define=SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY" \
             --base-href "/${GITHUB_REPOSITORY#*/}/"
 
       # Pages が未設定でも成果物を取り出せるようにしておく。

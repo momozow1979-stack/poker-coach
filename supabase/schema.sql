@@ -1,7 +1,7 @@
--- AI Poker Coach - Supabase スキーマ（Phase 3 で適用する想定）
+-- AI Poker Coach - Supabase スキーマ
 --
--- 仕様書 8. Supabase DB設計 をそのまま SQL にしたもの。
--- 現在のアプリは Mock データで動作しており、このファイルはまだ適用されていない。
+-- 仕様書 8. Supabase DB設計 を SQL にしたもの。新規プロジェクトはこれを流せば揃う。
+-- 既に旧版を適用済みのプロジェクトには migrations/0001_*.sql を追加で流す。
 
 create extension if not exists "pgcrypto";
 
@@ -29,17 +29,31 @@ create table if not exists public.quizzes (
 create index if not exists quizzes_category_idx
   on public.quizzes (category) where active;
 
+-- クイズ 300 問はアプリに同梱している。そのため `quiz_id`（quizzes への参照）は
+-- NULL 許容にし、アプリ内の問題 ID を `quiz_key` に入れる。
+-- `client_id` は端末側で採番する同期キー。圏外ぶんを再送しても重複しない。
 create table if not exists public.quiz_attempts (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
-  quiz_id uuid not null references public.quizzes (id) on delete cascade,
+  quiz_id uuid references public.quizzes (id) on delete cascade,
+  quiz_key text,
+  category text,
+  client_id text,
   selected_answer_json jsonb not null,
   is_correct boolean not null,
-  answered_at timestamptz not null default now()
+  answered_at timestamptz not null default now(),
+  constraint quiz_attempts_quiz_reference_check
+    check (quiz_id is not null or quiz_key is not null)
 );
 
 create index if not exists quiz_attempts_user_answered_idx
   on public.quiz_attempts (user_id, answered_at desc);
+
+create index if not exists quiz_attempts_user_category_idx
+  on public.quiz_attempts (user_id, category);
+
+create unique index if not exists quiz_attempts_user_client_id_idx
+  on public.quiz_attempts (user_id, client_id);
 
 -- レンジ表 ------------------------------------------------------------------
 create table if not exists public.range_spots (
@@ -69,6 +83,7 @@ create table if not exists public.range_actions (
 create table if not exists public.hand_reviews (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users (id) on delete cascade,
+  client_id text,
   input_json jsonb not null,
   ai_response_json jsonb not null,
   score int not null,
@@ -77,6 +92,9 @@ create table if not exists public.hand_reviews (
 
 create index if not exists hand_reviews_user_created_idx
   on public.hand_reviews (user_id, created_at desc);
+
+create unique index if not exists hand_reviews_user_client_id_idx
+  on public.hand_reviews (user_id, client_id);
 
 -- AI コーチ -----------------------------------------------------------------
 create table if not exists public.coach_messages (

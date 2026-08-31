@@ -37,6 +37,10 @@ dependencies:
   flutter_riverpod: ^3.4.2
   go_router: ^18.0.0
   intl: ^0.20.3
+  # sb_publishable_ 形式の API キーに対応したのは 2.13.0 以降
+  # （CHANGELOG: "rename anon key → publishable key"）。
+  supabase_flutter: ^2.17.2
+  shared_preferences: ^2.5.5
 
 dev_dependencies:
   flutter_test:
