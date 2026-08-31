@@ -1,3 +1,5 @@
+import '../../../core/errors/friendly_error.dart';
+
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -200,7 +202,11 @@ class LearningSyncController extends Notifier<SyncStatus> {
         if (ref.mounted) {
           state = state.copyWith(
             phase: SyncPhase.failed,
-            message: '保存に失敗しました（$error）。',
+            message: friendlyErrorMessage(
+              error,
+              offline: 'まだサーバーに保存できていません。この端末には保存されています。',
+              fallback: 'サーバーに保存できませんでした。この端末には保存されています。',
+            ),
           );
         }
       } finally {

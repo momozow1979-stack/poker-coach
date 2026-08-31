@@ -206,6 +206,24 @@ void main() {
       }
     });
 
+    test('同じ用語の意味を2度聞いていない', () {
+      // 用語カテゴリを足したときに、既存のバンクにある定義問題と
+      // 内容が重なることがある。「「◯◯」とは」の形の設問を突き合わせる。
+      final asked = <String, String>{};
+      final quoted = RegExp(r'「([^」]+)」とは');
+      for (final quiz in quizzes) {
+        final match = quoted.firstMatch(quiz.question);
+        if (match == null) continue;
+        final term = match.group(1)!;
+        expect(
+          asked[term],
+          isNull,
+          reason: '「$term」の意味を ${asked[term]} と ${quiz.id} の2問で聞いています',
+        );
+        asked[term] = quiz.id;
+      }
+    });
+
     test('初心者向けなので初級が一番多い', () {
       final counts = <QuizDifficulty, int>{};
       for (final quiz in terms) {

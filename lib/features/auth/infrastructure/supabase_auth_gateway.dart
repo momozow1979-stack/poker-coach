@@ -1,3 +1,5 @@
+import '../../../core/errors/friendly_error.dart';
+
 import 'dart:async';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -45,7 +47,20 @@ class SupabaseAuthGateway implements AuthGateway {
       _lastFailure = _mapAnonymousError(error);
       return null;
     } catch (error) {
-      _lastFailure = AuthFailure('サインインに失敗しました: $error');
+      // 例外の文字列をそのまま出すと、接続先の URL や内部の型名が画面に出る。
+      // 初心者には意味が分からないうえ、不安にさせるだけなので出さない。
+      _lastFailure = AuthFailure(
+        friendlyErrorMessage(
+          error,
+          offline:
+              'いまネットワークに接続できていません。'
+              '学習の記録はこの端末に保存されるので、このまま続けて大丈夫です。'
+              'オンラインに戻ると自動で同期します。',
+          fallback:
+              'サインインできませんでした。'
+              '学習の記録はこの端末に保存されるので、このまま続けて大丈夫です。',
+        ),
+      );
       return null;
     }
   }

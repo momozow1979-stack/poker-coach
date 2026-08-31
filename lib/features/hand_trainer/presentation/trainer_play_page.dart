@@ -134,16 +134,20 @@ class _StatusBar extends StatelessWidget {
                 label: session.isFinished ? '総括' : spot.street.label,
                 accent: AppColors.accent,
               ),
-              const SizedBox(width: AppSpacing.sm),
-              _StatusPill(
-                icon: Icons.savings_rounded,
-                label: 'ポット ${formatBb(spot.potBb)}BB',
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              _StatusPill(
-                icon: Icons.account_balance_wallet_rounded,
-                label: 'スタック ${formatBb(spot.stackBb)}BB',
-              ),
+              // ハンドが終わったあとにポットとスタックを出し続けると、
+              // まだ続いているように見える。総括では出さない。
+              if (!session.isFinished) ...[
+                const SizedBox(width: AppSpacing.sm),
+                _StatusPill(
+                  icon: Icons.savings_rounded,
+                  label: 'ポット ${formatBb(spot.potBb)}BB',
+                ),
+                const SizedBox(width: AppSpacing.sm),
+                _StatusPill(
+                  icon: Icons.account_balance_wallet_rounded,
+                  label: 'スタック ${formatBb(spot.stackBb)}BB',
+                ),
+              ],
             ],
           ),
           const SizedBox(height: AppSpacing.sm),

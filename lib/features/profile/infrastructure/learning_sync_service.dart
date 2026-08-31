@@ -1,3 +1,4 @@
+import '../../../core/errors/friendly_error.dart';
 import '../../auth/domain/app_user.dart';
 import '../../auth/domain/auth_gateway.dart';
 import '../../hand_review/domain/hand_review_record.dart';
@@ -143,7 +144,11 @@ class LearningSyncService {
         status: SyncStatus(
           phase: SyncPhase.failed,
           pendingCount: await pendingCount(),
-          message: '同期に失敗しました（$error）。この端末には保存されています。',
+          message: friendlyErrorMessage(
+            error,
+            offline: 'まだサーバーに同期できていません。この端末には保存されています。',
+            fallback: '同期できませんでした。この端末には保存されています。',
+          ),
         ),
         record: await local.loadRecord(),
       );

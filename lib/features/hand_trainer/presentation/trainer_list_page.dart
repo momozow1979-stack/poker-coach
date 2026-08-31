@@ -8,6 +8,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/fade_slide_in.dart';
 import '../../../shared/widgets/playing_card_view.dart';
+import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/tag_chip.dart';
 import '../application/trainer_providers.dart';
 import '../domain/trainer_scenario.dart';
@@ -64,28 +65,59 @@ class TrainerListPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            for (var i = 0; i < scenarios.length; i++)
-              FadeSlideIn(
-                key: ValueKey(scenarios[i].id),
-                delay: Duration(milliseconds: 60 * i),
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
-                  child: _ScenarioCard(
-                    scenario: scenarios[i],
-                    onTap: () {
-                      ref
-                          .read(trainerSessionProvider.notifier)
-                          .start(scenarios[i].id);
-                      context.go(AppRoutes.trainerPlay(scenarios[i].id));
-                    },
-                  ),
-                ),
+            // 難易度ごとにまとめる。10本を1列に並べるだけだと、
+            // 初心者が「どれから始めればいいか」で止まってしまう。
+            for (final difficulty in TrainerDifficulty.values)
+              ..._section(
+                context,
+                ref,
+                difficulty: difficulty,
+                scenarios: scenarios
+                    .where((scenario) => scenario.difficulty == difficulty)
+                    .toList(),
               ),
           ],
         ),
       ),
     );
   }
+}
+
+/// 難易度ごとの見出しとカード。
+List<Widget> _section(
+  BuildContext context,
+  WidgetRef ref, {
+  required TrainerDifficulty difficulty,
+  required List<TrainerScenario> scenarios,
+}) {
+  if (scenarios.isEmpty) return const [];
+
+  final (String title, String subtitle) = switch (difficulty) {
+    TrainerDifficulty.beginner => ('まずはここから', 'ポーカーの経験がなくても進められます'),
+    TrainerDifficulty.intermediate => ('慣れてきたら', 'ボードや相手によって答えが変わる場面です'),
+    TrainerDifficulty.advanced => ('もう一歩', '相手が持てない手まで考える場面です'),
+  };
+
+  return [
+    SectionHeader(title: title, subtitle: subtitle),
+    const SizedBox(height: AppSpacing.md),
+    for (var i = 0; i < scenarios.length; i++)
+      FadeSlideIn(
+        key: ValueKey(scenarios[i].id),
+        delay: Duration(milliseconds: 60 * i),
+        child: Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.md),
+          child: _ScenarioCard(
+            scenario: scenarios[i],
+            onTap: () {
+              ref.read(trainerSessionProvider.notifier).start(scenarios[i].id);
+              context.go(AppRoutes.trainerPlay(scenarios[i].id));
+            },
+          ),
+        ),
+      ),
+    const SizedBox(height: AppSpacing.lg),
+  ];
 }
 
 class _ScenarioCard extends StatelessWidget {
