@@ -1,3 +1,5 @@
+import '../../../core/errors/friendly_error.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -104,7 +106,18 @@ class _AuthSheetState extends ConsumerState<_AuthSheet> {
     } on AuthFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
     } catch (error) {
-      if (mounted) setState(() => _error = '処理に失敗しました（$error）。');
+      if (mounted) {
+        // 例外の中身をそのまま出さない。接続先の URL が見えてしまう。
+        setState(
+          () => _error = friendlyErrorMessage(
+            error,
+            offline:
+                'ネットワークに接続できませんでした。'
+                '通信できる場所で、もう一度お試しください。',
+            fallback: 'うまく処理できませんでした。時間をおいて、もう一度お試しください。',
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

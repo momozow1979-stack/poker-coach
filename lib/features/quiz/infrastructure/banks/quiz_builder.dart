@@ -85,9 +85,44 @@ List<String> _splitCards(String cards) => cards.isEmpty
     ? const []
     : cards.split(' ').where((card) => card.isNotEmpty).toList();
 
+/// 卓の状況を伴わない、定義を問う問題を組み立てる。
+///
+/// 用語問題のほか、既存カテゴリの中にある「◯◯とはどういう意味か」型の設問にも使う。
+/// 板と無関係な設問に卓の図を出すと、初心者は
+/// 「この board を読み取らないと答えられないのか」と誤解する。
+Quiz buildDefinitionQuiz({
+  required String id,
+  required QuizCategory category,
+  required QuizDifficulty difficulty,
+  required String question,
+  required List<String> choices,
+  required int correctIndex,
+  required String shortReason,
+  required String gtoView,
+  required String practicalView,
+  required String commonMistake,
+}) {
+  return Quiz(
+    id: id,
+    category: category,
+    difficulty: difficulty,
+    question: question,
+    choices: [
+      for (var i = 0; i < choices.length; i++)
+        QuizChoice(id: '$id-c$i', label: choices[i]),
+    ],
+    correctChoiceId: '$id-c$correctIndex',
+    explanation: QuizExplanation(
+      shortReason: shortReason,
+      gtoView: gtoView,
+      practicalView: practicalView,
+      commonMistake: commonMistake,
+    ),
+  );
+}
+
 /// 用語問題を組み立てる。
 ///
-/// 卓の状況を伴わないので [Quiz.situation] は null になる。
 /// 用語の暗記で終わらせないよう、「なぜその概念が重要か」を必ず書く。
 Quiz buildTermQuiz({
   required String id,
@@ -99,22 +134,15 @@ Quiz buildTermQuiz({
   required String whyItMatters,
   required String inPractice,
   required String misconception,
-}) {
-  return Quiz(
-    id: id,
-    category: QuizCategory.terminology,
-    difficulty: difficulty,
-    question: question,
-    choices: [
-      for (var i = 0; i < choices.length; i++)
-        QuizChoice(id: '$id-c$i', label: choices[i]),
-    ],
-    correctChoiceId: '$id-c$correctIndex',
-    explanation: QuizExplanation(
-      shortReason: meaning,
-      gtoView: whyItMatters,
-      practicalView: inPractice,
-      commonMistake: misconception,
-    ),
-  );
-}
+}) => buildDefinitionQuiz(
+  id: id,
+  category: QuizCategory.terminology,
+  difficulty: difficulty,
+  question: question,
+  choices: choices,
+  correctIndex: correctIndex,
+  shortReason: meaning,
+  gtoView: whyItMatters,
+  practicalView: inPractice,
+  commonMistake: misconception,
+);

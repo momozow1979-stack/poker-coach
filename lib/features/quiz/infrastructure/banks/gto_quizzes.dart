@@ -195,18 +195,11 @@ abstract final class GtoQuizzes {
           'レンジ有利は「広く打てる」ことを意味し、'
           '「大きく打てる」ことではありません。',
     ),
-    _q(
+    buildDefinitionQuiz(
       id: 'gt005',
+      category: QuizCategory.gto,
       difficulty: QuizDifficulty.beginner,
-      hero: Position.btn,
-      villain: Position.bb,
-      heroCards: 'Ac Qd',
-      board: 'Kh 8c 3d 5s 2h',
-      street: Street.river,
-      potBb: 20,
-      villainProfile: VillainProfile.reg,
-      history: ['フロップ・ターンでベットしコールされた', 'リバー: BB check'],
-      question: '6MAX・100BB。「バランスが取れている」とはどういう状態ですか。',
+      question: '「バランスが取れている」とはどういう状態ですか。',
       choices: [
         '同じ行動の中に、強い手と弱い手が適切な割合で混ざっている状態',
         '毎回同じサイズで打つ状態',
@@ -539,18 +532,11 @@ abstract final class GtoQuizzes {
           '「小さいベットは弱い」と考えてしまうミスです。'
           'この戦略では、小さいベットの中に最強クラスも入っています。',
     ),
-    _q(
+    buildDefinitionQuiz(
       id: 'gt015',
+      category: QuizCategory.gto,
       difficulty: QuizDifficulty.intermediate,
-      hero: Position.btn,
-      villain: Position.bb,
-      heroCards: 'Qh Qd',
-      board: 'Kd 8s 3h 5c 2d',
-      street: Street.river,
-      potBb: 20,
-      villainProfile: VillainProfile.reg,
-      history: ['フロップ・ターンでコールし続けた', 'リバー: BB が 20BB をベット'],
-      question: '6MAX・100BB。「相手を無差別（インディファレント）にする」とはどういう意味ですか。',
+      question: '「相手を無差別（インディファレント）にする」とはどういう意味ですか。',
       choices: [
         'コールしてもフォールドしても、相手の期待値が同じになる状態にすること',
         '相手を必ず降ろすこと',
@@ -613,19 +599,11 @@ abstract final class GtoQuizzes {
           'エクイティ計算だけでコールを決めてしまうミスです。'
           '「その勝率を最後まで持っていけるか」まで考えます。',
     ),
-    _q(
+    buildDefinitionQuiz(
       id: 'gt017',
+      category: QuizCategory.gto,
       difficulty: QuizDifficulty.intermediate,
-      hero: Position.co,
-      villain: Position.bb,
-      heroCards: 'Ks Qs',
-      board: 'Ah Kd 7c',
-      potBb: 5.5,
-      villainProfile: VillainProfile.reg,
-      history: ['CO raise 2.5BB', 'BB call', 'BB check'],
-      question:
-          '6MAX・100BB。「レンジがキャップされている（上限が見えている）」とは'
-          'どういう状態ですか。',
+      question: '「レンジがキャップされている（上限が見えている）」とはどういう状態ですか。',
       choices: [
         'ある行動を選んだ時点で、最強クラスのハンドがそのレンジから抜けている状態',
         'レンジが狭い状態',

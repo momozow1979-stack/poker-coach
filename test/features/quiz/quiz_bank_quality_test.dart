@@ -174,13 +174,56 @@ void main() {
       }
     });
 
-    test('状況を伴わないのは用語問題だけ', () {
+    test('状況が無いのは、板と関係のない定義問題だけ', () {
+      // 板を読まないと答えられない設問から状況を外すと、答えようがなくなる。
+      // 逆に、定義を聞くだけの設問に卓の図を出すと、
+      // 初心者は「この board を読み取らないと答えられないのか」と誤解する。
+      // 「リバースインプライドオッズ」のような複合語に当たらない語だけを見る。
+      const boardWords = ['ボード', 'フロップ', '落ち', 'この場面', 'このハンド'];
       for (final quiz in quizzes) {
         if (quiz.situation != null) continue;
+        for (final word in boardWords) {
+          expect(
+            quiz.question.contains(word),
+            isFalse,
+            reason:
+                '${quiz.id}: 状況が無いのに問題文が「$word」に触れています。'
+                '板を読まないと答えられない設問には状況が要ります',
+          );
+        }
+      }
+    });
+
+    test('定義問題に、板と無関係な卓の状況を付けていない', () {
+      // 「◯◯とは」だけを聞いていて、そのハンドや board に一切触れていないなら
+      // 卓の図は要らない。図を出すと、初心者は
+      // 「この board を読み取らないと答えられないのか」と誤解する。
+      //
+      // 状況を持つ問題は必ず先頭にテーブルサイズが入るので、
+      // その定型部分を外してから中身を見る。
+      final quotedDefinition = RegExp(r'「[^」]+」とは');
+      final boilerplate = RegExp(r'^[69]MAX[^。]*。');
+      const gameContent = [
+        'ボード',
+        '持って',
+        'セット',
+        'ペア',
+        'ドロー',
+        'スート',
+        '枚',
+        'フラッシュ',
+        'ストレート',
+      ];
+      for (final quiz in quizzes) {
+        if (quiz.situation == null) continue;
+        if (!quotedDefinition.hasMatch(quiz.question)) continue;
+        final body = quiz.question.replaceFirst(boilerplate, '');
         expect(
-          quiz.category,
-          QuizCategory.terminology,
-          reason: '${quiz.id}: 状況の無い問題は用語カテゴリだけです',
+          gameContent.any(body.contains),
+          isTrue,
+          reason:
+              '${quiz.id}: 定義を聞くだけの設問に卓の状況が付いています。'
+              'buildDefinitionQuiz を使ってください',
         );
       }
     });
