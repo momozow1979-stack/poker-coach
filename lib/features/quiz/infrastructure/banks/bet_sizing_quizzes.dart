@@ -294,7 +294,7 @@ abstract final class BetSizingQuizzes {
       difficulty: QuizDifficulty.beginner,
       hero: Position.btn,
       villain: Position.bb,
-      heroCards: 'As Ks',
+      heroCards: 'As Kd',
       board: 'Ks Qs 4h',
       potBb: 5.5,
       villainProfile: VillainProfile.reg,
