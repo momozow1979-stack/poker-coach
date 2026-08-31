@@ -171,7 +171,9 @@ class LearningSyncController extends Notifier<SyncStatus> {
 
   Future<void> _refreshProfile() async {
     if (!ref.mounted) return;
-    final user = ref.read(accountProvider);
+    // 直前の同期でサインインした直後は accountProvider にまだ届いていないことが
+    // あるため、認証の実装から直接取る。
+    final user = ref.read(authGatewayProvider).currentUser;
     if (user == null) return;
     final profile = await _service.ensureProfile(user);
     if (profile == null || !ref.mounted) return;

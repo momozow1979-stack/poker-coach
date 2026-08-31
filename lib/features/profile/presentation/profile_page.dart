@@ -82,7 +82,7 @@ class ProfilePage extends ConsumerWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${profile.pokerLevel.label} ・ 学習${profile.daysSinceJoined}日目',
+                          '${profile.pokerLevel.label} ・ 学習${profile.daysSinceJoined + 1}日目',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textMuted,

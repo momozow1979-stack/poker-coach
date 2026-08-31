@@ -78,6 +78,11 @@ class _AuthSheetState extends ConsumerState<_AuthSheet> {
     });
 
     try {
+      final sync = ref.read(learningSyncControllerProvider.notifier);
+      // 別アカウントに入ると、この端末の未送信ぶんは行き場を失う。
+      // 先に今のアカウントへ送り切ってから切り替える。
+      await sync.syncNow();
+
       final account = ref.read(accountProvider.notifier);
       final user = switch (widget.mode) {
         AuthSheetMode.register => await account.registerEmail(
@@ -89,8 +94,8 @@ class _AuthSheetState extends ConsumerState<_AuthSheet> {
           password: password,
         ),
       };
-      // ログイン直後に、そのアカウントの履歴を取り直す。
-      await ref.read(learningSyncControllerProvider.notifier).syncNow();
+      // 切り替え後のアカウントの履歴を取り直す。
+      await sync.syncNow();
 
       if (!mounted) return;
       Navigator.of(context).pop();

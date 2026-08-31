@@ -147,7 +147,7 @@ lib/
 Flutter Web ビルドを GitHub Pages へ自動公開している
 （`.github/workflows/pages.yml`）。公開リポジトリと同様、URL を知っていれば誰でも閲覧できる。
 
-<https://momoyoko-cpu.github.io/chatGPT/>
+<https://momozow1979-stack.github.io/poker-coach/>
 
 公開は **`main` へマージされた時点**で自動的に行われる。
 GitHub が自動生成する `github-pages` 環境は、既定でデフォルトブランチ以外からの
