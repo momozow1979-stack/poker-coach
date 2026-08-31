@@ -182,6 +182,28 @@ void main() {
       }
     });
 
+    test('相手のベットがある設問では、正しい必要勝率が解説に書かれている', () {
+      // 解説の中の数字と、画面が計算して出す数字がずれていると、
+      // 「アプリが約20%と言っているのに解説は約27%」という状態になる。
+      for (final scenario in scenarios) {
+        for (final spot in scenario.spots) {
+          final equity = spot.requiredEquity;
+          if (equity == null) continue;
+          final expected = '約${(equity * 100).round()}%';
+          final mentioned = spot.options.any(
+            (option) => option.reason.contains(expected),
+          );
+          expect(
+            mentioned,
+            isTrue,
+            reason:
+                '${scenario.id} ${spot.street.id}: '
+                '解説のどこにも $expected が出てきません',
+          );
+        }
+      }
+    });
+
     test('必要勝率が計算どおりに出る', () {
       for (final scenario in scenarios) {
         for (final spot in scenario.spots) {

@@ -1,6 +1,8 @@
 import '../domain/trainer_repository.dart';
 import '../domain/trainer_scenario.dart';
+import 'scenarios/bb_middle_pair_defense.dart';
 import 'scenarios/btn_aq_dry_board.dart';
+import 'scenarios/co_draw_wet_board.dart';
 
 /// アプリ同梱のシナリオを返すリポジトリ。
 ///
@@ -11,6 +13,8 @@ class BundledTrainerRepository implements TrainerScenarioRepository {
 
   static final List<TrainerScenario> _scenarios = List.unmodifiable([
     btnAqDryBoard,
+    bbMiddlePairDefense,
+    coDrawWetBoard,
   ]);
 
   @override
