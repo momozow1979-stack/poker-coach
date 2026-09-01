@@ -14,12 +14,11 @@ void main() {
       final input = HandReviewInput(
         gameType: GameType.tournament,
         tableType: TableType.nineMax,
-        smallBlind: 1,
-        bigBlind: 2,
         effectiveStackBb: 45,
         heroPosition: Position.co,
         heroHand: PlayingCard.parseAll(const ['Qs', 'Jh']),
         villainPosition: Position.sb,
+        villainHand: PlayingCard.parseAll(const ['Kd', 'Kc']),
         villainProfile: VillainProfile.aggressive,
         environment: PlayEnvironment.live,
         preflop: const [
@@ -28,12 +27,12 @@ void main() {
             action: PokerActionType.raise,
             sizeBb: 2.5,
           ),
-          HandAction(actor: 'SB', action: PokerActionType.threeBet),
+          HandAction(actor: 'SB', action: PokerActionType.raise, sizeBb: 11),
         ],
         flop: StreetInput(
           cards: PlayingCard.parseAll(const ['2c', '7d', 'Ts']),
           actions: const [
-            HandAction(actor: 'SB', action: PokerActionType.bet50),
+            HandAction(actor: 'SB', action: PokerActionType.bet, sizeBb: 6),
           ],
         ),
         turn: StreetInput(cards: PlayingCard.parseAll(const ['Ah'])),
@@ -48,6 +47,7 @@ void main() {
       expect(restored.heroPosition, Position.co);
       expect(PlayingCard.encodeAll(restored.heroHand), ['Qs', 'Jh']);
       expect(restored.villainPosition, Position.sb);
+      expect(PlayingCard.encodeAll(restored.villainHand), ['Kd', 'Kc']);
       expect(restored.villainProfile, VillainProfile.aggressive);
       expect(restored.environment, PlayEnvironment.live);
       expect(restored.preflop, hasLength(2));
@@ -55,7 +55,8 @@ void main() {
       expect(restored.preflop.first.sizeBb, 2.5);
       expect(restored.preflop.last.actor, 'SB');
       expect(PlayingCard.encodeAll(restored.flop.cards), ['2c', '7d', 'Ts']);
-      expect(restored.flop.actions.single.action, PokerActionType.bet50);
+      expect(restored.flop.actions.single.action, PokerActionType.bet);
+      expect(restored.flop.actions.single.sizeBb, 6);
       expect(PlayingCard.encodeAll(restored.turn.cards), ['Ah']);
       expect(restored.river.cards, isEmpty);
       expect(restored.userQuestion, 'ターンでコールすべきでしたか？');

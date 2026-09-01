@@ -118,11 +118,11 @@ void main() {
     await tester.tap(find.text('入力を始める'));
     await tester.pumpAndSettle();
 
-    await _scrollTo(tester, find.text('AIレビューを実行'));
+    await _scrollTo(tester, find.text('レビューを実行'));
 
     final button = tester.widget<FilledButton>(
       find.ancestor(
-        of: find.text('AIレビューを実行'),
+        of: find.text('レビューを実行'),
         matching: find.byType(FilledButton),
       ),
     );

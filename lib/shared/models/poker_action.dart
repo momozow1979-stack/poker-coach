@@ -1,16 +1,14 @@
-/// プレイヤーが選択できるアクション。クイズの選択肢とハンドレビュー入力で共有する。
+/// プレイヤーが選べるアクション。
+///
+/// ベットサイズは種類ではなく [HandAction.sizeBb] で持つ。
+/// 「ポットの33%」のような刻みを選ばせると、額を覚えていない人が
+/// 入力できなくなるため、額は任意の数値として別に受け取る。
 enum PokerActionType {
   fold('Fold', 'フォールド'),
   check('Check', 'チェック'),
   call('Call', 'コール'),
-  limp('Limp', 'リンプ'),
-  bet33('Bet 33%', 'ポットの33%ベット'),
-  bet50('Bet 50%', 'ポットの50%ベット'),
-  bet75('Bet 75%', 'ポットの75%ベット'),
-  betPot('Bet Pot', 'ポットサイズベット'),
+  bet('Bet', 'ベット'),
   raise('Raise', 'レイズ'),
-  threeBet('3Bet', 'スリーベット'),
-  fourBet('4Bet', 'フォーベット'),
   allIn('All-in', 'オールイン');
 
   const PokerActionType(this.label, this.description);
@@ -18,36 +16,24 @@ enum PokerActionType {
   final String label;
   final String description;
 
-  /// プリフロップのハンドレビュー入力で並べるアクション。
-  static const List<PokerActionType> preflopChoices = [
-    PokerActionType.fold,
-    PokerActionType.limp,
-    PokerActionType.call,
-    PokerActionType.raise,
-    PokerActionType.threeBet,
-    PokerActionType.fourBet,
-    PokerActionType.allIn,
-  ];
+  /// 賭け金を増やすアクションか。
+  bool get isAggressive => this == bet || this == raise || this == allIn;
 
-  /// ポストフロップのハンドレビュー入力で並べるアクション。
-  /// ラベル（`Bet 33%` など）から復元する。保存済み JSON の読み戻しに使う。
-  static PokerActionType fromLabel(String label) =>
-      PokerActionType.values.firstWhere(
-        (action) => action.label == label,
-        orElse: () => PokerActionType.check,
-      );
-
-  static const List<PokerActionType> postflopChoices = [
-    PokerActionType.fold,
-    PokerActionType.check,
-    PokerActionType.call,
-    PokerActionType.bet33,
-    PokerActionType.bet50,
-    PokerActionType.bet75,
-    PokerActionType.betPot,
-    PokerActionType.raise,
-    PokerActionType.allIn,
-  ];
+  /// ラベルから復元する。保存済み JSON の読み戻しに使う。
+  ///
+  /// 以前はサイズを種類に埋め込んでいた（`Bet 33%` など）ため、
+  /// 古い履歴が読めなくならないよう、旧ラベルも受け付ける。
+  static PokerActionType fromLabel(String label) {
+    for (final action in PokerActionType.values) {
+      if (action.label == label) return action;
+    }
+    return switch (label) {
+      'Limp' => call,
+      'Bet 33%' || 'Bet 50%' || 'Bet 75%' || 'Bet Pot' => bet,
+      '3Bet' || '4Bet' => raise,
+      _ => check,
+    };
+  }
 }
 
 /// 「誰が何をしたか」を表す 1 アクション。
@@ -58,7 +44,9 @@ class HandAction {
   final String actor;
   final PokerActionType action;
 
-  /// 任意。BB 単位のベット額。
+  /// 任意。そのストリートで、その人が出した合計額（BB 単位）。
+  ///
+  /// レイズは「いくらまで上げたか」で持つ。分からなければ null のままでよい。
   final double? sizeBb;
 
   bool get isHero => actor == heroActor;
@@ -67,6 +55,9 @@ class HandAction {
   String get actorLabel => isHero ? 'あなた' : actor;
 
   static const String heroActor = 'hero';
+
+  HandAction copyWith({double? sizeBb}) =>
+      HandAction(actor: actor, action: action, sizeBb: sizeBb ?? this.sizeBb);
 
   factory HandAction.fromJson(Map<String, dynamic> json) => HandAction(
     actor: json['actor'] as String? ?? heroActor,
@@ -80,8 +71,13 @@ class HandAction {
     if (sizeBb != null) 'size_bb': sizeBb,
   };
 
+  /// 画面に出す1行。JSON では [toJson] を使うので、ここは日本語でよい。
   @override
   String toString() => sizeBb == null
-      ? '$actorLabel ${action.label}'
-      : '$actorLabel ${action.label} (${sizeBb}BB)';
+      ? '$actorLabel ${action.description}'
+      : '$actorLabel ${action.description} ${formatBb(sizeBb!)}BB';
+
+  /// 無駄な小数を出さずに BB 額を整える。
+  static String formatBb(double value) =>
+      value == value.roundToDouble() ? value.toInt().toString() : '$value';
 }

@@ -112,7 +112,9 @@ class _ResultBody extends StatelessWidget {
                 tableType: input.tableType,
                 heroPosition: input.heroPosition,
                 villainPosition: input.villainPosition,
-                potLabel: '${input.effectiveStackBb.toInt()}BB',
+                potLabel: input.effectiveStackBb == null
+                    ? null
+                    : '${input.effectiveStackBb!.toInt()}BB',
                 height: 132,
               ),
               const SizedBox(height: AppSpacing.md),

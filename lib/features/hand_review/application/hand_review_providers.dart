@@ -7,6 +7,7 @@ import '../../../shared/models/street.dart';
 import '../../../shared/models/table_type.dart';
 import '../../profile/application/learning_providers.dart';
 import '../../range_chart/application/range_providers.dart';
+import '../domain/hand_flow.dart';
 import '../domain/hand_review_input.dart';
 import '../domain/hand_review_record.dart';
 import '../domain/hand_review_repository.dart';
@@ -40,11 +41,10 @@ class HandReviewForm extends Notifier<HandReviewInput> {
     );
   }
 
-  void setBlinds({required double smallBlind, required double bigBlind}) =>
-      state = state.copyWith(smallBlind: smallBlind, bigBlind: bigBlind);
-
-  void setEffectiveStack(double value) =>
-      state = state.copyWith(effectiveStackBb: value);
+  /// 有効スタック。null は「分からない」。
+  void setEffectiveStack(double? value) => state = value == null
+      ? state.copyWith(clearEffectiveStack: true)
+      : state.copyWith(effectiveStackBb: value);
 
   void setHeroPosition(Position value) =>
       state = state.copyWith(heroPosition: value);
@@ -64,6 +64,25 @@ class HandReviewForm extends Notifier<HandReviewInput> {
   /// ヒーローの 2 枚を差し替える。
   void setHeroHand(List<PlayingCard> cards) =>
       state = state.copyWith(heroHand: cards.take(2).toList());
+
+  /// 相手の 2 枚を差し替える。ショーダウンで見えたときだけ入る。
+  void setVillainHand(List<PlayingCard> cards) =>
+      state = state.copyWith(villainHand: cards.take(2).toList());
+
+  /// 直近のアクションに額を入れる。
+  void setLastActionSize(Street street, double? sizeBb) => _mutateActions(
+    street,
+    (actions) => actions.isEmpty
+        ? actions
+        : [
+            ...actions.sublist(0, actions.length - 1),
+            HandAction(
+              actor: actions.last.actor,
+              action: actions.last.action,
+              sizeBb: sizeBb,
+            ),
+          ],
+  );
 
   /// ボードカードを差し替える。
   void setStreetCards(Street street, List<PlayingCard> cards) {
@@ -110,6 +129,29 @@ class HandReviewForm extends Notifier<HandReviewInput> {
     }
   }
 
+  /// 直前に入力したものを1つ取り消す。
+  ///
+  /// アクションが入っていればそれを、無ければそのストリートのカードを消す。
+  void undoLast() {
+    for (final street in Street.values.reversed) {
+      if (state.actionsOf(street).isNotEmpty) {
+        removeLastAction(street);
+        return;
+      }
+      if (street != Street.preflop && state.boardOf(street).isNotEmpty) {
+        setStreetCards(street, const []);
+        return;
+      }
+    }
+  }
+
+  /// 取り消せるものがあるか。
+  bool get canUndo => Street.values.any(
+    (street) =>
+        state.actionsOf(street).isNotEmpty ||
+        (street != Street.preflop && state.boardOf(street).isNotEmpty),
+  );
+
   void reset() => state = const HandReviewInput();
 }
 
@@ -123,7 +165,7 @@ class HandReviewController extends Notifier<AsyncValue<HandReviewRecord?>> {
 
   Future<void> submit() async {
     final input = ref.read(handReviewFormProvider);
-    if (!input.isSubmittable) return;
+    if (!HandFlow(input).isReady) return;
 
     state = const AsyncValue.loading();
     try {
@@ -148,3 +190,8 @@ final handReviewControllerProvider =
     NotifierProvider<HandReviewController, AsyncValue<HandReviewRecord?>>(
       HandReviewController.new,
     );
+
+/// 入力状況から「次に何を入力すべきか」を出す。
+final handReviewFlowProvider = Provider<HandFlow>(
+  (ref) => HandFlow(ref.watch(handReviewFormProvider)),
+);
