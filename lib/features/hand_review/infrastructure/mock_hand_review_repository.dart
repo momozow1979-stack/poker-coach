@@ -1,18 +1,22 @@
+import '../../../shared/models/hand_strength.dart';
 import '../../../shared/models/poker_action.dart';
 import '../../../shared/models/position.dart';
 import '../../../shared/models/starting_hand.dart';
+import '../../../shared/models/street.dart';
 import '../../range_chart/domain/range_action.dart';
 import '../../range_chart/domain/range_repository.dart';
 import '../domain/board_texture.dart';
+import '../domain/hand_flow.dart';
+import '../domain/hand_read.dart';
 import '../domain/hand_review_input.dart';
 import '../domain/hand_review_repository.dart';
 import '../domain/hand_review_result.dart';
 
 /// バックエンド接続前に使うローカル解析。
 ///
-/// Phase 6 で Supabase Edge Function 経由の OpenAI 実装に差し替える。
-/// ソルバーの頻度や EV は一切生成せず、レンジ表とボード質感から
-/// 説明できる範囲のことだけを書く（仕様書 5-1 のルールに従う）。
+/// ここで出す数値は、すべてカードと入力額から確定するものだけに限る。
+/// ポットオッズ・必要勝率・アウツの枚数・（相手の手札が分かる場合の）勝率は
+/// 計算で出せるので書く。ソルバーの頻度や EV は生成しない。
 class MockHandReviewRepository implements HandReviewRepository {
   const MockHandReviewRepository(this._rangeRepository);
 
@@ -20,69 +24,53 @@ class MockHandReviewRepository implements HandReviewRepository {
 
   @override
   Future<HandReviewResult> review(HandReviewInput input) async {
-    // 実際のネットワーク往復に近い体験にするための待ち時間。
-    await Future<void>.delayed(const Duration(milliseconds: 900));
+    await Future<void>.delayed(const Duration(milliseconds: 700));
     return analyze(input);
   }
 
   /// テストからも呼べる同期版。
   HandReviewResult analyze(HandReviewInput input) {
-    final goodPoints = <String>[];
-    final improvements = <String>[];
-    final alternatives = <String>[];
-    final topics = <String>{};
-    var score = 78;
+    final flow = HandFlow(input);
+    final notes = _Notes();
+    var score = 72;
 
-    final preflop = _analyzePreflop(input, goodPoints, improvements, topics);
-    score += preflop;
+    score += _reviewPreflop(input, notes);
+    score += _reviewStreets(input, flow, notes);
+    score += _reviewPrices(input, flow, notes);
 
-    final postflop = _analyzePostflop(
-      input,
-      goodPoints,
-      improvements,
-      alternatives,
-      topics,
-    );
-    score += postflop;
-
-    if (goodPoints.isEmpty) {
-      goodPoints.add(
+    if (notes.good.isEmpty) {
+      notes.good.add(
         '最後まで自分のラインを決めて打ち切れています。'
-        '判断の良し悪しより先に、迷いを言語化できていることが上達の入り口です。',
+        '判断の良し悪しより先に、ハンドを言葉にできていることが上達の入り口です。',
       );
     }
-    final hasIssue = improvements.isNotEmpty;
+    final hasIssue = notes.improve.isNotEmpty;
     if (!hasIssue) {
-      improvements.add(
+      notes.improve.add(
         '大きな問題は見当たりません。'
-        '次は同じスポットで「相手のレンジに何が残っているか」を口に出して確認してみてください。',
+        '次は同じ場面で「相手のレンジに何が残っているか」を口に出して確認してみてください。',
       );
     }
 
     return HandReviewResult(
       score: score.clamp(30, 97),
-      summary: _summary(input, improvements.first, hasIssue: hasIssue),
-      goodPoints: goodPoints,
-      mainImprovement: improvements.first,
-      streetAnalysis: _streetAnalysis(input),
+      summary: _summary(input, flow, notes.improve.first, hasIssue: hasIssue),
+      goodPoints: notes.good,
+      mainImprovement: notes.improve.first,
+      streetAnalysis: _streetAnalysis(input, flow),
       gtoView: _gtoView(input),
       practicalAdjustment: _practicalAdjustment(input),
-      alternativeLines: alternatives.isEmpty
-          ? ['同じ場面でチェックを選んだ場合、相手の弱いハンドにブラフの余地を残せます。']
-          : alternatives,
-      nextFocus: _nextFocus(topics, improvements.first),
-      relatedQuizTopics: topics.toList(),
+      alternativeLines: notes.alternatives.isEmpty
+          ? const ['同じ場面でチェックを選んだ場合、相手の弱いハンドにブラフの余地を残せます。']
+          : notes.alternatives,
+      nextFocus: _nextFocus(notes.topics, notes.improve.first),
+      relatedQuizTopics: notes.topics.toList(),
     );
   }
 
-  // ------------------------------------------------------------- preflop ----
+  // ------------------------------------------------------------- プリフロップ ----
 
-  int _analyzePreflop(
-    HandReviewInput input,
-    List<String> goodPoints,
-    List<String> improvements,
-    Set<String> topics,
-  ) {
+  int _reviewPreflop(HandReviewInput input, _Notes notes) {
     if (input.heroHand.length != 2) return 0;
     final hand = StartingHand.fromCards(input.heroHand[0], input.heroHand[1]);
     final heroActions = input.preflop
@@ -90,182 +78,215 @@ class MockHandReviewRepository implements HandReviewRepository {
         .toList(growable: false);
     if (heroActions.isEmpty) return 0;
 
+    final first = heroActions.first;
+    var delta = 0;
+
+    // 誰も入っていないところへのコールはリンプ。
+    final isLimp =
+        first.action == PokerActionType.call && input.preflop.first.isHero;
+    if (isLimp) {
+      notes.topics.add('preflop');
+      notes.improve.add(
+        'プリフロップでリンプ（コールだけで参加）しています。'
+        '${input.heroPosition.label} から入るなら、まずレイズで主導権を取る形に統一しましょう。'
+        'リンプは、相手を降ろす機会と主導権の両方を捨てる動きです。',
+      );
+      notes.alternatives.add(
+        '同じハンドで 2.5BB にレイズしていれば、'
+        '後ろを降ろせる可能性が出るうえ、フロップ以降も自分から打てました。',
+      );
+      return delta - 8;
+    }
+
     final chart = _rangeRepository.chartFor(
       input.tableType,
       input.heroPosition,
     );
     final recommended = chart?.entryFor(hand).action;
-    final firstAction = heroActions.first.action;
+    if (recommended == null) return delta;
 
-    var delta = 0;
-
-    if (firstAction == PokerActionType.limp) {
-      topics.add('preflop');
-      improvements.add(
-        'プリフロップでリンプ（コールだけで参加）しています。'
-        '${input.heroPosition.label} から入るなら、まずレイズで主導権を取る形に統一しましょう。',
-      );
-      delta -= 8;
-      return delta;
-    }
-
-    final heroRaised =
-        firstAction == PokerActionType.raise ||
-        firstAction == PokerActionType.threeBet ||
-        firstAction == PokerActionType.fourBet;
-
-    if (recommended == null) {
-      return delta;
-    }
-
-    if (heroRaised) {
+    final raised = first.action.isAggressive;
+    if (raised) {
       switch (recommended) {
         case RangeAction.raise:
         case RangeAction.threeBet:
         case RangeAction.fourBet:
-          goodPoints.add(
-            '${hand.code} は ${input.heroPosition.label} の'
-            'レンジにきちんと入っているハンドです。プリフロップの入り方は問題ありません。',
+          notes.good.add(
+            '${hand.code} は ${input.heroPosition.label} のレンジにきちんと入っているハンドです。'
+            'プリフロップの入り方は問題ありません。',
           );
           delta += 6;
         case RangeAction.mixed:
-          goodPoints.add(
+          notes.good.add(
             '${hand.code} は ${input.heroPosition.label} では境界線上のハンドです。'
-            'レイズ自体は間違いではありませんが、テーブルが荒れているときは外してかまいません。',
+            'レイズ自体は間違いではありませんが、卓が荒れているときは外してかまいません。',
           );
         case RangeAction.call:
-          topics.add('preflop');
-          improvements.add(
+          notes.topics.add('preflop');
+          notes.improve.add(
             '${hand.code} は ${input.heroPosition.label} では'
-            'レイズよりもコール寄りのハンドです。レンジ表で位置づけを確認しておきましょう。',
+            'レイズよりコール寄りのハンドです。レンジ表で位置づけを確認しておきましょう。',
           );
           delta -= 4;
         case RangeAction.fold:
-          topics.add('preflop');
-          topics.add('position');
-          improvements.add(
-            '${hand.code} は ${input.heroPosition.label} の'
-            'オープンレンジには入りません。ポジションが悪いほど参加ハンドを絞るのが基本です。',
+          notes.topics.addAll(['preflop', 'position']);
+          notes.improve.add(
+            '${hand.code} は ${input.heroPosition.label} のオープンレンジには入りません。'
+            'ポジションが悪いほど参加ハンドを絞るのが基本です。'
+            'ここを絞るだけで、フロップ以降の難しい判断がまとめて減ります。',
           );
           delta -= 10;
       }
-    } else if (firstAction == PokerActionType.call) {
+    } else if (first.action == PokerActionType.call) {
       if (recommended == RangeAction.fold) {
-        topics.add('preflop');
-        improvements.add(
+        notes.topics.add('preflop');
+        notes.improve.add(
           '${hand.code} で参加していますが、'
-          '${input.heroPosition.label} からはレンジ外です。'
-          'ここを絞るだけでポストフロップの難しい判断が減ります。',
+          '${input.heroPosition.label} からはレンジ外です。',
         );
         delta -= 8;
       } else if (recommended == RangeAction.raise) {
-        topics.add('preflop');
-        improvements.add(
-          '${hand.code} はレイズできる強さです。'
-          'コールで入ると主導権を渡してしまいます。',
-        );
+        notes.topics.add('preflop');
+        notes.improve.add('${hand.code} はレイズできる強さです。コールで入ると主導権を渡してしまいます。');
         delta -= 5;
       } else {
-        goodPoints.add('${hand.code} でのコールは妥当な選択です。');
+        notes.good.add('${hand.code} でのコールは妥当な選択です。');
       }
     }
-
     return delta;
   }
 
-  // ------------------------------------------------------------ postflop ----
+  // ------------------------------------------------------------ ストリート ----
 
-  int _analyzePostflop(
-    HandReviewInput input,
-    List<String> goodPoints,
-    List<String> improvements,
-    List<String> alternatives,
-    Set<String> topics,
-  ) {
+  int _reviewStreets(HandReviewInput input, HandFlow flow, _Notes notes) {
     var delta = 0;
     final texture = BoardTexture.of(input.board);
     if (texture == null) return delta;
 
-    final heroPostflopActions = [
+    for (final street in [Street.flop, Street.turn, Street.river]) {
+      final board = input.boardUpTo(street);
+      if (board.length < 3) continue;
+      final actions = input.actionsOf(street);
+      if (actions.isEmpty) continue;
+
+      final read = HandRead.of(input.heroHand, board);
+      final heroActions = actions.where((action) => action.isHero);
+
+      // 完成している強い手をリバーで打たずに終えた場合の取り逃し。
+      if (street == Street.river &&
+          read.strength.category.power >= HandCategory.twoPair.power) {
+        final bet = heroActions.any((a) => a.action.isAggressive);
+        final facedBet = actions.any((a) => !a.isHero && a.action.isAggressive);
+        if (!bet && !facedBet) {
+          notes.topics.add('value_bluff');
+          notes.improve.add(
+            'リバーで${read.label}を持ちながら、'
+            '一度も自分から打っていません。'
+            'この強さは、相手の弱い手から払ってもらうための手です。'
+            '打たなければ、そのぶんは取り逃しになります。',
+          );
+          notes.alternatives.add(
+            'リバーでポットの半分ほど打っていれば、'
+            '相手の中途半端な手から追加で取れた可能性があります。',
+          );
+          delta -= 7;
+        }
+      }
+
+      // 1ペア以下でスタックを大きく入れている場合。
+      final wentAllIn = heroActions.any(
+        (a) => a.action == PokerActionType.allIn,
+      );
+      if (wentAllIn &&
+          read.strength.category.power <= HandCategory.onePair.power &&
+          !read.hasDraw) {
+        notes.topics.add('bet_sizing');
+        notes.improve.add(
+          '${street.label}で${read.label}のままオールインしています。'
+          '1ペア以下は、相手に降りてもらうか、'
+          '安く見せ合いに持ち込むかで価値を出す手です。'
+          'スタック全部を賭けると、払ってくれるのは自分が負けている手だけになります。',
+        );
+        delta -= 8;
+      }
+    }
+
+    // ベットサイズとボードの噛み合い。
+    // 額が入っているときだけ、実際のポット比率で判断する。
+    for (final bet in flow.heroBets) {
+      if (bet.street == Street.preflop) continue;
+      final board = input.boardUpTo(bet.street);
+      final boardTexture = BoardTexture.of(board);
+      if (boardTexture == null) continue;
+      final percent = (bet.potFraction * 100).round();
+
+      if (boardTexture.wetness == BoardWetness.dry && bet.potFraction >= 0.6) {
+        notes.topics.add('bet_sizing');
+        notes.improve.add(
+          '${bet.street.label}の${boardTexture.wetness.label}ボードで、'
+          'ポットの約$percent%を打っています。'
+          'ドローの少ないボードでは、相手はそもそもあまり当たっていません。'
+          '大きく打つと、払ってくれるはずの弱い手から先に降りてしまいます。',
+        );
+        final small = (bet.potBeforeBb / 3 * 2).round() / 2;
+        notes.alternatives.add(
+          '同じ場面でポットの3分の1ほど'
+          '（${HandAction.formatBb(small)}BB）に落とすと、'
+          '相手の弱い手を残したままプレッシャーをかけられます。',
+        );
+        delta -= 6;
+      }
+
+      if (boardTexture.wetness == BoardWetness.wet && bet.potFraction <= 0.4) {
+        notes.topics.add('bet_sizing');
+        notes.improve.add(
+          '${bet.street.label}の${boardTexture.wetness.label}ボードで、'
+          'ポットの約$percent%しか打っていません。'
+          '相手のドローに安くカードを与えることになります。'
+          '守るものがあるボードではサイズを上げます。',
+        );
+        final big = (bet.potBeforeBb * 0.75 * 2).round() / 2;
+        notes.alternatives.add(
+          '同じ場面でポットの4分の3ほど'
+          '（${HandAction.formatBb(big)}BB）に上げると、'
+          'ドローから見て割に合わない値段にできます。',
+        );
+        delta -= 6;
+      }
+    }
+
+    // 仕掛けた回数の偏り。
+    final heroPostflop = [
       ...input.flop.actions,
       ...input.turn.actions,
       ...input.river.actions,
     ].where((action) => action.isHero).toList(growable: false);
 
-    if (heroPostflopActions.isEmpty) return delta;
-
-    final bigBets = heroPostflopActions
-        .where(
-          (action) =>
-              action.action == PokerActionType.bet75 ||
-              action.action == PokerActionType.betPot,
-        )
-        .length;
-    final smallBets = heroPostflopActions
-        .where((action) => action.action == PokerActionType.bet33)
-        .length;
-    final aggressive = heroPostflopActions
-        .where(
-          (action) =>
-              action.action != PokerActionType.check &&
-              action.action != PokerActionType.call &&
-              action.action != PokerActionType.fold,
-        )
-        .length;
-
-    if (texture.wetness == BoardWetness.dry && bigBets > 0) {
-      topics.add('bet_sizing');
-      improvements.add(
-        '${texture.wetness.label}ボードで大きめのベットを使っています。'
-        'ドローの少ないボードでは、小さいサイズを高頻度で使うほうが機能しやすいスポットです。',
-      );
-      alternatives.add(
-        '同じ場面でポットの 1/3 ほどに落とすと、'
-        '相手の弱いハンドを残したままプレッシャーをかけられます。',
-      );
-      delta -= 6;
-    }
-
-    if (texture.wetness == BoardWetness.wet && smallBets > 0 && bigBets == 0) {
-      topics.add('bet_sizing');
-      improvements.add(
-        '${texture.wetness.label}ボードで小さいサイズだけを使っています。'
-        'ドローに安くカードを与えてしまうため、強いハンドではサイズを上げましょう。',
-      );
-      alternatives.add(
-        '同じ場面でポットの 3/4 に上げると、'
-        'ドローから見て割に合わない値段にできます。',
-      );
-      delta -= 6;
-    }
-
-    if (aggressive == 0) {
-      topics.add('value_bluff');
-      improvements.add(
-        'ポストフロップでチェックとコールだけになっています。'
-        '自分から仕掛ける回がないと、勝っている回の利益を取りきれません。',
+    final aggressive = heroPostflop.where((a) => a.action.isAggressive).length;
+    if (heroPostflop.isNotEmpty && aggressive == 0) {
+      notes.topics.add('value_bluff');
+      notes.improve.add(
+        'フロップ以降、一度も自分から仕掛けていません。'
+        '相手のベットに合わせるだけだと、'
+        '相手が打たなかった回のポットを取り逃します。',
       );
       delta -= 5;
     } else if (aggressive >= 2) {
-      goodPoints.add(
-        '複数ストリートで自分から仕掛けられています。'
-        'ラインに一貫性があるのは良い点です。',
-      );
+      notes.good.add('複数のストリートで自分から仕掛けられています。ラインに一貫性があるのは良い点です。');
       delta += 4;
     }
 
     if (texture.isMonotone) {
-      topics.add('flop');
-      alternatives.add(
-        'モノトーンボードでは、'
-        'フラッシュを持っていない側がポットを小さく保つラインも有力です。',
+      notes.topics.add('flop');
+      notes.alternatives.add(
+        'モノトーンのボードでは、'
+        'フラッシュを持っていない側はポットを小さく保つラインも有力です。',
       );
     }
-
     if (texture.isHighCardBoard && input.heroPosition == Position.bb) {
-      topics.add('flop');
-      alternatives.add(
-        'BB でハイカードボードのときは、'
+      notes.topics.add('flop');
+      notes.alternatives.add(
+        'BB でハイカードのボードのときは、'
         'こちらのレンジが不利になりやすいのでチェックを厚めにするのが基本です。',
       );
     }
@@ -273,58 +294,197 @@ class MockHandReviewRepository implements HandReviewRepository {
     return delta;
   }
 
+  // -------------------------------------------------------------- 値段 ----
+
+  /// ヒーローが直面したコールの値段を、必要勝率で検証する。
+  int _reviewPrices(HandReviewInput input, HandFlow flow, _Notes notes) {
+    var delta = 0;
+    for (final faced in flow.heroFacedBets) {
+      final board = input.boardUpTo(faced.street);
+      if (board.length < 3) continue;
+
+      final required = faced.requiredEquity;
+      final equity = ExactEquity.between(
+        hero: input.heroHand,
+        villain: input.villainHand,
+        board: board,
+      );
+      final percent = (required * 100).round();
+
+      if (faced.chosen == PokerActionType.fold) {
+        if (equity != null && equity.value > required) {
+          notes.topics.add('pot_odds');
+          notes.improve.add(
+            '${faced.street.label}で '
+            '${HandAction.formatBb(faced.toCallBb)}BB のコールを降りていますが、'
+            '必要だった勝率は約$percent%でした。'
+            '相手の手札から計算すると、この時点でのあなたの勝率は'
+            '${equity.percent}%あったので、コールが正解でした。',
+          );
+          delta -= 8;
+        } else if (required <= 0.25) {
+          notes.topics.add('pot_odds');
+          notes.improve.add(
+            '${faced.street.label}で '
+            '${HandAction.formatBb(faced.toCallBb)}BB のコールを降りています。'
+            '必要な勝率は約$percent%と安い値段でした。'
+            'この値段で降りる場面は、そう多くありません。',
+          );
+          delta -= 4;
+        }
+      } else if (faced.chosen == PokerActionType.call) {
+        if (equity != null && equity.value >= required) {
+          notes.good.add(
+            '${faced.street.label}のコールは値段に合っていました。'
+            '必要な勝率は約$percent%で、実際の勝率は${equity.percent}%でした。',
+          );
+          delta += 5;
+        } else if (equity != null) {
+          notes.topics.add('pot_odds');
+          notes.improve.add(
+            '${faced.street.label}のコールは値段に対して足りていませんでした。'
+            '必要な勝率が約$percent%だったのに対し、'
+            '相手の手札から計算した実際の勝率は${equity.percent}%です。',
+          );
+          delta -= 5;
+        } else {
+          // 相手の手札が分からないときは、値段だけを示して判断材料にしてもらう。
+          final read = HandRead.of(input.heroHand, board);
+          notes.good.add(
+            '${faced.street.label}のコールに必要だった勝率は約$percent%です。'
+            'そのときのあなたは${read.label}でした。'
+            'この2つを毎回比べる癖がつくと、コールの判断がぶれなくなります。',
+          );
+        }
+      }
+    }
+    return delta;
+  }
+
   // ------------------------------------------------------------ 文章生成 ----
 
   String _summary(
     HandReviewInput input,
+    HandFlow flow,
     String mainImprovement, {
     required bool hasIssue,
   }) {
     final head =
         '${input.heroPosition.label} からの${input.lastStreetLabel}までのハンドです。';
+    final pot = flow.finalPotBb;
+    final potPart = pot == null ? '' : '最終ポットは ${HandAction.formatBb(pot)}BB。';
     if (!hasIssue) {
-      return '$head 目立った問題は見当たりません。'
+      return '$head$potPart 目立った問題は見当たりません。'
           'この形は自信を持って同じように打って大丈夫です。';
     }
-    return '$head ${mainImprovement.split('。').first}。'
+    return '$head$potPart ${mainImprovement.split('。').first}。'
         'ここを直すと、同じ形のハンドがまとめて良くなります。';
   }
 
-  Map<String, String> _streetAnalysis(HandReviewInput input) {
-    final texture = BoardTexture.of(input.board);
-    return {
-      'preflop': input.preflop.isEmpty
-          ? 'プリフロップのアクションが未入力です。'
-          : 'アクション: ${input.preflop.map((action) => action.toString()).join(' → ')}。'
-                '${input.heroPosition.label} のレンジに対して妥当かどうかを、レンジ表と見比べてみてください。',
-      'flop': input.flop.cards.isEmpty
-          ? 'フロップまで到達していません。'
-          : 'ボード: ${input.flop.cards.map((card) => card.display).join(' ')}'
-                '（${texture?.wetness.label ?? '判定不能'}）。'
-                '${input.flop.actions.isEmpty ? 'アクション未入力。' : 'アクション: ${input.flop.actions.join(' → ')}。'}',
-      'turn': input.turn.cards.isEmpty
-          ? 'ターンまで到達していません。'
-          : 'ターン: ${input.turn.cards.map((card) => card.display).join(' ')}。'
-                '${input.turn.actions.isEmpty ? 'アクション未入力。' : 'アクション: ${input.turn.actions.join(' → ')}。'}'
-                'ここで相手のレンジがどう絞られたかを確認しましょう。',
-      'river': input.river.cards.isEmpty
-          ? 'リバーまで到達していません。'
-          : 'リバー: ${input.river.cards.map((card) => card.display).join(' ')}。'
-                '${input.river.actions.isEmpty ? 'アクション未入力。' : 'アクション: ${input.river.actions.join(' → ')}。'}'
-                'バリューかブラフか、目的をはっきりさせて打てていたかを振り返ってください。',
-    };
+  /// ストリートごとに「何を持っていて、いくらの判断だったか」を書く。
+  Map<String, String> _streetAnalysis(HandReviewInput input, HandFlow flow) {
+    final result = <String, String>{};
+
+    result['preflop'] = input.preflop.isEmpty
+        ? 'プリフロップのアクションが未入力です。'
+        : 'アクション: ${input.preflop.join(' → ')}。'
+              '${input.heroHand.length == 2 ? '${StartingHand.fromCards(input.heroHand[0], input.heroHand[1]).code} で参加しています。' : ''}';
+
+    for (final street in [Street.flop, Street.turn, Street.river]) {
+      final board = input.boardUpTo(street);
+      final key = street.id;
+      if (board.length < _boardSizeOf(street)) {
+        result[key] = '${street.label}まで到達していません。';
+        continue;
+      }
+
+      final lines = <String>[
+        'ボード: ${board.map((card) => card.display).join(' ')}',
+      ];
+
+      if (input.heroHand.length == 2) {
+        final read = HandRead.of(input.heroHand, board);
+        lines.add('あなた: ${read.label}');
+        if (read.draws.isNotEmpty) {
+          lines.add('ドロー: ${read.draws.join('、')}');
+        }
+        if (read.improvingCards > 0) {
+          final remaining = 52 - 2 - board.length;
+          final chance = (read.improvingCards / remaining * 100).round();
+          lines.add(
+            'あと1枚でストレート以上になるカードは ${read.improvingCards} 枚'
+            '（残り $remaining 枚のうち、次の1枚で当たる確率は約$chance%）',
+          );
+        }
+
+        final equity = ExactEquity.between(
+          hero: input.heroHand,
+          villain: input.villainHand,
+          board: board,
+        );
+        if (equity != null) {
+          lines.add(
+            'この時点での勝率: ${equity.percent}%'
+            '（相手の ${input.villainHand.map((c) => c.display).join(' ')} に対して、'
+            '残りのカードを全部数えた正確な値）',
+          );
+        }
+      }
+
+      final actions = input.actionsOf(street);
+      lines.add(
+        actions.isEmpty ? 'アクション未入力。' : 'アクション: ${actions.join(' → ')}',
+      );
+
+      for (final faced in flow.heroFacedBets.where(
+        (bet) => bet.street == street,
+      )) {
+        lines.add(
+          '${HandAction.formatBb(faced.toCallBb)}BB のコールに'
+          '必要だった勝率: 約${(faced.requiredEquity * 100).round()}%'
+          '（${HandAction.formatBb(faced.toCallBb)} ÷ '
+          '${HandAction.formatBb(faced.potBb + faced.toCallBb)}）',
+        );
+      }
+
+      result[key] = lines.join('\n');
+    }
+
+    if (input.villainHand.length == 2) {
+      result['river'] =
+          '${result['river']}\n\n'
+          '※ 勝率は相手の手札が分かっているから出せる数字です。'
+          'その場では見えていなかったので、'
+          '「結果的にどうだったか」の確認に使ってください。';
+    }
+
+    return result;
   }
+
+  static int _boardSizeOf(Street street) => switch (street) {
+    Street.preflop => 0,
+    Street.flop => 3,
+    Street.turn => 4,
+    Street.river => 5,
+  };
 
   String _gtoView(HandReviewInput input) {
     final texture = BoardTexture.of(input.board);
     if (texture == null) {
       return 'プリフロップは、ポジションごとに決まったレンジからどれだけ外れていないかがすべてです。'
-          'このアプリでは厳密な頻度は表示せず、覚えやすい目安だけを扱っています。';
+          'このアプリでは厳密な頻度は扱わず、覚えやすい目安だけを示します。';
     }
-    return 'このボードは${texture.wetness.label}に分類されます。'
-        'レンジ全体で見たときにどちら側が強いかを先に判断し、'
-        '有利な側は小さく高頻度、不利な側はチェックを厚く、という骨格で考えます。'
-        '正確なソルバー出力は入力に含まれていないため、ここでは頻度の数値は示しません。';
+    final buffer = StringBuffer()
+      ..write('このボードは${texture.wetness.label}に分類されます。')
+      ..write('レンジ全体で見たときにどちら側が強いかを先に判断し、')
+      ..write('有利な側は小さく高頻度、不利な側はチェックを厚く、という骨格で考えます。');
+    if (texture.isMonotone) {
+      buffer.write('3枚が同じスートなので、フラッシュを持てるかどうかが判断を大きく変えます。');
+    } else if (texture.isPaired) {
+      buffer.write('ボードがペアになっているぶん、どちらも当たりにくく、レンジ有利がそのまま効きます。');
+    }
+    buffer.write('正確なソルバーの頻度は入力から求まらないので、ここでは数値を示しません。');
+    return buffer.toString();
   }
 
   String _practicalAdjustment(HandReviewInput input) {
@@ -348,9 +508,14 @@ class MockHandReviewRepository implements HandReviewRepository {
   }
 
   String _nextFocus(Set<String> topics, String mainImprovement) {
+    if (topics.contains('pot_odds')) {
+      return 'コールの前に「必要な勝率」を出す癖をつけましょう。'
+          '払う額 ÷ 払ったあとのポット、の割り算だけです。'
+          'この数字と自分の手の強さを比べれば、迷う場面がかなり減ります。';
+    }
     if (topics.contains('preflop')) {
-      return 'まずは ${'プリフロップのレンジ'} を固めましょう。'
-          'レンジ表で自分のポジションを 1 つ選び、上下の境界だけ覚えるところから始めてください。';
+      return 'まずはプリフロップのレンジを固めましょう。'
+          'レンジ表で自分のポジションを1つ選び、上下の境界だけ覚えるところから始めてください。';
     }
     if (topics.contains('bet_sizing')) {
       return 'ボードの質感とベットサイズの結びつきを練習しましょう。'
@@ -361,4 +526,12 @@ class MockHandReviewRepository implements HandReviewRepository {
     }
     return mainImprovement;
   }
+}
+
+/// レビュー生成中に集める材料。
+class _Notes {
+  final List<String> good = [];
+  final List<String> improve = [];
+  final List<String> alternatives = [];
+  final Set<String> topics = {};
 }

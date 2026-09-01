@@ -1,4 +1,5 @@
 import 'package:ai_poker_coach/features/hand_review/domain/board_texture.dart';
+import 'package:ai_poker_coach/features/hand_review/domain/hand_flow.dart';
 import 'package:ai_poker_coach/features/hand_review/domain/hand_review_input.dart';
 import 'package:ai_poker_coach/features/hand_review/domain/hand_review_result.dart';
 import 'package:ai_poker_coach/features/hand_review/infrastructure/mock_hand_review_repository.dart';
@@ -8,11 +9,11 @@ import 'package:ai_poker_coach/shared/models/poker_action.dart';
 import 'package:ai_poker_coach/shared/models/position.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-HandAction _hero(PokerActionType action) =>
-    HandAction(actor: HandAction.heroActor, action: action);
+HandAction _hero(PokerActionType action, [double? sizeBb]) =>
+    HandAction(actor: HandAction.heroActor, action: action, sizeBb: sizeBb);
 
-HandAction _villain(PokerActionType action) =>
-    HandAction(actor: 'BB', action: action);
+HandAction _villain(PokerActionType action, [double? sizeBb]) =>
+    HandAction(actor: 'BB', action: action, sizeBb: sizeBb);
 
 void main() {
   const repository = MockHandReviewRepository(MockRangeRepository());
@@ -24,7 +25,7 @@ void main() {
         preflop: [_hero(PokerActionType.raise)],
         flop: StreetInput(
           cards: PlayingCard.parseAll(const ['Qs', '7d', '2c']),
-          actions: [_hero(PokerActionType.bet33)],
+          actions: [_hero(PokerActionType.bet)],
         ),
         turn: StreetInput(cards: PlayingCard.parseAll(const ['9h'])),
       );
@@ -34,23 +35,23 @@ void main() {
       expect(json['table_type'], '6max');
       expect(json['hero_position'], 'BTN');
       expect(json['hero_hand'], ['Ah', 'Js']);
-      expect(json['effective_stack_bb'], 100);
       expect((json['flop']! as Map)['board'], ['Qs', '7d', '2c']);
       expect((json['turn']! as Map)['card'], '9h');
       expect((json['river']! as Map)['card'], isNull);
     });
 
-    test('ハンド2枚とプリフロップが揃うと送信できる', () {
-      var input = const HandReviewInput();
-      expect(input.isSubmittable, isFalse);
+    test('ハンドと1ストリートぶんの入力が揃うまで送信できない', () {
+      // 送信できるかどうかは HandFlow が決める。
+      expect(HandFlow(const HandReviewInput()).isReady, isFalse);
 
-      input = input.copyWith(
+      var input = const HandReviewInput().copyWith(
         heroHand: PlayingCard.parseAll(const ['Ah', 'Js']),
       );
-      expect(input.isSubmittable, isFalse);
+      expect(HandFlow(input).isReady, isFalse);
 
-      input = input.copyWith(preflop: [_hero(PokerActionType.raise)]);
-      expect(input.isSubmittable, isTrue);
+      // 降りればそこでハンドは終わるので、レビューできる。
+      input = input.copyWith(preflop: [_hero(PokerActionType.fold)]);
+      expect(HandFlow(input).isReady, isTrue);
     });
   });
 
@@ -129,7 +130,22 @@ void main() {
 
       expect(result.mainImprovement, contains('72o'));
       expect(result.relatedQuizTopics, contains('preflop'));
-      expect(result.score, lessThan(78));
+    });
+
+    test('レンジ外のオープンは、レンジ内のオープンより点が低い', () {
+      HandReviewInput open(Position position, List<String> hand) =>
+          HandReviewInput(
+            heroPosition: position,
+            heroHand: PlayingCard.parseAll(hand),
+            preflop: [
+              _hero(PokerActionType.raise, 2.5),
+              _villain(PokerActionType.fold),
+            ],
+          );
+
+      final outOfRange = repository.analyze(open(Position.utg, ['7h', '2d']));
+      final inRange = repository.analyze(open(Position.btn, ['Ah', 'Kh']));
+      expect(outOfRange.score, lessThan(inRange.score));
     });
 
     test('レンジ内のオープンは良かった点になる', () {
@@ -145,7 +161,6 @@ void main() {
       );
 
       expect(result.goodPoints.first, contains('AKs'));
-      expect(result.score, greaterThan(78));
     });
 
     test('リンプは必ず改善点として指摘される', () {
@@ -153,7 +168,7 @@ void main() {
         HandReviewInput(
           heroPosition: Position.co,
           heroHand: PlayingCard.parseAll(const ['Ah', 'Kh']),
-          preflop: [_hero(PokerActionType.limp)],
+          preflop: [_hero(PokerActionType.call)],
         ),
       );
 
@@ -166,6 +181,31 @@ void main() {
           heroPosition: Position.btn,
           heroHand: PlayingCard.parseAll(const ['Ah', 'Kd']),
           preflop: [
+            _hero(PokerActionType.raise, 2.5),
+            _villain(PokerActionType.call),
+          ],
+          flop: StreetInput(
+            cards: PlayingCard.parseAll(const ['Qs', '7d', '2c']),
+            actions: [
+              _villain(PokerActionType.check),
+              // ポット 5.5BB に対して 4.5BB なので約82%。
+              _hero(PokerActionType.bet, 4.5),
+            ],
+          ),
+        ),
+      );
+
+      expect(result.relatedQuizTopics, contains('bet_sizing'));
+      expect(result.mainImprovement, contains('82%'));
+      expect(result.alternativeLines, isNotEmpty);
+    });
+
+    test('額を入れていなければサイズの指摘はしない（数字を装わない）', () {
+      final result = repository.analyze(
+        HandReviewInput(
+          heroPosition: Position.btn,
+          heroHand: PlayingCard.parseAll(const ['Ah', 'Kd']),
+          preflop: [
             _hero(PokerActionType.raise),
             _villain(PokerActionType.call),
           ],
@@ -173,14 +213,13 @@ void main() {
             cards: PlayingCard.parseAll(const ['Qs', '7d', '2c']),
             actions: [
               _villain(PokerActionType.check),
-              _hero(PokerActionType.bet75),
+              _hero(PokerActionType.bet),
             ],
           ),
         ),
       );
 
-      expect(result.relatedQuizTopics, contains('bet_sizing'));
-      expect(result.alternativeLines, isNotEmpty);
+      expect(result.relatedQuizTopics, isNot(contains('bet_sizing')));
     });
 
     test('相手の傾向ごとに実戦調整が変わる', () {

@@ -13,29 +13,31 @@ import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/choice_chip_group.dart';
 import '../../profile/application/learning_providers.dart';
 import '../application/hand_review_providers.dart';
+import '../domain/hand_flow.dart';
 import '../domain/hand_review_input.dart';
-import 'widgets/action_builder.dart';
+import 'widgets/action_prompt_card.dart';
 import 'widgets/card_picker_sheet.dart';
 import 'widgets/card_slot_row.dart';
 import 'widgets/form_section.dart';
+import 'widgets/hand_timeline.dart';
 import 'widgets/position_picker.dart';
 
-/// ハンドレビューの入力画面。テキスト入力を最小限にする。
+/// ハンドレビューの入力画面。
+///
+/// ポジションが決まれば行動順は決まるので、「誰の番か」は選ばせない。
+/// ストリートが終われば自動で次のカード入力へ進む。
+/// 額は分からなければ飛ばせる。
 class HandReviewPage extends ConsumerWidget {
   const HandReviewPage({super.key});
 
-  static const _stackPresets = [30.0, 50.0, 75.0, 100.0, 150.0, 200.0];
-  static const _blindPresets = [
-    (0.5, 1.0, 'SB 0.5 / BB 1'),
-    (1.0, 2.0, 'SB 1 / BB 2'),
-    (2.0, 5.0, 'SB 2 / BB 5'),
-    (50.0, 100.0, 'SB 50 / BB 100'),
-  ];
+  /// 有効スタックの候補。先頭は「分からない」。
+  static const _stackPresets = <double?>[null, 30, 50, 75, 100, 150, 200];
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final input = ref.watch(handReviewFormProvider);
     final form = ref.read(handReviewFormProvider.notifier);
+    final flow = ref.watch(handReviewFlowProvider);
     final submission = ref.watch(handReviewControllerProvider);
     final history = ref.watch(handReviewHistoryProvider);
 
@@ -52,7 +54,11 @@ class HandReviewPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('ハンドレビュー'),
+        title: const Text('ハンドを入力'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => context.go(AppRoutes.review),
+        ),
         actions: [
           if (history.isNotEmpty)
             IconButton(
@@ -78,17 +84,11 @@ class HandReviewPage extends ConsumerWidget {
           ),
           children: [
             FormSection(
-              title: 'ゲーム',
+              title: '卓と席',
+              subtitle: '席をタップして、自分と相手を選びます',
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ChoiceChipGroup<GameType>(
-                    values: GameType.values,
-                    selected: input.gameType,
-                    labelBuilder: (value) => value.label,
-                    onSelected: form.setGameType,
-                  ),
-                  const SizedBox(height: AppSpacing.md),
                   ChoiceChipGroup<TableType>(
                     values: TableType.values,
                     selected: input.tableType,
@@ -96,58 +96,25 @@ class HandReviewPage extends ConsumerWidget {
                     onSelected: form.setTableType,
                   ),
                   const SizedBox(height: AppSpacing.md),
-                  ChoiceChipGroup<PlayEnvironment>(
-                    values: PlayEnvironment.values,
-                    selected: input.environment,
-                    labelBuilder: (value) => value.label,
-                    onSelected: form.setEnvironment,
+                  PositionPicker(
+                    tableType: input.tableType,
+                    heroPosition: input.heroPosition,
+                    villainPosition: input.villainPosition,
+                    onHeroChanged: form.setHeroPosition,
+                    onVillainChanged: form.setVillainPosition,
                   ),
                 ],
               ),
             ),
             FormSection(
-              title: 'ブラインド / スタック',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ChoiceChipGroup<(double, double, String)>(
-                    values: _blindPresets,
-                    selected: _blindPresets.firstWhere(
-                      (preset) =>
-                          preset.$1 == input.smallBlind &&
-                          preset.$2 == input.bigBlind,
-                      orElse: () => _blindPresets.first,
-                    ),
-                    labelBuilder: (value) => value.$3,
-                    onSelected: (value) => form.setBlinds(
-                      smallBlind: value.$1,
-                      bigBlind: value.$2,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.md),
-                  const Text(
-                    'Effective Stack',
-                    style: TextStyle(fontSize: 11, color: AppColors.textMuted),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  ChoiceChipGroup<double>(
-                    values: _stackPresets,
-                    selected: input.effectiveStackBb,
-                    labelBuilder: (value) => '${value.toInt()}BB',
-                    onSelected: form.setEffectiveStack,
-                  ),
-                ],
-              ),
-            ),
-            FormSection(
-              title: 'ポジション',
-              subtitle: 'テーブルの席をタップして選びます',
-              child: PositionPicker(
-                tableType: input.tableType,
-                heroPosition: input.heroPosition,
-                villainPosition: input.villainPosition,
-                onHeroChanged: form.setHeroPosition,
-                onVillainChanged: form.setVillainPosition,
+              title: '有効スタック',
+              subtitle: '分からなければ「分からない」で構いません',
+              child: ChoiceChipGroup<double?>(
+                values: _stackPresets,
+                selected: input.effectiveStackBb,
+                labelBuilder: (value) =>
+                    value == null ? '分からない' : '${value.toInt()}BB',
+                onSelected: form.setEffectiveStack,
               ),
             ),
             FormSection(
@@ -166,8 +133,24 @@ class HandReviewPage extends ConsumerWidget {
               ),
             ),
             FormSection(
-              title: '相手の特徴',
-              subtitle: '任意。実戦調整のコメントが変わります',
+              title: '相手のハンド（任意）',
+              subtitle: 'ショーダウンで見えたときだけ。入れると勝率まで出せます',
+              child: CardSlotRow(
+                cards: input.villainHand,
+                slotCount: 2,
+                onTap: () => _pickCards(
+                  context: context,
+                  ref: ref,
+                  title: '相手のハンドを選択',
+                  maxCount: 2,
+                  current: input.villainHand,
+                  onSelected: form.setVillainHand,
+                ),
+              ),
+            ),
+            FormSection(
+              title: '相手の特徴（任意）',
+              subtitle: '実戦調整のコメントが変わります',
               child: ChoiceChipGroup<VillainProfile>(
                 values: VillainProfile.values,
                 selected: input.villainProfile,
@@ -176,72 +159,37 @@ class HandReviewPage extends ConsumerWidget {
               ),
             ),
             FormSection(
-              title: 'Preflop',
-              subtitle: 'アクションを順にタップして追加します',
-              child: ActionBuilder(
-                actions: input.preflop,
-                choices: PokerActionType.preflopChoices,
-                heroLabel: 'あなた',
+              title: 'ハンドの流れ',
+              subtitle: '誰の番かは席から決まります。順に選ぶだけで進みます',
+              child: HandTimeline(
+                input: input,
                 villainLabel: input.villainPosition.label,
-                onAdd: (action) => form.addAction(Street.preflop, action),
-                onRemoveLast: () => form.removeLastAction(Street.preflop),
+                onUndo: form.canUndo ? form.undoLast : null,
               ),
             ),
-            _StreetSection(
-              title: 'Flop',
-              slotCount: 3,
-              cards: input.flop.cards,
-              actions: input.flop.actions,
-              villainLabel: input.villainPosition.label,
-              onPickCards: () => _pickCards(
+            _CurrentStep(
+              flow: flow,
+              input: input,
+              onPickBoard: (street, count) => _pickCards(
                 context: context,
                 ref: ref,
-                title: 'フロップの3枚を選択',
-                maxCount: 3,
-                current: input.flop.cards,
-                onSelected: (cards) => form.setStreetCards(Street.flop, cards),
+                title: '${street.label}のカードを選択',
+                maxCount: count,
+                current: input.boardOf(street),
+                onSelected: (cards) => form.setStreetCards(street, cards),
               ),
-              onAdd: (action) => form.addAction(Street.flop, action),
-              onRemoveLast: () => form.removeLastAction(Street.flop),
+              onAddAction: (action, sizeBb) => form.addAction(
+                flow.step is NeedAction
+                    ? (flow.step as NeedAction).prompt.street
+                    : Street.preflop,
+                HandAction(
+                  actor: flow.nextActorKey,
+                  action: action,
+                  sizeBb: sizeBb,
+                ),
+              ),
             ),
-            if (input.flop.cards.length == 3)
-              _StreetSection(
-                title: 'Turn',
-                slotCount: 1,
-                cards: input.turn.cards,
-                actions: input.turn.actions,
-                villainLabel: input.villainPosition.label,
-                onPickCards: () => _pickCards(
-                  context: context,
-                  ref: ref,
-                  title: 'ターンの1枚を選択',
-                  maxCount: 1,
-                  current: input.turn.cards,
-                  onSelected: (cards) =>
-                      form.setStreetCards(Street.turn, cards),
-                ),
-                onAdd: (action) => form.addAction(Street.turn, action),
-                onRemoveLast: () => form.removeLastAction(Street.turn),
-              ),
-            if (input.turn.cards.length == 1)
-              _StreetSection(
-                title: 'River',
-                slotCount: 1,
-                cards: input.river.cards,
-                actions: input.river.actions,
-                villainLabel: input.villainPosition.label,
-                onPickCards: () => _pickCards(
-                  context: context,
-                  ref: ref,
-                  title: 'リバーの1枚を選択',
-                  maxCount: 1,
-                  current: input.river.cards,
-                  onSelected: (cards) =>
-                      form.setStreetCards(Street.river, cards),
-                ),
-                onAdd: (action) => form.addAction(Street.river, action),
-                onRemoveLast: () => form.removeLastAction(Street.river),
-              ),
+            const SizedBox(height: AppSpacing.md),
             FormSection(
               title: '迷ったポイント（任意）',
               subtitle: '入力しなくてもレビューできます',
@@ -260,7 +208,7 @@ class HandReviewPage extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.sm),
             FilledButton.icon(
-              onPressed: input.isSubmittable && !submission.isLoading
+              onPressed: flow.isReady && !submission.isLoading
                   ? ref.read(handReviewControllerProvider.notifier).submit
                   : null,
               icon: submission.isLoading
@@ -270,16 +218,8 @@ class HandReviewPage extends ConsumerWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.auto_awesome_rounded),
-              label: Text(submission.isLoading ? '分析中…' : 'AIレビューを実行'),
+              label: Text(submission.isLoading ? '分析中…' : 'レビューを実行'),
             ),
-            if (!input.isSubmittable) ...[
-              const SizedBox(height: AppSpacing.sm),
-              const Text(
-                'ハンド2枚とプリフロップのアクションを入力すると実行できます。',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-              ),
-            ],
           ],
         ),
       ),
@@ -295,7 +235,7 @@ class HandReviewPage extends ConsumerWidget {
     required ValueChanged<List<PlayingCard>> onSelected,
   }) async {
     final input = ref.read(handReviewFormProvider);
-    final used = {...input.heroHand, ...input.board}..removeAll(current);
+    final used = {...input.usedCards}..removeAll(current);
     final selection = await showCardPicker(
       context,
       title: title,
@@ -371,52 +311,91 @@ class HandReviewPage extends ConsumerWidget {
   }
 }
 
-class _StreetSection extends StatelessWidget {
-  const _StreetSection({
-    required this.title,
-    required this.slotCount,
-    required this.cards,
-    required this.actions,
-    required this.villainLabel,
-    required this.onPickCards,
-    required this.onAdd,
-    required this.onRemoveLast,
+/// いま入力すべきものだけを出す。
+class _CurrentStep extends StatelessWidget {
+  const _CurrentStep({
+    required this.flow,
+    required this.input,
+    required this.onPickBoard,
+    required this.onAddAction,
   });
 
-  final String title;
-  final int slotCount;
-  final List<PlayingCard> cards;
-  final List<HandAction> actions;
-  final String villainLabel;
-  final VoidCallback onPickCards;
-  final ValueChanged<HandAction> onAdd;
-  final VoidCallback onRemoveLast;
+  final HandFlow flow;
+  final HandReviewInput input;
+  final void Function(Street street, int count) onPickBoard;
+  final void Function(PokerActionType action, double? sizeBb) onAddAction;
 
   @override
   Widget build(BuildContext context) {
-    return FormSection(
-      title: title,
-      subtitle: 'ボードを選ぶとアクションを入力できます',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CardSlotRow(
-            cards: cards,
-            slotCount: slotCount,
-            onTap: onPickCards,
-            cardWidth: 40,
-          ),
-          if (cards.length == slotCount) ...[
-            const Divider(height: AppSpacing.xl),
-            ActionBuilder(
-              actions: actions,
-              choices: PokerActionType.postflopChoices,
-              heroLabel: 'あなた',
-              villainLabel: villainLabel,
-              onAdd: onAdd,
-              onRemoveLast: onRemoveLast,
+    return switch (flow.step) {
+      NeedHeroHand() => const _Hint(
+        icon: Icons.style_outlined,
+        text: 'まず、あなたのハンド2枚を選んでください。',
+      ),
+      NeedBoard(:final street, :final count) => AppCard(
+        borderColor: AppColors.warning.withValues(alpha: 0.45),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${street.label}の$count枚を入れてください',
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: AppColors.warning,
+              ),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            CardSlotRow(
+              cards: input.boardOf(street),
+              slotCount: count,
+              onTap: () => onPickBoard(street, count),
             ),
           ],
+        ),
+      ),
+      NeedAction(:final prompt) => ActionPromptCard(
+        prompt: prompt,
+        onAdd: onAddAction,
+      ),
+      ReviewReady(:final endedByFold, :final foldedBy) => _Hint(
+        icon: Icons.check_circle_outline_rounded,
+        color: AppColors.accent,
+        text: endedByFold
+            ? '${foldedBy == Actor.hero ? 'あなた' : '相手'}がフォールドして'
+                  'ハンドが終わりました。このままレビューできます。'
+            : 'ショーダウンまで進みました。このままレビューできます。',
+      ),
+    };
+  }
+}
+
+class _Hint extends StatelessWidget {
+  const _Hint({
+    required this.icon,
+    required this.text,
+    this.color = AppColors.textSecondary,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      color: AppColors.surfaceHigh,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(fontSize: 13, height: 1.7, color: color),
+            ),
+          ),
         ],
       ),
     );

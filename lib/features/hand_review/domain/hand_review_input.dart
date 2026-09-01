@@ -1,6 +1,7 @@
 import '../../../shared/models/playing_card.dart';
 import '../../../shared/models/poker_action.dart';
 import '../../../shared/models/position.dart';
+import '../../../shared/models/street.dart';
 import '../../../shared/models/table_type.dart';
 
 /// キャッシュ / トーナメントの別。
@@ -100,12 +101,11 @@ class HandReviewInput {
   const HandReviewInput({
     this.gameType = GameType.cash,
     this.tableType = TableType.sixMax,
-    this.smallBlind = 0.5,
-    this.bigBlind = 1,
-    this.effectiveStackBb = 100,
+    this.effectiveStackBb,
     this.heroPosition = Position.btn,
     this.heroHand = const [],
     this.villainPosition = Position.bb,
+    this.villainHand = const [],
     this.villainProfile = VillainProfile.unknown,
     this.environment = PlayEnvironment.online,
     this.preflop = const [],
@@ -117,12 +117,19 @@ class HandReviewInput {
 
   final GameType gameType;
   final TableType tableType;
-  final double smallBlind;
-  final double bigBlind;
-  final double effectiveStackBb;
+
+  /// 有効スタック（BB 単位）。分からなければ null。
+  ///
+  /// ブラインドの実額は持たない。アプリの中はすべて BB 単位で動いており、
+  /// 「SB 50 / BB 100」のような実額はどこの計算にも使われないため。
+  final double? effectiveStackBb;
+
   final Position heroPosition;
   final List<PlayingCard> heroHand;
   final Position villainPosition;
+
+  /// 相手の 2 枚。ショーダウンで見えたときだけ入る。分からなければ空。
+  final List<PlayingCard> villainHand;
   final VillainProfile villainProfile;
   final PlayEnvironment environment;
   final List<HandAction> preflop;
@@ -133,11 +140,35 @@ class HandReviewInput {
   /// 「自分が迷ったポイント」。任意入力。
   final String userQuestion;
 
-  /// AI へ送れる最低限の入力が揃っているか。
-  bool get isSubmittable => heroHand.length == 2 && preflop.isNotEmpty;
-
   /// フロップ以降のボード全体。
   List<PlayingCard> get board => [...flop.cards, ...turn.cards, ...river.cards];
+
+  /// [street] でこのハンドに追加されるボードカード。
+  List<PlayingCard> boardOf(Street street) => switch (street) {
+    Street.preflop => const [],
+    Street.flop => flop.cards,
+    Street.turn => turn.cards,
+    Street.river => river.cards,
+  };
+
+  /// [street] のアクション。
+  List<HandAction> actionsOf(Street street) => switch (street) {
+    Street.preflop => preflop,
+    Street.flop => flop.actions,
+    Street.turn => turn.actions,
+    Street.river => river.actions,
+  };
+
+  /// [street] までに開いているボード全体。
+  List<PlayingCard> boardUpTo(Street street) => switch (street) {
+    Street.preflop => const [],
+    Street.flop => flop.cards,
+    Street.turn => [...flop.cards, ...turn.cards],
+    Street.river => [...flop.cards, ...turn.cards, ...river.cards],
+  };
+
+  /// 使用済みのカード。カードピッカーで重複を防ぐために使う。
+  Set<PlayingCard> get usedCards => {...heroHand, ...villainHand, ...board};
 
   /// 到達した最終ストリートの名前。
   String get lastStreetLabel {
@@ -150,12 +181,12 @@ class HandReviewInput {
   HandReviewInput copyWith({
     GameType? gameType,
     TableType? tableType,
-    double? smallBlind,
-    double? bigBlind,
     double? effectiveStackBb,
+    bool clearEffectiveStack = false,
     Position? heroPosition,
     List<PlayingCard>? heroHand,
     Position? villainPosition,
+    List<PlayingCard>? villainHand,
     VillainProfile? villainProfile,
     PlayEnvironment? environment,
     List<HandAction>? preflop,
@@ -167,12 +198,13 @@ class HandReviewInput {
     return HandReviewInput(
       gameType: gameType ?? this.gameType,
       tableType: tableType ?? this.tableType,
-      smallBlind: smallBlind ?? this.smallBlind,
-      bigBlind: bigBlind ?? this.bigBlind,
-      effectiveStackBb: effectiveStackBb ?? this.effectiveStackBb,
+      effectiveStackBb: clearEffectiveStack
+          ? null
+          : effectiveStackBb ?? this.effectiveStackBb,
       heroPosition: heroPosition ?? this.heroPosition,
       heroHand: heroHand ?? this.heroHand,
       villainPosition: villainPosition ?? this.villainPosition,
+      villainHand: villainHand ?? this.villainHand,
       villainProfile: villainProfile ?? this.villainProfile,
       environment: environment ?? this.environment,
       preflop: preflop ?? this.preflop,
@@ -199,15 +231,14 @@ class HandReviewInput {
         (type) => type.id == json['table_type'],
         orElse: () => TableType.sixMax,
       ),
-      smallBlind: (json['small_blind'] as num?)?.toDouble() ?? 0.5,
-      bigBlind: (json['big_blind'] as num?)?.toDouble() ?? 1,
-      effectiveStackBb: (json['effective_stack_bb'] as num?)?.toDouble() ?? 100,
+      effectiveStackBb: (json['effective_stack_bb'] as num?)?.toDouble(),
       heroPosition: _positionFromLabel(json['hero_position'], Position.btn),
       heroHand: _cardsFrom(json['hero_hand']),
       villainPosition: _positionFromLabel(
         json['villain_position'],
         Position.bb,
       ),
+      villainHand: _cardsFrom(json['villain_hand']),
       villainProfile: VillainProfile.fromId(
         json['villain_profile'] as String? ?? '',
       ),
@@ -241,12 +272,12 @@ class HandReviewInput {
   Map<String, dynamic> toJson() => {
     'game_type': gameType.id,
     'table_type': tableType.id,
-    'small_blind': smallBlind,
-    'big_blind': bigBlind,
-    'effective_stack_bb': effectiveStackBb,
+    if (effectiveStackBb != null) 'effective_stack_bb': effectiveStackBb,
     'hero_position': heroPosition.label,
     'hero_hand': PlayingCard.encodeAll(heroHand),
     'villain_position': villainPosition.label,
+    if (villainHand.isNotEmpty)
+      'villain_hand': PlayingCard.encodeAll(villainHand),
     'villain_profile': villainProfile.id,
     'environment': environment.id,
     'preflop': [for (final action in preflop) action.toJson()],
