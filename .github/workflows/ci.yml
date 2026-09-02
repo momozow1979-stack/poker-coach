@@ -28,3 +28,21 @@ jobs:
 
       - name: Test
         run: flutter test
+
+  solver-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: solver
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install solver package
+        run: pip install -e ".[dev]"
+
+      - name: Run solver tests
+        run: pytest -v
