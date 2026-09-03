@@ -36,6 +36,23 @@ def test_combo_counts_match_pair_combinatorics() -> None:
     assert len(game.villain_combos) == 6
 
 
+def test_wider_range_combo_counts_match_measured_values() -> None:
+    """Doesn't build/walk the tree (see BENCHMARKS.md — these ranges are far
+    too large to train or well-formedness-check in CI) — just pins the
+    combo expansion itself, the cheap part, against the counts actually
+    measured when scaling `PostflopSubgame` past the `AA` vs `KK` toy case.
+    """
+    board = _flop_board()
+    for hero_r, villain_r, expected_hero, expected_villain in [
+        ("QQ+", "TT-JJ", 18, 12),
+        ("TT+", "22-99", 30, 39),
+        ("22+", "22+", 69, 69),
+    ]:
+        game = PostflopSubgame(board, hero_range_notation=hero_r, villain_range_notation=villain_r)
+        assert len(game.hero_combos) == expected_hero, hero_r
+        assert len(game.villain_combos) == expected_villain, villain_r
+
+
 def test_showdown_uses_the_full_five_card_board() -> None:
     # AA vs KK on a board that never pairs either: aces stay ahead through
     # the river regardless of which two extra cards land, so hero's equity
