@@ -10,6 +10,7 @@ deck, and rank a 5-card hand.
 from __future__ import annotations
 
 from collections import Counter
+from itertools import combinations
 
 RANK_SYMBOLS = "23456789TJQKA"
 SUIT_SYMBOLS = "shdc"
@@ -85,3 +86,14 @@ def evaluate_5card(cards: list[int]) -> tuple[int, ...]:
     if count_pattern == (2, 1, 1, 1):
         return (ONE_PAIR, *ordered_ranks)
     return (HIGH_CARD, *ranks)
+
+
+def evaluate_best_hand(cards: list[int]) -> tuple[int, ...]:
+    """Best 5-card hand out of 5, 6, or 7 cards (hole cards + a partial or
+    complete board). Degenerates to `evaluate_5card` when given exactly 5.
+    """
+    if len(cards) == 5:
+        return evaluate_5card(cards)
+    if len(cards) not in (6, 7):
+        raise ValueError(f"evaluate_best_hand expects 5-7 cards, got {len(cards)}")
+    return max(evaluate_5card(list(five)) for five in combinations(cards, 5))

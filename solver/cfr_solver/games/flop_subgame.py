@@ -1,4 +1,5 @@
-"""A single real heads-up postflop betting round on a fixed flop — Phase 2's
+"""A single real heads-up postflop betting round on a fixed board (3-5 cards:
+flop, turn, or a complete runout) — Phase 2's
 first non-toy benchmark: real 52-card hand evaluation and range data
 imported from the app's own range notation, instead of a 3-6 card toy deck.
 
@@ -31,7 +32,7 @@ logic that would need its own proof.
 from __future__ import annotations
 
 from cfr_solver.games.game import Action, Game, History
-from cfr_solver.poker.cards import evaluate_5card
+from cfr_solver.poker.cards import evaluate_best_hand
 from cfr_solver.poker.combos import Combo, range_combos
 from cfr_solver.poker.range_notation import expand as expand_range
 
@@ -82,8 +83,8 @@ class FlopSubgame(Game):
         bet_size: float = 2.5,
         max_wagers_per_round: int = 2,
     ) -> None:
-        if len(board) != 3:
-            raise ValueError("FlopSubgame expects exactly a 3-card flop board")
+        if len(board) not in (3, 4, 5):
+            raise ValueError("FlopSubgame expects a fixed board of 3-5 cards (flop/turn/river)")
         self.board: tuple[int, ...] = tuple(board)
         blocked = set(board)
         self.hero_combos: list[Combo] = range_combos(expand_range(hero_range_notation), blocked)
@@ -166,8 +167,8 @@ class FlopSubgame(Game):
         cached = self._equity_cache.get(key)
         if cached is not None:
             return cached
-        hero_rank = evaluate_5card(list(hero_combo) + list(self.board))
-        villain_rank = evaluate_5card(list(villain_combo) + list(self.board))
+        hero_rank = evaluate_best_hand(list(hero_combo) + list(self.board))
+        villain_rank = evaluate_best_hand(list(villain_combo) + list(self.board))
         if hero_rank > villain_rank:
             equity = 1.0
         elif hero_rank < villain_rank:
