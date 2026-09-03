@@ -15,10 +15,27 @@ available via `variant="cfr"` for comparison — regrets are allowed to go
 negative in the accumulator (only floored at read-time via regret matching),
 and the strategy sum is weighted uniformly by the acting player's own reach
 probability.
+
+`train()` walks the *entire* tree every iteration — chance nodes included,
+enumerating every outcome. That's fine for Kuhn/Leduc/a single betting round,
+but `BENCHMARKS.md`'s `PostflopSubgame` measurement shows exactly where it
+breaks: a turn or river chance node alone has ~44/~43 outcomes, so a
+connected flop→turn→river tree is dominated by chance-node branching, not by
+the (2-3 action) betting decisions. `train_external_sampling()` is the fix
+for that specific bottleneck: External-Sampling MCCFR (Lanctot et al., 2009,
+"Monte Carlo Sampling for Regret Minimization in Extensive Games") samples
+chance outcomes and the *non-traversing* player's actions (one draw each,
+instead of enumerating every branch) while still exploring the traversing
+player's own actions exhaustively (so its regret updates stay exact, not
+sampled). It is proven to converge to the same equilibrium as full CFR, just
+with cheaper, noisier iterations — see `docs/ai-prompts.md`-style principle
+1 applied to this module: don't claim it converges faster in wall-clock time
+without measuring it (`BENCHMARKS.md` records the actual measurement).
 """
 
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 
 from cfr_solver.games.game import Action, Game, History
@@ -65,13 +82,17 @@ class _Node:
 class CFRSolver:
     """Trains a `Game` via CFR or CFR+ self-play and reports the average strategy."""
 
-    def __init__(self, game: Game, variant: str = "cfr_plus") -> None:
+    def __init__(
+        self, game: Game, variant: str = "cfr_plus", *, random_seed: int | None = None
+    ) -> None:
         if variant not in ("cfr", "cfr_plus"):
             raise ValueError(f"unknown variant {variant!r}, expected 'cfr' or 'cfr_plus'")
         self.game = game
         self.variant = variant
         self._nodes: dict[str, _Node] = {}
         self._iterations_trained = 0
+        self._sampled_iterations_trained = 0
+        self._rng = random.Random(random_seed)
 
     def _get_node(self, key: str, actions: list[Action]) -> _Node:
         node = self._nodes.get(key)
@@ -144,6 +165,80 @@ class CFRSolver:
             node.strategy_sum[action] += weight * strategy[action]
 
         return node_util
+
+    def train_external_sampling(self, iterations: int) -> None:
+        """External-Sampling MCCFR — one traversal per player per iteration.
+
+        Shares the same `_Node` accumulators (and therefore the same
+        `average_strategy()`) as `train()`, so the two can even be mixed on
+        the same solver instance, though that isn't a configuration this
+        package currently tests.
+        """
+        num_players = self.game.num_players
+        for i in range(1, iterations + 1):
+            iteration = self._sampled_iterations_trained + i
+            for traverser in range(num_players):
+                self._external_sampling(self.game.new_initial_history(), traverser, iteration)
+        self._sampled_iterations_trained += iterations
+
+    def _external_sampling(self, history: History, traverser: int, iteration: int) -> list[float]:
+        game = self.game
+
+        if game.is_terminal(history):
+            return list(game.returns(history))
+
+        if game.is_chance_node(history):
+            outcomes = game.chance_outcomes(history)
+            actions = [a for a, _p in outcomes]
+            weights = [p for _a, p in outcomes]
+            sampled = self._rng.choices(actions, weights=weights, k=1)[0]
+            return self._external_sampling(game.next_history(history, sampled), traverser, iteration)
+
+        num_players = game.num_players
+        player = game.current_player(history)
+        actions = game.legal_actions(history)
+        key = game.information_set_key(history, player)
+        node = self._get_node(key, actions)
+        strategy = node.current_strategy()
+
+        if player == traverser:
+            # Traverser's own decision: explored exhaustively, exactly like
+            # full CFR, so its regret update is exact — only the OPPONENT
+            # and CHANCE branches below are sampled. No counterfactual-reach
+            # weighting is needed here (unlike `_cfr`): the opponent/chance
+            # sampling already makes this an unbiased estimator of the true
+            # counterfactual value on its own (Lanctot et al., 2009).
+            action_utils: dict[Action, list[float]] = {}
+            node_util = [0.0] * num_players
+            for action in actions:
+                util = self._external_sampling(
+                    game.next_history(history, action), traverser, iteration
+                )
+                action_utils[action] = util
+                for p in range(num_players):
+                    node_util[p] += strategy[action] * util[p]
+
+            for action in actions:
+                regret = action_utils[action][traverser] - node_util[traverser]
+                updated = node.regret_sum[action] + regret
+                if self.variant == "cfr_plus":
+                    updated = max(0.0, updated)
+                node.regret_sum[action] = updated
+
+            return node_util
+
+        # A non-traverser's decision: record the full mixed strategy into
+        # strategy_sum (as usual — this is what makes the average strategy
+        # converge for THIS player once it's their turn to be the
+        # traverser), but only recurse into one action sampled from it.
+        weight = iteration if self.variant == "cfr_plus" else 1.0
+        for action in actions:
+            node.strategy_sum[action] += weight * strategy[action]
+
+        sampled_action = self._rng.choices(actions, weights=[strategy[a] for a in actions], k=1)[0]
+        return self._external_sampling(
+            game.next_history(history, sampled_action), traverser, iteration
+        )
 
     def average_strategy(self) -> dict[str, dict[Action, float]]:
         """The (near-)equilibrium strategy: `{information_set_key: {action: probability}}`."""
