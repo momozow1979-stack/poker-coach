@@ -44,7 +44,7 @@ class ReviewHomePage extends ConsumerWidget {
               child: _ModeCard(
                 icon: Icons.sports_esports_rounded,
                 accent: AppColors.accent,
-                onAccent: const Color(0xFF04231A),
+                onAccent: AppColors.onAccent,
                 badge: 'おすすめ',
                 title: '意思決定トレーナー',
                 description:

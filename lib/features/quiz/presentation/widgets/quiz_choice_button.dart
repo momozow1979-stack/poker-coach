@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
@@ -45,7 +46,7 @@ class QuizChoiceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    final content = Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.md),
       child: Material(
         color: _background,
@@ -53,7 +54,9 @@ class QuizChoiceButton extends StatelessWidget {
         child: InkWell(
           onTap: isRevealed ? null : onTap,
           borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 2),
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
             constraints: const BoxConstraints(minHeight: 56),
             padding: const EdgeInsets.symmetric(
               horizontal: AppSpacing.lg,
@@ -92,5 +95,15 @@ class QuizChoiceButton extends StatelessWidget {
         ),
       ),
     );
+
+    // 正解の選択肢が表示された瞬間だけ、軽くポップさせて目を引く。
+    if (isRevealed && isCorrectChoice) {
+      return content
+          .animate()
+          .scaleXY(begin: 1, end: 1.03, duration: 180.ms, curve: Curves.easeOut)
+          .then()
+          .scaleXY(begin: 1.03, end: 1, duration: 180.ms, curve: Curves.easeIn);
+    }
+    return content;
   }
 }

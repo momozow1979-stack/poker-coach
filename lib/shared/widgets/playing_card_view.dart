@@ -36,11 +36,16 @@ class PlayingCardView extends StatelessWidget {
           decoration: BoxDecoration(
             color: currentCard == null ? AppColors.surfaceHigh : Colors.white,
             borderRadius: BorderRadius.circular(AppSpacing.radiusSm * 0.7),
-            border: Border.all(
-              color: currentCard == null
-                  ? AppColors.border
-                  : Colors.white.withValues(alpha: 0.6),
-            ),
+            border: Border.all(color: AppColors.border),
+            boxShadow: currentCard == null
+                ? null
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           child: currentCard == null
               ? const Icon(Icons.add, size: 18, color: AppColors.textMuted)

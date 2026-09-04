@@ -11,10 +11,19 @@ import '../domain/hand_flow.dart';
 import '../domain/hand_review_input.dart';
 import '../domain/hand_review_record.dart';
 import '../domain/hand_review_repository.dart';
+import '../domain/solved_spot_repository.dart';
+import '../infrastructure/asset_solved_spot_repository.dart';
 import '../infrastructure/mock_hand_review_repository.dart';
 
+final solvedSpotRepositoryProvider = Provider<SolvedSpotRepository>(
+  (ref) => AssetSolvedSpotRepository(),
+);
+
 final handReviewRepositoryProvider = Provider<HandReviewRepository>(
-  (ref) => MockHandReviewRepository(ref.watch(rangeRepositoryProvider)),
+  (ref) => MockHandReviewRepository(
+    ref.watch(rangeRepositoryProvider),
+    ref.watch(solvedSpotRepositoryProvider),
+  ),
 );
 
 /// ハンドレビューの入力フォーム。すべてタップ操作で更新できるようにする。

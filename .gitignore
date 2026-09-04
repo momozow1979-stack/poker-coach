@@ -51,5 +51,9 @@ app.*.map.json
 solver/.venv/
 solver/**/__pycache__/
 solver/**/*.egg-info/
+solver/solved_spots.json
+
+# External solvers cloned locally for cross-validation only (e.g. TexasSolver,
+# AGPL-licensed) — never vendored into this repo, and never distributed.
 solver/vendor/
 
