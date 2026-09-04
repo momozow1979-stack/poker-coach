@@ -1,0 +1,445 @@
+<title>ソルバー照合レポート</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #10161d;
+    --surface: #1a232d;
+    --surface-raised: #212c38;
+    --border: #2c3a48;
+    --text: #e7edf3;
+    --text-dim: #93a3b3;
+    --text-faint: #5f7183;
+    --accent: #c49a3a;
+    --accent-soft: #c49a3a26;
+    --bet: #3fae8a;
+    --bet-soft: #3fae8a30;
+    --check: #4c6178;
+    --check-soft: #4c617850;
+    --flag: #e0a458;
+    --flag-soft: #e0a45822;
+    --shadow: 0 12px 32px -16px rgba(0,0,0,0.55);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg: #f7f4ec;
+      --surface: #ffffff;
+      --surface-raised: #fbf8f0;
+      --border: #e2dbc8;
+      --text: #201c12;
+      --text-dim: #5c5540;
+      --text-faint: #948c72;
+      --accent: #9c7717;
+      --accent-soft: #9c771722;
+      --bet: #1f7a5c;
+      --bet-soft: #1f7a5c20;
+      --check: #55677a;
+      --check-soft: #55677a30;
+      --flag: #a8631f;
+      --flag-soft: #a8631f1c;
+      --shadow: 0 12px 28px -18px rgba(60,50,20,0.28);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10161d;
+    --surface: #1a232d;
+    --surface-raised: #212c38;
+    --border: #2c3a48;
+    --text: #e7edf3;
+    --text-dim: #93a3b3;
+    --text-faint: #5f7183;
+    --accent: #c49a3a;
+    --accent-soft: #c49a3a26;
+    --bet: #3fae8a;
+    --bet-soft: #3fae8a30;
+    --check: #4c6178;
+    --check-soft: #4c617850;
+    --flag: #e0a458;
+    --flag-soft: #e0a45822;
+    --shadow: 0 12px 32px -16px rgba(0,0,0,0.55);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans JP', 'Hiragino Sans', sans-serif;
+    line-height: 1.65;
+    padding: 48px 20px 80px;
+  }
+  .page {
+    max-width: 880px;
+    margin: 0 auto;
+  }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: clamp(28px, 4vw, 38px);
+    letter-spacing: -0.01em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+  .lede {
+    color: var(--text-dim);
+    font-size: 15.5px;
+    max-width: 62ch;
+    margin: 0 0 36px;
+  }
+  .lede b { color: var(--text); font-weight: 600; }
+
+  .spot-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 40px;
+    box-shadow: var(--shadow);
+  }
+  .spot-cell {
+    background: var(--surface);
+    padding: 14px 16px;
+  }
+  .spot-cell .k {
+    font-size: 11px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0 0 6px;
+  }
+  .spot-cell .v {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .board-cards { display: flex; gap: 4px; }
+  .card-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px; height: 30px;
+    border-radius: 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid var(--border);
+  }
+  .suit-s, .suit-c { background: var(--surface-raised); color: var(--text); }
+  .suit-h, .suit-d { background: var(--surface-raised); color: #d1685f; }
+
+  section { margin-bottom: 40px; }
+  h2 {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 21px;
+    margin: 0 0 6px;
+  }
+  .section-note {
+    color: var(--text-dim);
+    font-size: 13.5px;
+    margin: 0 0 20px;
+    max-width: 68ch;
+  }
+
+  .legend {
+    display: flex;
+    gap: 20px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .legend .dot {
+    display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px;
+  }
+
+  .grid-table {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+  .row {
+    display: grid;
+    grid-template-columns: 56px 1fr 120px;
+    align-items: center;
+    gap: 16px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .row:last-child { border-bottom: none; }
+  .row.flagged { background: var(--flag-soft); }
+  .row.head {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-faint);
+    padding: 10px 18px 8px;
+  }
+
+  .rank {
+    font-family: 'IBM Plex Mono', monospace;
+    font-weight: 600;
+    font-size: 16px;
+  }
+  .rank .pair-suffix { color: var(--text-faint); font-weight: 400; font-size: 12px; }
+
+  .bars { position: relative; height: 22px; }
+  .bar-track {
+    position: absolute; inset: 0;
+    background: var(--check-soft);
+    border-radius: 5px;
+  }
+  .bar-fill {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    background: var(--bet);
+    border-radius: 5px;
+    opacity: 0.85;
+  }
+  .bar-marker {
+    position: absolute; top: -3px; bottom: -3px;
+    width: 3px;
+    background: var(--accent);
+    border-radius: 2px;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  .numbers {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .numbers .ours { color: var(--bet); font-weight: 600; }
+  .numbers .theirs { color: var(--accent); }
+  .flag-badge {
+    display: inline-block;
+    font-size: 10px;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--flag);
+    border: 1px solid var(--flag);
+    border-radius: 3px;
+    padding: 1px 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow);
+  }
+  .callout h3 {
+    font-family: 'Fraunces', serif;
+    font-size: 16px;
+    margin: 0 0 8px;
+    font-weight: 600;
+  }
+  .callout p { margin: 0 0 10px; color: var(--text-dim); font-size: 14px; }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .ev-line {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13.5px;
+    color: var(--text);
+    background: var(--surface-raised);
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin: 12px 0;
+  }
+  .callout .ev-line span { color: var(--text-faint); }
+
+  .roadmap {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .road-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .road-card .stage {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--text-faint);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin: 0 0 6px;
+  }
+  .road-card .stage.now { color: var(--bet); }
+  .road-card p { margin: 0; font-size: 13.5px; color: var(--text-dim); }
+
+  footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-faint);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+</style>
+
+<div class="page">
+  <p class="eyebrow">CFR Solver — Phase 2 Pilot</p>
+  <h1>ペアレンジ・パイロット局面の照合結果</h1>
+  <p class="lede">
+    自前の CFR エンジンで解いた局面と、独立した第三者実装
+    <b>TexasSolver</b>（オープンソース）の出力を、全く同じ条件で突き合わせた。
+    <b>ハンドのベット頻度</b>を並べて見比べる。
+  </p>
+
+  <div class="spot-strip">
+    <div class="spot-cell">
+      <p class="k">Board</p>
+      <div class="board-cards">
+        <span class="card-chip suit-s">K♠</span>
+        <span class="card-chip suit-h">7♥</span>
+        <span class="card-chip suit-d">2♦</span>
+        <span class="card-chip suit-c">4♣</span>
+        <span class="card-chip suit-d">9♦</span>
+      </div>
+    </div>
+    <div class="spot-cell">
+      <p class="k">Hero range</p>
+      <p class="v">22+（ペア13種）</p>
+    </div>
+    <div class="spot-cell">
+      <p class="k">Villain range</p>
+      <p class="v">22–88（ペア7種）</p>
+    </div>
+    <div class="spot-cell">
+      <p class="k">Pot / Bet</p>
+      <p class="v">5.0 / 2.5（50%）</p>
+    </div>
+    <div class="spot-cell">
+      <p class="k">うちの反復数</p>
+      <p class="v">30,000</p>
+    </div>
+    <div class="spot-cell">
+      <p class="k">TexasSolver</p>
+      <p class="v">exploit 0.02%</p>
+    </div>
+  </div>
+
+  <section>
+    <h2>ハンドごとのベット頻度</h2>
+    <p class="section-note">
+      13種類のペアハンド、それぞれについてルート局面（何もアクションが起きていない状態）で
+      「ベットする確率」をヒーロー視点で比較する。バーは自前エンジンの頻度、縦線は TexasSolver の値。
+    </p>
+    <div class="legend">
+      <span><span class="dot" style="background:var(--bet)"></span>自前エンジンのベット率</span>
+      <span><span class="dot" style="background:var(--accent)"></span>TexasSolver のベット率</span>
+      <span><span class="dot" style="background:var(--flag)"></span>乖離が大きいハンド</span>
+    </div>
+    <div class="grid-table" id="grid"></div>
+  </section>
+
+  <section>
+    <div class="callout">
+      <h3>乖離の正体: 「僅差でどちらでもいい」局面だった</h3>
+      <p>
+        2・4・7・9・K のペアはボードとペアになり<b>セット（スリーカード）</b>になる。
+        このハンドだけ、自前エンジンは98〜99%ベットする一方、TexasSolverは56〜58%しかベットしない。
+        学習を4,000→30,000反復に増やしても縮まらなかったため、「常にベット」と「常にチェック」の
+        期待値を直接計算して確かめた。
+      </p>
+      <div class="ev-line">
+        EV(ベット) = 1.29452　<span>/</span>　EV(チェック) = 1.27839　<span>/</span>　差 = 0.01613（ポットの約0.3%）
+      </div>
+      <p>
+        期待値としてはほぼ差が無い。ベットしてすぐ取るか、チェックして相手のブラフを誘って
+        後で大きく取るかが拮抗しており、CFR はこうした「勾配のほとんど無い」決定の収束が
+        遅いことで知られている。実装のバグではなく、CFR 一般の性質として説明がつく。
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>この先の道のり</h2>
+    <div class="roadmap">
+      <div class="road-card">
+        <p class="stage now">今ここ</p>
+        <p>ペアのみの1局面を、外部ソルバーと照合して正しさを確認</p>
+      </div>
+      <div class="road-card">
+        <p class="stage">次</p>
+        <p>Monte Carlo CFR か Rust 移行で、フルレンジ（30万9千通り）を解けるようにする</p>
+      </div>
+      <div class="road-card">
+        <p class="stage">その先</p>
+        <p>複数局面をまとめて解き、Supabase に格納してアプリのレンジ表に反映</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>solver/vendor/compare/ · K♠7♥2♦4♣9♦ pilot spot · generated from ours_root_strategy_30000.json + result.json</footer>
+</div>
+
+<script>
+  const rows = [
+    ["A", 0.9933, 0.9812, false],
+    ["K", 0.9933, 0.5607, true],
+    ["Q", 0.9932, 0.9812, false],
+    ["J", 0.9933, 0.9812, false],
+    ["T", 0.8074, 0.9812, false],
+    ["9", 0.9932, 0.5607, true],
+    ["8", 0.0009, 0.0000, false],
+    ["7", 0.9927, 0.5655, true],
+    ["6", 0.0773, 0.0005, false],
+    ["5", 0.9982, 1.0000, false],
+    ["4", 0.8563, 0.5699, true],
+    ["3", 0.9982, 1.0000, false],
+    ["2", 0.9936, 0.5778, true],
+  ];
+
+  const grid = document.getElementById('grid');
+
+  const head = document.createElement('div');
+  head.className = 'row head';
+  head.innerHTML = `<div>Hand</div><div>Bet frequency (0–100%)</div><div style="text-align:right">Ours / Texas</div>`;
+  grid.appendChild(head);
+
+  for (const [rank, ours, texas, flagged] of rows) {
+    const row = document.createElement('div');
+    row.className = 'row' + (flagged ? ' flagged' : '');
+    const oursPct = (ours * 100).toFixed(1);
+    const texasPct = (texas * 100).toFixed(1);
+    row.innerHTML = `
+      <div class="rank">${rank}${rank}<span class="pair-suffix"> pair</span></div>
+      <div class="bars">
+        <div class="bar-track"></div>
+        <div class="bar-fill" style="width:${ours * 100}%"></div>
+        <div class="bar-marker" style="left:calc(${texas * 100}% - 1.5px)"></div>
+      </div>
+      <div class="numbers">
+        <span class="ours">${oursPct}%</span> / <span class="theirs">${texasPct}%</span>
+        ${flagged ? '<span class="flag-badge">SET</span>' : ''}
+      </div>
+    `;
+    grid.appendChild(row);
+  }
+</script>

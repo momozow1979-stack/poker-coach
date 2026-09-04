@@ -404,7 +404,10 @@ void main() {
         final question = entry.quiz.question;
         if (!definiteCompletion.hasMatch(question)) continue;
 
-        final allCards = [...entry.situation.heroCards, ...entry.situation.board];
+        final allCards = [
+          ...entry.situation.heroCards,
+          ...entry.situation.board,
+        ];
         if (allCards.length < 5) continue;
         final actual = HandStrength.best(allCards).category;
 

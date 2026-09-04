@@ -1,0 +1,16 @@
+set_pot 5.0
+set_effective_stack 100
+set_board Ks,7h,2d,4c,9d
+set_range_oop TT,QQ,KK,JJ,AA,99,88,77,66,55,44,33,22
+set_range_ip 88,77,66,55,44,33,22
+set_bet_sizes oop,river,bet,50
+set_bet_sizes ip,river,bet,50
+set_accuracy 0.01
+set_max_iteration 1000
+set_use_isomorphism 0
+set_print_interval 200
+set_thread_num 4
+build_tree
+start_solve
+set_dump_rounds 1
+dump_result /home/user/poker-coach/solver/vendor/compare/result.json
