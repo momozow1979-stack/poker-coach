@@ -11,20 +11,26 @@ import '../domain/hand_read.dart';
 import '../domain/hand_review_input.dart';
 import '../domain/hand_review_repository.dart';
 import '../domain/hand_review_result.dart';
+import '../domain/solved_spot_repository.dart';
 
 /// バックエンド接続前に使うローカル解析。
 ///
-/// ここで出す数値は、すべてカードと入力額から確定するものだけに限る。
-/// ポットオッズ・必要勝率・アウツの枚数・（相手の手札が分かる場合の）勝率は
-/// 計算で出せるので書く。ソルバーの頻度や EV は生成しない。
+/// ここで出す数値は、すべてカードと入力額から確定するもの、または
+/// [SolvedSpotRepository] にある実際に学習済みのスポットの実測値だけに限る。
+/// それ以外のソルバーの頻度や EV は生成しない。
 class MockHandReviewRepository implements HandReviewRepository {
-  const MockHandReviewRepository(this._rangeRepository);
+  const MockHandReviewRepository(
+    this._rangeRepository,
+    this._solvedSpotRepository,
+  );
 
   final RangeRepository _rangeRepository;
+  final SolvedSpotRepository _solvedSpotRepository;
 
   @override
   Future<HandReviewResult> review(HandReviewInput input) async {
     await Future<void>.delayed(const Duration(milliseconds: 700));
+    await _solvedSpotRepository.ensureLoaded();
     return analyze(input);
   }
 
@@ -474,6 +480,15 @@ class MockHandReviewRepository implements HandReviewRepository {
       return 'プリフロップは、ポジションごとに決まったレンジからどれだけ外れていないかがすべてです。'
           'このアプリでは厳密な頻度は扱わず、覚えやすい目安だけを示します。';
     }
+
+    if (input.heroHand.length == 2 && input.flop.cards.length == 3) {
+      final matches = _solvedSpotRepository.firstFlopDecisionMatches(
+        heroHand: input.heroHand,
+        flopBoard: input.flop.cards,
+      );
+      if (matches.isNotEmpty) return _gtoViewFromSolvedSpots(matches);
+    }
+
     final buffer = StringBuffer()
       ..write('このボードは${texture.wetness.label}に分類されます。')
       ..write('レンジ全体で見たときにどちら側が強いかを先に判断し、')
@@ -486,6 +501,31 @@ class MockHandReviewRepository implements HandReviewRepository {
     buffer.write('正確なソルバーの頻度は入力から求まらないので、ここでは数値を示しません。');
     return buffer.toString();
   }
+
+  /// 実際に CFR ソルバーで解いたスポットが見つかった場合の GTO 解説。
+  ///
+  /// 相手のレンジは「学習時に仮定したレンジ」であることを毎回明示する
+  /// （実際の相手がそのレンジ通りとは限らないため）。複数のスポットが
+  /// 一致した場合は、それぞれの仮定つきで全件を示す。
+  String _gtoViewFromSolvedSpots(List<FlopDecisionMatch> matches) {
+    final buffer = StringBuffer();
+    for (final match in matches) {
+      final checkPct = _percentOf(match.strategy, 'x');
+      final betPct = _percentOf(match.strategy, 'b');
+      buffer.write(
+        '相手のレンジを ${match.villainRangeNotation} と仮定すると、'
+        'このフロップでの最初の判断はチェック$checkPct%・ベット$betPct%という頻度です。'
+        'CFR+で${match.iterationsTrained}回自己対戦させた実測値で、'
+        '学習後に測定した厳密exploitability（0に近いほど正確）は'
+        '${match.measuredExactExploitability}でした。',
+      );
+    }
+    buffer.write('実際の相手のレンジがこの仮定と異なれば、正しい頻度も変わります。');
+    return buffer.toString();
+  }
+
+  static int _percentOf(Map<String, double> strategy, String action) =>
+      ((strategy[action] ?? 0) * 100).round();
 
   String _practicalAdjustment(HandReviewInput input) {
     return switch (input.villainProfile) {

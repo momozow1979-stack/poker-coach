@@ -77,7 +77,7 @@ class _Chip extends StatelessWidget {
                 fontSize: 14,
                 fontWeight: FontWeight.w700,
                 color: isSelected
-                    ? const Color(0xFF04231A)
+                    ? AppColors.onAccent
                     : AppColors.textSecondary,
               ),
             ),
