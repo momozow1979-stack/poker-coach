@@ -21,7 +21,11 @@ void main() {
         effectiveStackBb: 100,
         heroHand: PlayingCard.parseAll(heroHand),
         preflop: [
-          HandAction(actor: HandAction.heroActor, action: PokerActionType.raise, sizeBb: 2.5),
+          HandAction(
+            actor: HandAction.heroActor,
+            action: PokerActionType.raise,
+            sizeBb: 2.5,
+          ),
           HandAction(actor: 'BB', action: PokerActionType.call),
         ],
         flop: StreetInput(cards: PlayingCard.parseAll(board)),
@@ -80,7 +84,9 @@ void main() {
     });
 
     test('ヒーローの手が違えば一致せず、安全策のままになる', () {
-      final result = repository.analyze(inputOn(board7h2d3s, const ['Kh', 'Kc']));
+      final result = repository.analyze(
+        inputOn(board7h2d3s, const ['Kh', 'Kc']),
+      );
       expect(result.gtoView, contains('正確なソルバーの頻度は入力から求まらない'));
     });
   });

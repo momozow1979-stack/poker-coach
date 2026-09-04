@@ -65,7 +65,9 @@ class ProfilePage extends ConsumerWidget {
                     decoration: BoxDecoration(
                       gradient: AppColors.rewardGradient,
                       shape: BoxShape.circle,
-                      boxShadow: AppColors.cardGlow(color: AppColors.rewardDark),
+                      boxShadow: AppColors.cardGlow(
+                        color: AppColors.rewardDark,
+                      ),
                     ),
                     child: Text(
                       'Lv.${stats.level}',

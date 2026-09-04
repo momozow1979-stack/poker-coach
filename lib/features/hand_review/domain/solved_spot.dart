@@ -47,8 +47,8 @@ class SolvedSpot {
     heroRangeNotation: json['hero_range_notation'] as String,
     villainRangeNotation: json['villain_range_notation'] as String,
     iterationsTrained: json['iterations_trained'] as int,
-    measuredExactExploitability:
-        (json['measured_exact_exploitability'] as num).toDouble(),
+    measuredExactExploitability: (json['measured_exact_exploitability'] as num)
+        .toDouble(),
     entries: [
       for (final entry in json['entries'] as List)
         SolvedSpotEntry.fromJson(entry as Map<String, dynamic>),

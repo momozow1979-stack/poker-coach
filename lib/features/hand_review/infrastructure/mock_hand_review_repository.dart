@@ -19,7 +19,10 @@ import '../domain/solved_spot_repository.dart';
 /// [SolvedSpotRepository] にある実際に学習済みのスポットの実測値だけに限る。
 /// それ以外のソルバーの頻度や EV は生成しない。
 class MockHandReviewRepository implements HandReviewRepository {
-  const MockHandReviewRepository(this._rangeRepository, this._solvedSpotRepository);
+  const MockHandReviewRepository(
+    this._rangeRepository,
+    this._solvedSpotRepository,
+  );
 
   final RangeRepository _rangeRepository;
   final SolvedSpotRepository _solvedSpotRepository;
