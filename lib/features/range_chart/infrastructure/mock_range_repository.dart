@@ -21,18 +21,45 @@ class MockRangeRepository implements RangeRepository {
   ];
 
   @override
-  RangeChart? chartFor(TableType tableType, Position position) {
-    final definition = RangeDefinitions.find(tableType, position);
+  RangeChart? chartFor(
+    TableType tableType,
+    Position position, {
+    RangeSituation? situation,
+  }) {
+    final definition = RangeDefinitions.find(tableType, position, situation);
     if (definition == null) return null;
+    return _chartFrom(definition);
+  }
 
+  @override
+  RangeChart? chartById(String spotId) {
+    for (final definition in RangeDefinitions.all) {
+      if (definition.spot.id == spotId) {
+        return _chartFrom(definition);
+      }
+    }
+    return null;
+  }
+
+  RangeChart _chartFrom(RangeDefinition definition) {
     final actionByHand = <String, RangeAction>{};
     for (final entry in definition.notationByAction.entries) {
       for (final hand in RangeNotation.expand(entry.value)) {
         actionByHand[hand] = entry.key;
       }
     }
-    for (final hand in RangeNotation.expand(definition.mixedNotation)) {
-      actionByHand[hand] = RangeAction.mixed;
+
+    final blendByHand = <String, RangeActionBlend>{};
+    for (final group in definition.mixedGroups) {
+      final blend = RangeActionBlend(
+        primary: group.primary,
+        primaryShare: group.primaryShare,
+        secondary: group.secondary,
+      );
+      for (final hand in RangeNotation.expand(group.notation)) {
+        actionByHand[hand] = RangeAction.mixed;
+        blendByHand[hand] = blend;
+      }
     }
 
     final entries = <String, RangeEntry>{};
@@ -42,22 +69,10 @@ class MockRangeRepository implements RangeRepository {
         hand: hand,
         action: action,
         frequency: action == RangeAction.mixed ? 0.5 : 1,
+        blend: action == RangeAction.mixed ? blendByHand[hand.code] : null,
       );
     }
 
     return RangeChart(spot: definition.spot, entries: entries);
-  }
-
-  @override
-  RangeChart? chartById(String spotId) {
-    for (final definition in RangeDefinitions.all) {
-      if (definition.spot.id == spotId) {
-        return chartFor(
-          definition.spot.tableType,
-          definition.spot.heroPosition,
-        );
-      }
-    }
-    return null;
   }
 }

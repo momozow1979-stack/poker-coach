@@ -29,6 +29,8 @@ class RangePage extends ConsumerWidget {
     final position = ref.watch(selectedPositionProvider);
     final chart = ref.watch(selectedRangeChartProvider);
     final positions = Position.orderFor(tableType);
+    final situations = ref.watch(availableSituationsProvider);
+    final selectedSituation = ref.watch(selectedSituationProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('レンジ表')),
@@ -53,8 +55,22 @@ class RangePage extends ConsumerWidget {
               values: positions,
               selected: position,
               labelBuilder: (value) => value.label,
-              onSelected: ref.read(selectedPositionProvider.notifier).select,
+              onSelected: (value) => _selectPosition(ref, value),
             ),
+            if (situations.length > 1) ...[
+              const SizedBox(height: AppSpacing.md),
+              ChoiceChipGroup<RangeSituation>(
+                values: situations,
+                selected: selectedSituation ?? situations.first,
+                labelBuilder: (value) => switch (value) {
+                  RangeSituation.openRaise => 'オープンする',
+                  RangeSituation.vsOpen => 'オープンに対応する',
+                  RangeSituation.vsThreeBet => 'vs 3Bet',
+                  RangeSituation.vsFourBet => 'vs 4Bet',
+                },
+                onSelected: ref.read(selectedSituationProvider.notifier).select,
+              ),
+            ],
             const SizedBox(height: AppSpacing.lg),
             if (chart == null)
               AppCard(
@@ -147,7 +163,8 @@ class RangePage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               const Text(
-                '将来のアップデートで vs Open / vs 3Bet / vs 4Bet を切り替えられるようにします。',
+                'オープンレイズと vs Open（直前のポジションのオープンへの対応）は '
+                '切り替えられるようになりました。vs 3Bet / vs 4Bet は今後のアップデートで対応します。',
                 style: TextStyle(fontSize: 12, color: AppColors.textMuted),
               ),
             ],
@@ -175,6 +192,16 @@ class RangePage extends ConsumerWidget {
     if (!positions.contains(current)) {
       ref.read(selectedPositionProvider.notifier).select(Position.btn);
     }
+    ref
+        .read(selectedSituationProvider.notifier)
+        .resetIfUnavailable(value, ref.read(selectedPositionProvider));
+  }
+
+  void _selectPosition(WidgetRef ref, Position value) {
+    ref.read(selectedPositionProvider.notifier).select(value);
+    ref
+        .read(selectedSituationProvider.notifier)
+        .resetIfUnavailable(ref.read(selectedTableTypeProvider), value);
   }
 
   void _showHandDetail(
