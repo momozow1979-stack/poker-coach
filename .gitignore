@@ -51,4 +51,5 @@ app.*.map.json
 solver/.venv/
 solver/**/__pycache__/
 solver/**/*.egg-info/
+solver/vendor/
 
