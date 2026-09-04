@@ -179,6 +179,13 @@ class FlopSubgame(Game):
         return equity
 
     def information_set_key(self, history: History, player: int) -> str:
+        """Compact, injective encoding — see `postflop_subgame.py`'s
+        `information_set_key` docstring for why (2-digit card ids instead
+        of tuple `repr()`, `|` kept before the single action-history field
+        so its own characters never collide with the digit run)."""
         hero_combo, villain_combo, actions = history
         own_combo = hero_combo if player == 0 else villain_combo
-        return f"{own_combo}|{actions}"
+        for c in own_combo:
+            assert 0 <= c <= 51, f"card id {c} out of range 0..51 — key encoding assumes 2 digits"
+        combo_digits = "".join(f"{c:02d}" for c in own_combo)
+        return f"{combo_digits}|{actions}"

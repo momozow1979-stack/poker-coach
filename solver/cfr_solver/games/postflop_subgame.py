@@ -236,6 +236,20 @@ class PostflopSubgame(Game):
         return equity
 
     def information_set_key(self, history: History, player: int) -> str:
+        """A compact, injective encoding — 2 zero-padded decimal digits per
+        card id (ids are 0..51, so 2 digits always suffice) instead of
+        Python's verbose tuple `repr()` (parens/commas/spaces). `|`
+        separators are kept between the three action-history fields (never
+        used inside a digit run or an action string) so two different
+        action histories can never concatenate into the same string — e.g.
+        without them, flop_a="xb" + turn_a="" would collide with
+        flop_a="x" + turn_a="b". This changes what the string looks like,
+        not what information it encodes (`BENCHMARKS.md`, "情報集合の保存方式").
+        """
         hero_combo, villain_combo, board, flop_a, turn_a, river_a = history
         own_combo = hero_combo if player == 0 else villain_combo
-        return f"{own_combo}|{board}|{flop_a}|{turn_a}|{river_a}"
+        for c in (*own_combo, *board):
+            assert 0 <= c <= 51, f"card id {c} out of range 0..51 — key encoding assumes 2 digits"
+        combo_digits = "".join(f"{c:02d}" for c in own_combo)
+        board_digits = "".join(f"{c:02d}" for c in board)
+        return f"{combo_digits}{board_digits}|{flop_a}|{turn_a}|{river_a}"
