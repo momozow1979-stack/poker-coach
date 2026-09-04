@@ -55,7 +55,7 @@ class _TrainerPlayPageState extends ConsumerState<TrainerPlayPage> {
 
     if (session == null || session.scenario.id != widget.scenarioId) {
       return Scaffold(
-        appBar: AppBar(title: const Text('意思決定トレーナー')),
+        appBar: AppBar(title: const Text('ハンドトレーナー')),
         body: Padding(
           padding: const EdgeInsets.all(AppSpacing.lg),
           child: EmptyState(

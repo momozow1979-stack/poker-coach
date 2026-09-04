@@ -6,21 +6,26 @@ import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/fade_slide_in.dart';
+import '../../../shared/widgets/section_header.dart';
 import '../../profile/application/learning_providers.dart';
+import '../domain/hand_review_record.dart';
 
-/// レビュータブの入り口。2つのモードから選ぶ。
+/// レビュータブの入り口。
 ///
-/// 初心者はまずトレーニングから入るのが自然なので、そちらを先に大きく置く。
+/// 「意思決定トレーナー」（汎用の練習コンテンツ）は学習タブへ移動したため、
+/// このタブは「自分が実際に打ったハンドをレビューする」ことに専念する。
+/// 過去のレビュー履歴の一覧と、新しくレビューするための大きなCTAだけを置く。
 class ReviewHomePage extends ConsumerWidget {
   const ReviewHomePage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final historyCount = ref.watch(handReviewHistoryProvider).length;
+    final history = ref.watch(handReviewHistoryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('ハンドで練習する')),
+      appBar: AppBar(title: const Text('ハンドレビュー')),
       body: SafeArea(
         top: false,
         child: ListView(
@@ -31,54 +36,44 @@ class ReviewHomePage extends ConsumerWidget {
             AppSpacing.xxl,
           ),
           children: [
-            const Text(
-              'やりたいことを選んでください。',
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.7,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
             FadeSlideIn(
-              child: _ModeCard(
-                icon: Icons.sports_esports_rounded,
-                accent: AppColors.accent,
-                onAccent: AppColors.onAccent,
-                badge: 'おすすめ',
-                title: '意思決定トレーナー',
-                description:
-                    '用意されたハンドを、プリフロップからリバーまで'
-                    '1ストリートずつ自分で選んで進みます。'
-                    '選んだ直後に「なぜそうなるか」が出るので、'
-                    '実戦の経験がなくても練習できます。',
-                bullets: const [
-                  '図でボードとポットが見える',
-                  '分からない言葉はその場で確認できる',
-                  '間違えても、何が変われば答えが変わるかまで分かる',
-                ],
-                actionLabel: 'ハンドを選ぶ',
-                onTap: () => context.go(AppRoutes.trainer),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            FadeSlideIn(
-              delay: const Duration(milliseconds: 80),
-              child: _ModeCard(
-                icon: Icons.rate_review_rounded,
-                accent: AppColors.info,
-                onAccent: Colors.white,
-                badge: historyCount > 0 ? '履歴 $historyCount件' : null,
-                title: '自分のハンドをレビュー',
-                description:
-                    '実際に自分が打ったハンドを入力して、'
-                    'AI コーチのコメントをもらいます。'
-                    '「あのハンド、あれで良かったのかな」を確かめたいときに。',
-                bullets: const ['ポジションは席をタップして選べる', '入力はほぼタップだけで終わる'],
-                actionLabel: '入力を始める',
+              child: _ReviewCta(
+                historyCount: history.length,
                 onTap: () => context.go(AppRoutes.reviewInput),
               ),
             ),
+            const SizedBox(height: AppSpacing.xl),
+            SectionHeader(
+              title: 'レビュー履歴',
+              subtitle: history.isEmpty ? null : '${history.length}件',
+            ),
+            const SizedBox(height: AppSpacing.md),
+            if (history.isEmpty)
+              AppCard(
+                child: EmptyState(
+                  icon: Icons.rate_review_outlined,
+                  title: 'まだレビューがありません',
+                  message: '気になったハンドを1つ入力すると、AIが振り返りを作ります。',
+                  action: FilledButton(
+                    onPressed: () => context.go(AppRoutes.reviewInput),
+                    child: const Text('ハンドをレビューする'),
+                  ),
+                ),
+              )
+            else
+              for (var i = 0; i < history.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.md),
+                  child: FadeSlideIn(
+                    delay: Duration(milliseconds: 40 * i),
+                    child: _HistoryCard(
+                      record: history[i],
+                      onTap: () => context.go(
+                        AppRoutes.reviewHistoryDetail(history[i].id),
+                      ),
+                    ),
+                  ),
+                ),
           ],
         ),
       ),
@@ -86,37 +81,17 @@ class ReviewHomePage extends ConsumerWidget {
   }
 }
 
-class _ModeCard extends StatelessWidget {
-  const _ModeCard({
-    required this.icon,
-    required this.accent,
-    required this.onAccent,
-    required this.title,
-    required this.description,
-    required this.bullets,
-    required this.actionLabel,
-    required this.onTap,
-    this.badge,
-  });
+class _ReviewCta extends StatelessWidget {
+  const _ReviewCta({required this.historyCount, required this.onTap});
 
-  final IconData icon;
-  final Color accent;
-
-  /// [accent] を背景にしたときに読める文字色。
-  final Color onAccent;
-
-  final String title;
-  final String description;
-  final List<String> bullets;
-  final String actionLabel;
+  final int historyCount;
   final VoidCallback onTap;
-  final String? badge;
 
   @override
   Widget build(BuildContext context) {
     return AppCard(
       onTap: onTap,
-      borderColor: accent.withValues(alpha: 0.4),
+      borderColor: AppColors.info.withValues(alpha: 0.4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -126,23 +101,27 @@ class _ModeCard extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.16),
+                  color: AppColors.info.withValues(alpha: 0.16),
                   borderRadius: BorderRadius.circular(AppSpacing.radiusSm + 2),
                 ),
-                child: Icon(icon, size: 24, color: accent),
+                child: const Icon(
+                  Icons.rate_review_rounded,
+                  size: 24,
+                  color: AppColors.info,
+                ),
               ),
               const SizedBox(width: AppSpacing.md),
-              Expanded(
+              const Expanded(
                 child: Text(
-                  title,
-                  style: const TextStyle(
+                  'ハンドをレビューする',
+                  style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w800,
                     height: 1.3,
                   ),
                 ),
               ),
-              if (badge != null) ...[
+              if (historyCount > 0) ...[
                 const SizedBox(width: AppSpacing.sm),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -150,15 +129,15 @@ class _ModeCard extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.16),
+                    color: AppColors.info.withValues(alpha: 0.16),
                     borderRadius: BorderRadius.circular(999),
                   ),
                   child: Text(
-                    badge!,
-                    style: TextStyle(
+                    '履歴 $historyCount件',
+                    style: const TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color: accent,
+                      color: AppColors.info,
                     ),
                   ),
                 ),
@@ -166,53 +145,122 @@ class _ModeCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: AppSpacing.md),
-          Text(
-            description,
-            style: const TextStyle(
+          const Text(
+            '実際に自分が打ったハンドを入力すると、AI コーチが振り返りを作ります。'
+            '「あのハンド、あれで良かったのかな」を確かめたいときに。',
+            style: TextStyle(
               fontSize: 13,
               height: 1.8,
               color: AppColors.textSecondary,
             ),
           ),
           const SizedBox(height: AppSpacing.md),
-          for (final bullet in bullets)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(
-                      top: 3,
-                      right: AppSpacing.sm,
-                    ),
-                    child: Icon(Icons.check_rounded, size: 14, color: accent),
-                  ),
-                  Expanded(
-                    child: Text(
-                      bullet,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        height: 1.6,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
+          Row(
+            children: [
+              Icon(Icons.check_rounded, size: 14, color: AppColors.info),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'ポジションは席をタップして選べる',
+                  style: TextStyle(fontSize: 12, color: AppColors.textPrimary),
+                ),
               ),
-            ),
+            ],
+          ),
           const SizedBox(height: AppSpacing.lg),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
               onPressed: onTap,
               style: FilledButton.styleFrom(
-                backgroundColor: accent,
-                foregroundColor: onAccent,
+                backgroundColor: AppColors.info,
+                foregroundColor: Colors.white,
               ),
               icon: const Icon(Icons.arrow_forward_rounded),
-              label: Text(actionLabel),
+              label: Text(historyCount > 0 ? '新しくレビューする' : '入力を始める'),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryCard extends StatelessWidget {
+  const _HistoryCard({required this.record, required this.onTap});
+
+  final HandReviewRecord record;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final date = record.createdAt;
+    final dateLabel = '${date.month}/${date.day}';
+
+    return AppCard(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+            ),
+            child: Text(
+              '${record.score}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.accent,
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  record.title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  record.result.summary,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    color: AppColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                dateLabel,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: AppColors.textMuted,
+                ),
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.textMuted,
+              ),
+            ],
           ),
         ],
       ),

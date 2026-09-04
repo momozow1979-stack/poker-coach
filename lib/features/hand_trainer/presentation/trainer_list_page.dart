@@ -23,10 +23,10 @@ class TrainerListPage extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('意思決定トレーナー'),
+        title: const Text('ハンドトレーナー'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go(AppRoutes.review),
+          onPressed: () => context.go(AppRoutes.quiz),
         ),
       ),
       body: SafeArea(

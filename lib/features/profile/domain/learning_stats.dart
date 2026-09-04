@@ -111,15 +111,25 @@ class LearningStats {
 
   /// 8〜14 日前の正答率。直近との比較で「伸び」を出す。
   double get accuracyPreviousWeek {
+    final window = _previousWeekAttempts;
+    if (window.isEmpty) return 0;
+    return window.where((attempt) => attempt.isCorrect).length / window.length;
+  }
+
+  /// 先週比を出せるだけのデータ（8〜14日前の回答）があるか。
+  ///
+  /// [accuracyPreviousWeek] は回答が無いときも 0 を返すため、
+  /// 「本当に0%だった」のか「まだ比較できない」のかを区別するのに使う。
+  bool get hasPreviousWeekData => _previousWeekAttempts.isNotEmpty;
+
+  Iterable<QuizAttempt> get _previousWeekAttempts {
     final now = DateTime.now();
     final from = now.subtract(const Duration(days: 14));
     final to = now.subtract(const Duration(days: 7));
-    final window = attempts.where(
+    return attempts.where(
       (attempt) =>
           attempt.answeredAt.isAfter(from) && attempt.answeredAt.isBefore(to),
     );
-    if (window.isEmpty) return 0;
-    return window.where((attempt) => attempt.isCorrect).length / window.length;
   }
 
   double _accuracySince(Duration duration) {

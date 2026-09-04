@@ -1,5 +1,6 @@
 import 'package:ai_poker_coach/core/storage/key_value_store.dart';
 import 'package:ai_poker_coach/features/profile/domain/learning_stores.dart';
+import 'package:ai_poker_coach/features/profile/domain/user_profile.dart';
 import 'package:ai_poker_coach/features/profile/infrastructure/json_learning_store.dart';
 import 'package:ai_poker_coach/features/profile/infrastructure/learning_sync_service.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -15,13 +16,18 @@ void main() {
     FakeRemoteLearningStore remote,
     FakeAuthGateway auth,
   })
-  build({bool remoteEnabled = true}) {
+  build({bool remoteEnabled = true, PokerLevel? initialPokerLevel}) {
     final local = JsonLearningStore(InMemoryKeyValueStore());
     final remote = FakeRemoteLearningStore(enabled: remoteEnabled);
     final auth = FakeAuthGateway();
     addTearDown(auth.dispose);
     return (
-      service: LearningSyncService(local: local, remote: remote, auth: auth),
+      service: LearningSyncService(
+        local: local,
+        remote: remote,
+        auth: auth,
+        initialPokerLevel: initialPokerLevel ?? PokerLevel.novice,
+      ),
       local: local,
       remote: remote,
       auth: auth,
@@ -170,6 +176,32 @@ void main() {
 
       expect(outcome.status.phase, SyncPhase.offline);
       expect(outcome.record.attempts, hasLength(1));
+    });
+
+    test('サーバーに未作成のプロフィールは initialPokerLevel で作られる', () async {
+      final env = build(initialPokerLevel: PokerLevel.advanced);
+      final user = await env.auth.ensureSignedIn();
+
+      final profile = await env.service.ensureProfile(user!);
+
+      expect(profile, isNotNull);
+      expect(profile!.pokerLevel, PokerLevel.advanced);
+      expect(env.remote.profiles[user.id]?.pokerLevel, PokerLevel.advanced);
+    });
+
+    test('サーバーに既にプロフィールがあれば initialPokerLevel は使わない', () async {
+      final env = build(initialPokerLevel: PokerLevel.advanced);
+      final user = await env.auth.ensureSignedIn();
+      env.remote.profiles[user!.id] = UserProfile(
+        id: user.id,
+        displayName: 'プレイヤー',
+        pokerLevel: PokerLevel.beginner,
+        createdAt: DateTime.now(),
+      );
+
+      final profile = await env.service.ensureProfile(user);
+
+      expect(profile!.pokerLevel, PokerLevel.beginner);
     });
   });
 }

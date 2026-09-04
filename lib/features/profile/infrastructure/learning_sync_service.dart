@@ -75,11 +75,16 @@ class LearningSyncService {
     required this.local,
     required this.remote,
     required this.auth,
+    this.initialPokerLevel = PokerLevel.novice,
   });
 
   final LocalLearningStore local;
   final RemoteLearningStore remote;
   final AuthGateway auth;
+
+  /// サーバー側にまだプロフィールが無いときに作成する初期レベル。
+  /// オンボーディングの回答があればそれを使う（`learning_providers.dart` で注入）。
+  final PokerLevel initialPokerLevel;
 
   /// 1 回の送信で送る最大件数。
   static const _batchSize = 200;
@@ -165,7 +170,7 @@ class LearningSyncService {
       final created = UserProfile(
         id: user.id,
         displayName: 'プレイヤー',
-        pokerLevel: PokerLevel.novice,
+        pokerLevel: initialPokerLevel,
         createdAt: DateTime.now(),
       );
       await remote.upsertProfile(created);

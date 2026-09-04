@@ -1,5 +1,4 @@
 import 'package:ai_poker_coach/app/app.dart';
-import 'package:ai_poker_coach/core/storage/key_value_store.dart';
 import 'package:ai_poker_coach/features/auth/application/auth_providers.dart';
 import 'package:ai_poker_coach/features/profile/application/learning_providers.dart';
 import 'package:ai_poker_coach/features/profile/domain/learning_stores.dart';
@@ -9,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../../support/fakes.dart';
+import '../../support/onboarding_test_helpers.dart';
 
 /// `Override` は flutter_riverpod から公開されていないので、
 /// ProviderScope ごと受け取って型注釈を避ける。
@@ -42,7 +42,9 @@ void main() {
       tester,
       ProviderScope(
         overrides: [
-          keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
+          keyValueStoreProvider.overrideWithValue(
+            await onboardingCompletedKeyValueStore(),
+          ),
         ],
         child: const AiPokerCoachApp(),
       ),
@@ -55,7 +57,7 @@ void main() {
 
   testWidgets('履歴があれば空状態は出ない', (tester) async {
     // 前回の起動で保存された状態を、保存領域に直接用意する。
-    final storage = InMemoryKeyValueStore();
+    final storage = await onboardingCompletedKeyValueStore();
     await JsonLearningStore(storage).saveAttempt(
       StoredAttempt(
         attempt: fakeAttempt(quizId: 'preflop-001', answeredAt: DateTime.now()),
@@ -82,7 +84,9 @@ void main() {
       tester,
       ProviderScope(
         overrides: [
-          keyValueStoreProvider.overrideWithValue(InMemoryKeyValueStore()),
+          keyValueStoreProvider.overrideWithValue(
+            await onboardingCompletedKeyValueStore(),
+          ),
           authGatewayProvider.overrideWithValue(auth),
           remoteLearningStoreProvider.overrideWithValue(
             FakeRemoteLearningStore(),

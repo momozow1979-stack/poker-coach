@@ -86,6 +86,38 @@ void main() {
       expect(stats.weakCategories(), isEmpty);
     });
 
+    test('先週ぶんのデータが無ければ hasPreviousWeekData は false', () {
+      final stats = LearningStats(
+        attempts: [_attempt(category: QuizCategory.preflop, isCorrect: true)],
+        reviewCount: 0,
+        streakDays: 1,
+        activeDaysLast7: 1,
+        activeDaysLast30: 1,
+      );
+      expect(stats.hasPreviousWeekData, isFalse);
+      // データが無いときは 0 を返すが、これは「本当に0%だった」わけではない。
+      expect(stats.accuracyPreviousWeek, 0);
+    });
+
+    test('8〜14日前に回答があれば hasPreviousWeekData は true で正答率も出る', () {
+      final stats = LearningStats(
+        attempts: [
+          _attempt(category: QuizCategory.preflop, isCorrect: true, daysAgo: 9),
+          _attempt(
+            category: QuizCategory.preflop,
+            isCorrect: false,
+            daysAgo: 10,
+          ),
+        ],
+        reviewCount: 0,
+        streakDays: 0,
+        activeDaysLast7: 0,
+        activeDaysLast30: 2,
+      );
+      expect(stats.hasPreviousWeekData, isTrue);
+      expect(stats.accuracyPreviousWeek, 0.5);
+    });
+
     test('レベルは正解数とレビュー件数から決まる', () {
       final stats = LearningStats(
         attempts: [

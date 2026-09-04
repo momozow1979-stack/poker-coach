@@ -204,3 +204,18 @@ final handReviewControllerProvider =
 final handReviewFlowProvider = Provider<HandFlow>(
   (ref) => HandFlow(ref.watch(handReviewFormProvider)),
 );
+
+/// レビュー履歴から、指定した ID の1件を探す。
+///
+/// レビュータブの履歴一覧から特定の過去のレビュー結果を開くために使う。
+/// [HandReviewResultPage] は、直近の提出結果（[handReviewControllerProvider]）
+/// だけでなく、こちらでも表示できる。
+final handReviewRecordByIdProvider = Provider.family<HandReviewRecord?, String>(
+  (ref, recordId) {
+    final history = ref.watch(handReviewHistoryProvider);
+    for (final record in history) {
+      if (record.id == recordId) return record;
+    }
+    return null;
+  },
+);
