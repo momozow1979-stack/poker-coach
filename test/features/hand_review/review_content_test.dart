@@ -1,4 +1,5 @@
 import 'package:ai_poker_coach/features/hand_review/domain/hand_review_input.dart';
+import 'package:ai_poker_coach/features/hand_review/infrastructure/in_memory_solved_spot_repository.dart';
 import 'package:ai_poker_coach/features/hand_review/infrastructure/mock_hand_review_repository.dart';
 import 'package:ai_poker_coach/features/range_chart/infrastructure/mock_range_repository.dart';
 import 'package:ai_poker_coach/shared/models/playing_card.dart';
@@ -45,7 +46,10 @@ HandReviewInput _handWithRiverFold({List<String> villainHand = const []}) =>
     );
 
 void main() {
-  const repository = MockHandReviewRepository(MockRangeRepository());
+  const repository = MockHandReviewRepository(
+    MockRangeRepository(),
+    InMemorySolvedSpotRepository(),
+  );
 
   group('レビューの中身', () {
     test('ストリートごとに、持っている役を言葉で示す', () {

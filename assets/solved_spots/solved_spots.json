@@ -1,0 +1,5 @@
+{
+  "action_legend": {"x": "check", "b": "bet", "c": "call", "f": "fold"},
+  "note": "placeholder — replaced by solver/export_solved_spots.py output",
+  "spots": []
+}

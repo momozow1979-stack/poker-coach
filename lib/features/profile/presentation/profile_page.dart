@@ -48,23 +48,31 @@ class ProfilePage extends ConsumerWidget {
             AppSpacing.xxl,
           ),
           children: [
-            AppCard(
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              decoration: BoxDecoration(
+                gradient: AppColors.heroGradient,
+                borderRadius: BorderRadius.circular(AppSpacing.radiusLg),
+                border: Border.all(color: AppColors.border),
+                boxShadow: AppColors.cardGlow(),
+              ),
               child: Row(
                 children: [
                   Container(
-                    width: 56,
-                    height: 56,
+                    width: 60,
+                    height: 60,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: AppColors.accent.withValues(alpha: 0.16),
-                      borderRadius: BorderRadius.circular(AppSpacing.radiusMd),
+                      gradient: AppColors.rewardGradient,
+                      shape: BoxShape.circle,
+                      boxShadow: AppColors.cardGlow(color: AppColors.rewardDark),
                     ),
                     child: Text(
                       'Lv.${stats.level}',
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
-                        color: AppColors.accent,
+                        color: Color(0xFF3A1E00),
                       ),
                     ),
                   ),
@@ -76,7 +84,7 @@ class ProfilePage extends ConsumerWidget {
                         Text(
                           profile.displayName,
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 20,
                             fontWeight: FontWeight.w800,
                           ),
                         ),
@@ -85,7 +93,7 @@ class ProfilePage extends ConsumerWidget {
                           '${profile.pokerLevel.label} ・ 学習${profile.daysSinceJoined + 1}日目',
                           style: const TextStyle(
                             fontSize: 12,
-                            color: AppColors.textMuted,
+                            color: AppColors.textSecondary,
                           ),
                         ),
                       ],
