@@ -14,3 +14,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["cfr_solver*"]
+
+[tool.pytest.ini_options]
+# solver/vendor/ (gitignored — e.g. a local TexasSolver checkout used for
+# cross-validation, see BENCHMARKS.md) must never be picked up by test
+# collection even when it exists locally.
+testpaths = ["tests"]

@@ -29,5 +29,10 @@ pytest -v
 - `cfr_solver/games/leduc.py` — Leduc Hold'em（検証用ベンチマーク②、CFR研究で標準的に使われる次のステップ）
 - `cfr_solver/games/kuhn3p.py` — 3人版 Kuhn Poker（N人拡張の検証用。3人以上では単一のナッシュ均衡への収束は証明されないが、
   self-play で各プレイヤーの exploitability が下がっていくことを確認する）
+- `cfr_solver/poker/` — 実際の52枚デッキ（5枚役評価器）と、Dart アプリの `RangeNotation`（
+  `lib/features/range_chart/domain/range_notation.dart`）を Python に移植したレンジ表記パーサー
+- `cfr_solver/games/flop_subgame.py` — 実データを使った最初の「本物の」ヘッズアップ・ポストフロップ局面
+  （固定フロップ、実レンジ、1ベッティングラウンド）。フルレンジは Python のフルツリー CFR には
+  大きすぎることを実測済み。現在はレンジを絞ったパイロット版のみ（詳細は `BENCHMARKS.md`）
 
 収束の実測値・出典は `BENCHMARKS.md` に記録する。数値を先に決め打ちしてテストに書くことはしない。

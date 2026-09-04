@@ -57,3 +57,7 @@ solver/solved_spots.json
 # AGPL-licensed) — never vendored into this repo, and never distributed.
 solver/vendor/
 
+# External solvers cloned locally for cross-validation only (e.g. TexasSolver,
+# AGPL-licensed) — never vendored into this repo, and never distributed.
+solver/vendor/
+
