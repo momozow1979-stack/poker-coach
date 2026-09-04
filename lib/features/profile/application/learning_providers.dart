@@ -9,6 +9,7 @@ import '../../../core/storage/key_value_store.dart';
 import '../../../core/utils/date_x.dart';
 import '../../auth/application/auth_providers.dart';
 import '../../hand_review/domain/hand_review_record.dart';
+import '../../onboarding/application/onboarding_providers.dart';
 import '../../quiz/domain/quiz_attempt.dart';
 import '../domain/learning_record.dart';
 import '../domain/learning_stats.dart';
@@ -38,6 +39,9 @@ final learningSyncServiceProvider = Provider<LearningSyncService>(
     local: ref.watch(localLearningStoreProvider),
     remote: ref.watch(remoteLearningStoreProvider),
     auth: ref.watch(authGatewayProvider),
+    // オンボーディングで選んだレベルを、初回プロフィール作成時の初期値にする。
+    initialPokerLevel:
+        ref.watch(onboardingAnswersProvider)?.pokerLevel ?? PokerLevel.novice,
   ),
 );
 
@@ -265,12 +269,17 @@ final handReviewHistoryProvider = Provider<List<HandReviewRecord>>(
 /// ログインユーザーのプロフィール。Supabase の `profiles` を取れたら差し替わる。
 class ProfileStore extends Notifier<UserProfile> {
   @override
-  UserProfile build() => UserProfile(
-    id: 'local',
-    displayName: 'プレイヤー',
-    pokerLevel: PokerLevel.novice,
-    createdAt: DateTime.now(),
-  );
+  UserProfile build() {
+    // オンボーディングで選んだレベルがあればそれを初期値にする。
+    // 完了前（読み込み中含む）は null なので、その間は初級者扱いにしておく。
+    final onboardingLevel = ref.watch(onboardingAnswersProvider)?.pokerLevel;
+    return UserProfile(
+      id: 'local',
+      displayName: 'プレイヤー',
+      pokerLevel: onboardingLevel ?? PokerLevel.novice,
+      createdAt: DateTime.now(),
+    );
+  }
 
   void apply(UserProfile profile) => state = profile;
 }

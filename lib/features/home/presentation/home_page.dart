@@ -10,14 +10,16 @@ import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/fade_slide_in.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/tag_chip.dart';
-import '../../../shared/widgets/trend_chart.dart';
 import '../../coach/application/coach_providers.dart';
 import '../../coach/domain/coach_message.dart';
+import '../../onboarding/application/onboarding_providers.dart';
 import '../../profile/application/learning_providers.dart';
 import '../../quiz/application/quiz_providers.dart';
+import '../../quiz/domain/quiz_category.dart';
 import 'widgets/coach_message_card.dart';
 import 'widgets/daily_quiz_card.dart';
 import 'widgets/home_header.dart';
+import 'widgets/weekly_reflection_card.dart';
 
 /// ホーム画面。
 class HomePage extends ConsumerWidget {
@@ -30,7 +32,15 @@ class HomePage extends ConsumerWidget {
     final session = ref.watch(dailyQuizSessionProvider);
     final briefing = ref.watch(coachBriefingProvider);
     final reviews = ref.watch(handReviewHistoryProvider);
+    final onboarding = ref.watch(onboardingAnswersProvider);
+
     final weakCategories = stats.weakCategories();
+    // 苦手分野がまだ検出できていない間は、オンボーディングで選んだ
+    // 「学びたい分野」を代わりに見せる。どちらも同じカテゴリ別クイズへ導く。
+    final usingFocusFallback = weakCategories.isEmpty;
+    final focusCategories = usingFocusFallback
+        ? (onboarding?.focusCategories ?? const <QuizCategory>[])
+        : weakCategories;
 
     return Scaffold(
       body: SafeArea(
@@ -53,13 +63,6 @@ class HomePage extends ConsumerWidget {
                 onStart: () => context.go(AppRoutes.quiz),
               ),
             ),
-            const SizedBox(height: AppSpacing.md),
-            FadeSlideIn(
-              delay: const Duration(milliseconds: 120),
-              child: _TrainerEntryCard(
-                onTap: () => context.go(AppRoutes.trainer),
-              ),
-            ),
             const SizedBox(height: AppSpacing.xl),
             const SectionHeader(
               title: 'AIコーチ',
@@ -76,26 +79,19 @@ class HomePage extends ConsumerWidget {
                 accent: AppColors.info,
               ),
             const SizedBox(height: AppSpacing.xl),
-            const SectionHeader(title: '正答率の推移', subtitle: '直近14日'),
+            const SectionHeader(title: '今週の振り返り'),
             const SizedBox(height: AppSpacing.md),
-            AppCard(
-              child: TrendChart(
-                points: [
-                  for (final day in stats.dailyAccuracy())
-                    TrendPoint(
-                      label: '${day.day.month}/${day.day.day}',
-                      value: day.accuracy,
-                    ),
-                ],
-                height: 88,
-              ),
-            ),
+            WeeklyReflectionCard(stats: stats),
             const SizedBox(height: AppSpacing.xl),
             SectionHeader(
-              title: '苦手分野',
-              subtitle: weakCategories.isEmpty
+              title: usingFocusFallback && focusCategories.isNotEmpty
+                  ? '学びたい分野'
+                  : '苦手分野',
+              subtitle: focusCategories.isEmpty
                   ? '各カテゴリ3問以上で判定されます'
-                  : 'ここを直すと全体が伸びます',
+                  : usingFocusFallback
+                  ? 'オンボーディングで選んだ分野です。タップすると復習できます'
+                  : 'ここを直すと全体が伸びます。タップすると復習できます',
               action: TextButton(
                 onPressed: () => context.go(AppRoutes.profile),
                 child: const Text('詳しく'),
@@ -103,7 +99,7 @@ class HomePage extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             AppCard(
-              child: weakCategories.isEmpty
+              child: focusCategories.isEmpty
                   ? const Text(
                       'まだ苦手分野は検出されていません。今日の10問を解き進めると自動で見つかります。',
                       style: TextStyle(
@@ -116,11 +112,17 @@ class HomePage extends ConsumerWidget {
                       spacing: AppSpacing.sm,
                       runSpacing: AppSpacing.sm,
                       children: [
-                        for (final category in weakCategories)
+                        for (final category in focusCategories)
                           TagChip(
                             label: category.label,
-                            color: AppColors.danger,
-                            icon: Icons.priority_high_rounded,
+                            color: usingFocusFallback
+                                ? AppColors.info
+                                : AppColors.danger,
+                            icon: usingFocusFallback
+                                ? Icons.school_rounded
+                                : Icons.priority_high_rounded,
+                            onTap: () =>
+                                context.go(AppRoutes.categoryQuiz(category.id)),
                           ),
                       ],
                     ),
@@ -205,64 +207,6 @@ class HomePage extends ConsumerWidget {
                 ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// ホームから意思決定トレーナーへの導線。
-///
-/// 新しく入った人にとって、レビュータブの奥にあるだけでは見つからない。
-/// 「今日の10問」の次にやることとして、ここに置く。
-class _TrainerEntryCard extends StatelessWidget {
-  const _TrainerEntryCard({required this.onTap});
-
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppCard(
-      onTap: onTap,
-      borderColor: AppColors.info.withValues(alpha: 0.4),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: AppColors.info.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-            ),
-            child: const Icon(
-              Icons.sports_esports_rounded,
-              size: 22,
-              color: AppColors.info,
-            ),
-          ),
-          const SizedBox(width: AppSpacing.md),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '1ハンド通して練習する',
-                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-                ),
-                SizedBox(height: 2),
-                Text(
-                  'プリフロップからリバーまで、各場面で自分で選びます',
-                  style: TextStyle(
-                    fontSize: 12,
-                    height: 1.5,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: AppSpacing.sm),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
-        ],
       ),
     );
   }

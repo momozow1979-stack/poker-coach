@@ -2,18 +2,30 @@ import 'package:ai_poker_coach/app/app.dart';
 import 'package:ai_poker_coach/features/hand_trainer/domain/trainer_scenario.dart';
 import 'package:ai_poker_coach/features/hand_trainer/infrastructure/bundled_trainer_repository.dart';
 import 'package:ai_poker_coach/features/hand_trainer/presentation/widgets/trainer_option_button.dart';
+import 'package:ai_poker_coach/features/profile/application/learning_providers.dart';
 import 'package:ai_poker_coach/shared/models/position.dart';
 import 'package:ai_poker_coach/shared/models/table_type.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../../support/onboarding_test_helpers.dart';
+
 Future<void> _pumpApp(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(const ProviderScope(child: AiPokerCoachApp()));
+  // ハンドトレーナーは学習タブの下に住んでいる。オンボーディング未完了だと
+  // `/onboarding` にリダイレクトされてタブごと出てこないため、
+  // 完了済みの状態を注入してから pump する。
+  final store = await onboardingCompletedKeyValueStore();
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [keyValueStoreProvider.overrideWithValue(store)],
+      child: const AiPokerCoachApp(),
+    ),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -266,11 +278,12 @@ void main() {
   testWidgets('トレーナーを最後まで進めると総括が出る', (tester) async {
     await _pumpApp(tester);
 
-    await tester.tap(find.text('レビュー'));
+    await tester.tap(find.text('学習'));
     await tester.pumpAndSettle();
 
-    await _tapText(tester, 'ハンドを選ぶ');
-    expect(find.text('意思決定トレーナー'), findsWidgets);
+    await tester.tap(find.byTooltip('ハンドトレーナー'));
+    await tester.pumpAndSettle();
+    expect(find.text('ハンドトレーナー'), findsWidgets);
 
     // 一覧から1本目を開く。
     final scenario = const BundledTrainerRepository().all().first;
@@ -293,9 +306,10 @@ void main() {
   testWidgets('フォールドを選ぶとそこで終わる', (tester) async {
     await _pumpApp(tester);
 
-    await tester.tap(find.text('レビュー'));
+    await tester.tap(find.text('学習'));
     await tester.pumpAndSettle();
-    await _tapText(tester, 'ハンドを選ぶ');
+    await tester.tap(find.byTooltip('ハンドトレーナー'));
+    await tester.pumpAndSettle();
 
     final scenario = const BundledTrainerRepository().all().first;
     await _tapText(tester, scenario.title);

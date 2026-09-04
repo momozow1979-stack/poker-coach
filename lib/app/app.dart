@@ -5,21 +5,24 @@ import '../core/theme/app_colors.dart';
 import '../core/theme/app_spacing.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/application/auth_providers.dart';
+import '../features/onboarding/application/onboarding_providers.dart';
 import '../features/profile/application/learning_providers.dart';
 import 'router.dart';
 
 /// アプリのルート。
 ///
-/// 端末に保存した学習履歴を読み終わるまでは起動画面を出す。
-/// 先に空の状態を描いてから履歴が差し替わると、連続日数などが一瞬 0 に見えるため。
+/// 端末に保存した学習履歴・オンボーディングの回答を読み終わるまでは
+/// 起動画面を出す。先に空の状態を描いてから差し替わると、連続日数が
+/// 一瞬 0 に見えたり、オンボーディング済みなのに一瞬迷い込んだりするため。
 class AiPokerCoachApp extends ConsumerWidget {
   const AiPokerCoachApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final bootstrap = ref.watch(learningBootstrapProvider);
+    final learningBootstrap = ref.watch(learningBootstrapProvider);
+    final onboardingBootstrap = ref.watch(onboardingBootstrapProvider);
 
-    if (bootstrap.isLoading) {
+    if (learningBootstrap.isLoading || onboardingBootstrap.isLoading) {
       return MaterialApp(
         title: 'AI Poker Coach',
         debugShowCheckedModeBanner: false,

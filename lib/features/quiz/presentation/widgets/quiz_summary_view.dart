@@ -14,11 +14,15 @@ class QuizSummaryView extends StatelessWidget {
     required this.session,
     required this.onRestart,
     required this.onGoHome,
+    this.onOpenTrainer,
   });
 
   final DailyQuizSession session;
   final VoidCallback onRestart;
   final VoidCallback onGoHome;
+
+  /// 「他の練習」としてハンドトレーナーへ導く。null なら表示しない。
+  final VoidCallback? onOpenTrainer;
 
   /// このセッションで間違えたカテゴリ。
   List<QuizCategory> get _missedCategories {
@@ -103,6 +107,58 @@ class QuizSummaryView extends StatelessWidget {
             ],
           ),
         ),
+        if (onOpenTrainer != null) ...[
+          const SizedBox(height: AppSpacing.lg),
+          AppCard(
+            onTap: onOpenTrainer,
+            borderColor: AppColors.info.withValues(alpha: 0.4),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.info.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+                  ),
+                  child: const Icon(
+                    Icons.sports_esports_rounded,
+                    size: 22,
+                    color: AppColors.info,
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '他の練習: ハンドトレーナー',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        '1ハンドを通してプリフロップからリバーまで練習します',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.5,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: AppSpacing.xl),
         FilledButton(onPressed: onGoHome, child: const Text('ホームに戻る')),
         const SizedBox(height: AppSpacing.md),

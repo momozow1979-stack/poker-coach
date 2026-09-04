@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/date_x.dart';
+import '../../onboarding/application/onboarding_providers.dart';
 import '../../profile/application/learning_providers.dart';
 import '../domain/daily_quiz_session.dart';
 import '../domain/quiz.dart';
@@ -22,11 +23,19 @@ class DailyQuizController extends Notifier<DailyQuizSession> {
     final today = DateTime.now().dateOnly;
     // build 時に read で固定する。回答して履歴が増えても出題は組み直さない。
     final stats = ref.read(learningStatsProvider);
+    final weakCategories = stats.weakCategories();
+    // 苦手分野がまだ検出できていない間は、オンボーディングで選んだ
+    // 「学びたい分野」を代わりに優先出題する。
+    final onboardingFocus =
+        ref.read(onboardingAnswersProvider)?.focusCategories ?? const [];
+    final priorityCategories = weakCategories.isNotEmpty
+        ? weakCategories
+        : onboardingFocus;
     final quizzes = ref
         .read(quizRepositoryProvider)
         .dailyQuizzes(
           today,
-          weakCategories: stats.weakCategories(),
+          weakCategories: priorityCategories,
           lastAnsweredAt: stats.lastAnsweredAt,
         );
     return DailyQuizSession(date: today, quizzes: quizzes);

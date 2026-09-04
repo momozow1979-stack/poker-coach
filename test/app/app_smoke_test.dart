@@ -1,16 +1,27 @@
 import 'package:ai_poker_coach/app/app.dart';
+import 'package:ai_poker_coach/features/profile/application/learning_providers.dart';
 import 'package:ai_poker_coach/features/quiz/presentation/widgets/quiz_choice_button.dart';
 import 'package:ai_poker_coach/shared/widgets/collapsible_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import '../support/onboarding_test_helpers.dart';
+
 Future<void> _pumpApp(WidgetTester tester) async {
   tester.view.physicalSize = const Size(1080, 2400);
   tester.view.devicePixelRatio = 3;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(const ProviderScope(child: AiPokerCoachApp()));
+  // このテストはオンボーディング導入前の動線（タブが最初から見える）を
+  // 検証するため、pump 前にオンボーディング完了済みの状態を注入する。
+  final store = await onboardingCompletedKeyValueStore();
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [keyValueStoreProvider.overrideWithValue(store)],
+      child: const AiPokerCoachApp(),
+    ),
+  );
   await tester.pumpAndSettle();
 }
 
@@ -102,12 +113,16 @@ void main() {
     expect(find.text('実戦での調整'), findsOneWidget);
   });
 
-  testWidgets('レビュータブで2つのモードから選べる', (tester) async {
+  testWidgets('レビュータブは自分のハンドレビュー専用になっている', (tester) async {
     await _pumpApp(tester);
     await _openTab(tester, 'レビュー');
 
-    expect(find.text('意思決定トレーナー'), findsOneWidget);
-    expect(find.text('自分のハンドをレビュー'), findsOneWidget);
+    // 汎用トレーニング機能（ハンドトレーナー）への導線は無い。
+    expect(find.text('意思決定トレーナー'), findsNothing);
+    expect(find.text('ハンドトレーナー'), findsNothing);
+    // 自分のハンドをレビューする導線だけがある。
+    expect(find.text('ハンドをレビューする'), findsWidgets);
+    expect(find.text('まだレビューがありません'), findsOneWidget);
   });
 
   testWidgets('レビュータブ → 自分のハンド入力は未入力だと実行できない', (tester) async {

@@ -18,19 +18,31 @@ import '../application/hand_review_providers.dart';
 import '../domain/hand_review_record.dart';
 
 /// ハンドレビューの結果画面。仕様書 3-5 の表示順に合わせている。
+///
+/// [recordId] が無ければ、直近に入力画面から提出した結果
+/// （[handReviewControllerProvider]）を表示する（従来どおりの動線）。
+/// [recordId] があれば、レビュー履歴から指定した過去の1件を表示する
+/// （レビュータブの履歴一覧からのドリルダウン）。
 class HandReviewResultPage extends ConsumerWidget {
-  const HandReviewResultPage({super.key});
+  const HandReviewResultPage({super.key, this.recordId});
+
+  final String? recordId;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final record = ref.watch(handReviewControllerProvider).value;
+    final recordId = this.recordId;
+    final record = recordId == null
+        ? ref.watch(handReviewControllerProvider).value
+        : ref.watch(handReviewRecordByIdProvider(recordId));
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('レビュー結果'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go(AppRoutes.reviewInput),
+          onPressed: () => context.go(
+            recordId == null ? AppRoutes.reviewInput : AppRoutes.review,
+          ),
         ),
       ),
       body: SafeArea(
