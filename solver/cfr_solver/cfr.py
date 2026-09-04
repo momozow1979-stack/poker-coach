@@ -77,6 +77,20 @@ from cfr_solver.games.game import Action, Game, History
 STRIDE = 3  # the most actions any information set in this package needs
 
 
+def _naive_sum(values: list[float]) -> float:
+    """Plain left-to-right float summation — deliberately not the builtin
+    `sum()`. CPython 3.12 made `sum()` use Neumaier-compensated summation
+    for floats (more accurate, but a *different* rounding than 3.11 and
+    earlier's naive addition) — pinning the algorithm here keeps this
+    trainer's output independent of which CPython minor version runs it,
+    which `tests/test_node_storage_regression.py`'s bit-exact fixture
+    (captured once, compared forever) depends on."""
+    total = 0.0
+    for v in values:
+        total += v
+    return total
+
+
 @dataclass(frozen=True)
 class _ActionSet:
     """A shared, immutable action vocabulary. `actions` is never mutated —
@@ -153,7 +167,7 @@ class CFRSolver:
         base = nid * STRIDE
         n = len(aset.actions)
         positive = [max(0.0, self._regret[base + i]) for i in range(n)]
-        total = sum(positive)
+        total = _naive_sum(positive)
         if total > 0:
             return {a: v / total for a, v in zip(aset.actions, positive)}
         return {a: 1.0 / n for a in aset.actions}
@@ -163,7 +177,7 @@ class CFRSolver:
         base = nid * STRIDE
         n = len(aset.actions)
         values = [self._strategy[base + i] for i in range(n)]
-        total = sum(values)
+        total = _naive_sum(values)
         if total > 0:
             return {a: v / total for a, v in zip(aset.actions, values)}
         return {a: 1.0 / n for a in aset.actions}
