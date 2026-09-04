@@ -65,49 +65,100 @@ class _MatrixCell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isFold = entry.action == RangeAction.fold;
+    final blend = entry.blend;
+    final symbol = blend == null
+        ? entry.action.symbol
+        : '${blend.primary.symbol}/${blend.secondary.symbol}';
+    final semanticsLabel = blend == null
+        ? '${entry.hand.code} ${entry.action.label}'
+        : '${entry.hand.code} ${blend.primary.label} '
+              '${(blend.primaryShare * 100).round()}% '
+              '${blend.secondary.label} '
+              '${(blend.secondaryShare * 100).round()}%';
+
     return SizedBox(
       width: size,
       height: size,
       child: Semantics(
         button: true,
-        label: '${entry.hand.code} ${entry.action.label}',
+        label: semanticsLabel,
         child: GestureDetector(
           onTap: () => onTap(entry.hand),
           child: Container(
             margin: const EdgeInsets.all(0.5),
+            clipBehavior: blend == null ? Clip.none : Clip.antiAlias,
             decoration: BoxDecoration(
-              color: isFold
-                  ? AppColors.rangeFold
-                  : entry.action.color.withValues(alpha: 0.85),
+              color: blend != null
+                  ? null
+                  : (isFold
+                        ? AppColors.rangeFold
+                        : entry.action.color.withValues(alpha: 0.85)),
               borderRadius: BorderRadius.circular(2),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                Text(
-                  entry.hand.code,
-                  style: TextStyle(
-                    fontSize: size * 0.3,
-                    height: 1.05,
-                    fontWeight: FontWeight.w700,
-                    color: isFold ? AppColors.textMuted : Colors.white,
-                  ),
-                ),
-                if (!isFold)
-                  Text(
-                    entry.action.symbol,
-                    style: TextStyle(
-                      fontSize: size * 0.24,
-                      height: 1.05,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white.withValues(alpha: 0.85),
+                if (blend != null) _MixedFill(blend: blend),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      entry.hand.code,
+                      style: TextStyle(
+                        fontSize: size * 0.3,
+                        height: 1.05,
+                        fontWeight: FontWeight.w700,
+                        color: isFold ? AppColors.textMuted : Colors.white,
+                      ),
                     ),
-                  ),
+                    if (!isFold)
+                      Text(
+                        symbol,
+                        style: TextStyle(
+                          fontSize: blend == null ? size * 0.24 : size * 0.19,
+                          height: 1.05,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// MIX ハンドの塗り分け。[RangeActionBlend.primaryShare] に応じて
+/// 主アクション色と副アクション色を上下 2 段に塗り分ける。
+///
+/// 色だけに頼らないという既存方針を維持するため、記号（[_MatrixCell]側で
+/// 両方のアクションの頭文字を併記）と併用する。
+class _MixedFill extends StatelessWidget {
+  const _MixedFill({required this.blend});
+
+  final RangeActionBlend blend;
+
+  @override
+  Widget build(BuildContext context) {
+    final primaryFlex = (blend.primaryShare * 100).round().clamp(1, 99);
+    final secondaryFlex = 100 - primaryFlex;
+    return Column(
+      children: [
+        Expanded(
+          flex: primaryFlex,
+          child: ColoredBox(color: blend.primary.color.withValues(alpha: 0.85)),
+        ),
+        Expanded(
+          flex: secondaryFlex,
+          child: ColoredBox(
+            color: blend.secondary.color.withValues(alpha: 0.85),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -30,6 +30,12 @@ class RangeHandGuidance {
 /// レンジ表の解説文を組み立てる。
 ///
 /// ソルバーの厳密な頻度を作らず、「なぜ」を言語化することに集中する。
+///
+/// オープンレイズ（raise/fold の境界）だけでなく、vsOpen シナリオ
+/// （3Bet/Call/Fold の境界）の解説にも同じ考え方を適用する。MIX ハンドの
+/// 内訳（[RangeEntry.blend] の主・副アクションの割合）も、実測ソルバー値
+/// ではなく「標準的なプリフロップ理論に基づいて整理した学習用の目安」
+/// であり、これを厳密なGTO頻度として断定しない。
 abstract final class RangeGuidanceBuilder {
   static RangeHandGuidance build({
     required RangeSpot spot,
@@ -50,7 +56,14 @@ abstract final class RangeGuidanceBuilder {
 
   static String _frequencyLabel(RangeEntry entry) {
     if (entry.action == RangeAction.mixed) {
-      return '状況次第（ミックス）';
+      final blend = entry.blend;
+      if (blend == null) {
+        return '状況次第（ミックス）';
+      }
+      final primaryPercent = (blend.primaryShare * 100).round();
+      final secondaryPercent = (blend.secondaryShare * 100).round();
+      return '${blend.primary.label} $primaryPercent% / '
+          '${blend.secondary.label} $secondaryPercent%（ミックス）';
     }
     if (entry.frequency >= 0.99) {
       return '常に ${entry.action.label}';
@@ -134,6 +147,14 @@ abstract final class RangeGuidanceBuilder {
           '無理に広げるとレンジ全体の強さが落ちます。';
     }
     if (entry.action == RangeAction.mixed) {
+      final blend = entry.blend;
+      if (blend != null) {
+        return 'ソルバーはこの種のハンドを一定の頻度で混ぜます。'
+            'このアプリでは ${blend.primary.label} ${(blend.primaryShare * 100).round()}% / '
+            '${blend.secondary.label} ${(blend.secondaryShare * 100).round()}% という内訳を、'
+            '標準的なプリフロップ理論に基づいて整理した学習用の目安として表示しています'
+            '（実測のソルバー出力そのものではありません）。';
+      }
       return 'ソルバーはこの種のハンドを一定の頻度で混ぜます。'
           'ここでは正確な頻度は表示せず「境界線上」とだけ扱っています。';
     }

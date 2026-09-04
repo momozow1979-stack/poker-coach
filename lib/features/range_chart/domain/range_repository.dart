@@ -9,7 +9,15 @@ abstract interface class RangeRepository {
   List<RangeSpot> spotsFor(TableType tableType);
 
   /// ポジションに対応するレンジ表。存在しなければ null。
-  RangeChart? chartFor(TableType tableType, Position position);
+  ///
+  /// [situation] を省略した場合、そのポジションの既定のシチュエーション
+  /// （オープンレイズがあればそれ、無ければ唯一のシチュエーション）を返す。
+  /// 明示的に指定した場合、そのポジションにそのシチュエーションが無ければ null。
+  RangeChart? chartFor(
+    TableType tableType,
+    Position position, {
+    RangeSituation? situation,
+  });
 
   /// スポット ID から直接取得する（クイズ解説からのリンク用）。
   RangeChart? chartById(String spotId);
