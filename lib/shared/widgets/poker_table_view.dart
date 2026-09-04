@@ -240,7 +240,7 @@ class _PokerTablePainter extends CustomPainter {
     if (isHero) {
       fill = AppColors.accent;
       border = AppColors.accent;
-      label = const Color(0xFF04231A);
+      label = AppColors.onAccent;
     } else if (isVillain) {
       fill = AppColors.info.withValues(alpha: 0.22);
       border = AppColors.info;

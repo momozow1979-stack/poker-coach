@@ -19,7 +19,7 @@ Future<void> _pump(
 
   await tester.pumpWidget(
     MaterialApp(
-      theme: AppTheme.dark(),
+      theme: AppTheme.light(),
       home: Scaffold(
         body: SingleChildScrollView(
           child: ActionPromptCard(prompt: prompt, onAdd: onAdd),

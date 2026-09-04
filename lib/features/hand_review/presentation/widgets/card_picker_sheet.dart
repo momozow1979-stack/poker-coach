@@ -167,7 +167,7 @@ class _PickerCell extends StatelessWidget {
                     height: 1.05,
                     fontWeight: FontWeight.w800,
                     color: isSelected
-                        ? const Color(0xFF04231A)
+                        ? AppColors.onAccent
                         : AppColors.textPrimary,
                   ),
                 ),
@@ -177,7 +177,7 @@ class _PickerCell extends StatelessWidget {
                     fontSize: 11,
                     height: 1.05,
                     color: isSelected
-                        ? const Color(0xFF04231A)
+                        ? AppColors.onAccent
                         : (card.suit.isRed
                               ? AppColors.danger
                               : AppColors.textSecondary),

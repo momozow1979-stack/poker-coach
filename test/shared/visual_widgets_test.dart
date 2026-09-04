@@ -13,7 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 Future<void> _pump(WidgetTester tester, Widget child) async {
   await tester.pumpWidget(
     MaterialApp(
-      theme: AppTheme.dark(),
+      theme: AppTheme.light(),
       home: Scaffold(body: Center(child: child)),
     ),
   );
@@ -26,7 +26,7 @@ void main() {
     late TextStyle style;
     await tester.pumpWidget(
       MaterialApp(
-        theme: AppTheme.dark(),
+        theme: AppTheme.light(),
         home: Builder(
           builder: (context) {
             style = canvasTextStyle(context);
@@ -36,7 +36,7 @@ void main() {
       ),
     );
 
-    expect(style.fontFamily, AppTheme.dark().textTheme.bodyMedium?.fontFamily);
+    expect(style.fontFamily, AppTheme.light().textTheme.bodyMedium?.fontFamily);
     expect(style.fontFamily, isNotNull);
     expect(style.fontFamilyFallback, isNotEmpty);
   });

@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 import 'app_spacing.dart';
 
-/// アプリのテーマ。ダークモードを基本とする。
+/// アプリのテーマ。黒背景を避け、白いカードを基本とするライトテーマ。
 abstract final class AppTheme {
-  static ThemeData dark() {
-    const colorScheme = ColorScheme.dark(
+  static ThemeData light() {
+    const colorScheme = ColorScheme.light(
       primary: AppColors.accent,
-      onPrimary: Color(0xFF04231A),
+      onPrimary: AppColors.onAccent,
       secondary: AppColors.info,
       onSecondary: Colors.white,
       surface: AppColors.surface,
@@ -19,7 +19,7 @@ abstract final class AppTheme {
 
     final baseTheme = ThemeData(
       useMaterial3: true,
-      brightness: Brightness.dark,
+      brightness: Brightness.light,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: AppColors.background,
       // Noto Sans JP 相当。端末の日本語フォントにフォールバックさせる。
@@ -56,7 +56,7 @@ abstract final class AppTheme {
       cardTheme: CardThemeData(
         color: AppColors.surface,
         surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.black.withValues(alpha: 0.5),
+        shadowColor: Colors.black.withValues(alpha: 0.12),
         elevation: 3,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(

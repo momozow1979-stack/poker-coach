@@ -23,7 +23,7 @@ class AiPokerCoachApp extends ConsumerWidget {
       return MaterialApp(
         title: 'AI Poker Coach',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.dark(),
+        theme: AppTheme.light(),
         home: const _StartupScreen(),
       );
     }
@@ -66,7 +66,7 @@ class _MainAppState extends ConsumerState<_MainApp> {
     return MaterialApp.router(
       title: 'AI Poker Coach',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark(),
+      theme: AppTheme.light(),
       routerConfig: ref.watch(routerProvider),
     );
   }
@@ -117,7 +117,7 @@ class ConfigErrorApp extends StatelessWidget {
     return MaterialApp(
       title: 'AI Poker Coach',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.dark(),
+      theme: AppTheme.light(),
       home: Scaffold(
         body: SafeArea(
           child: Padding(

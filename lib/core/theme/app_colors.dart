@@ -2,63 +2,70 @@ import 'package:flutter/material.dart';
 
 /// アプリ全体のカラーパレット。
 ///
-/// ベースは引き続き Dark Navy（学習アプリらしい清潔感を保つ）だが、
-/// カジュアル層に「素っ気ない」と感じさせないよう、報酬・達成を示す
+/// ライトテーマ（黒背景を避けたいというフィードバックを受けて採用）。
+/// 白いカードが薄いスレート地の上に浮くレイアウトにし、報酬・達成を示す
 /// 場面（連続記録・レベル・正解）にだけ暖色のアクセント（ゴールド/コーラル）を
-/// 足している。カード面もフラット一辺倒ではなく、グラデーションと
-/// ごく薄いグロー（影）を持たせて奥行きを出す。
+/// 足している。アクセント色は白背景の上でも読める濃さに調整済み
+/// （GitHub Primer のライトテーマ配色を参考に、本文サイズでも
+/// コントラスト比 4.5:1 以上を確保）。
 abstract final class AppColors {
-  /// 画面の一番下地。
-  static const Color background = Color(0xFF0B111C);
+  /// 画面の一番下地。白より少しだけ沈めて、白いカードとの境目を作る。
+  static const Color background = Color(0xFFF1F5F9);
 
-  /// カード / パネルの背景。背景より少し明るいダークグレー。
-  static const Color surface = Color(0xFF141C2B);
+  /// カード / パネルの背景。
+  static const Color surface = Color(0xFFFFFFFF);
 
-  /// カードの中に重ねるさらに一段明るい面。
-  static const Color surfaceHigh = Color(0xFF1D2739);
+  /// カードの中に重ねる、もう一段沈んだ面（進捗バーの下地・入力欄など）。
+  static const Color surfaceHigh = Color(0xFFE2E8F0);
 
   /// 境界線。
-  static const Color border = Color(0xFF27334A);
+  static const Color border = Color(0xFFE2E8F0);
 
   /// メインのアクセント（Green 系）。ボタンや選択状態など「操作」に使う。
-  static const Color accent = Color(0xFF2ED3A0);
-  static const Color accentDark = Color(0xFF14A87C);
+  /// 白背景の上でも文字色として読めるよう、彩度を保ったまま暗めに調整。
+  static const Color accent = Color(0xFF1A7F37);
+  static const Color accentDark = Color(0xFF116329);
+
+  /// アクセント塗り（[accent] 等）の上に乗せる文字色。
+  static const Color onAccent = Colors.white;
 
   /// サブのアクセント（Blue 系）。
-  static const Color info = Color(0xFF4C8DFF);
+  static const Color info = Color(0xFF0969DA);
 
   /// 報酬・達成のアクセント（Gold 系）。連続記録・レベルアップ・
   /// 正解の演出など「うれしい瞬間」だけに使う、暖色の差し色。
+  /// 常に専用の濃い文字色（下記グラデーション参照）と組みで使うため、
+  /// 明るいままにしている。
   static const Color reward = Color(0xFFF5B94D);
   static const Color rewardDark = Color(0xFFD9902A);
 
-  /// 応援・元気づけのアクセント（Coral/Pink 系）。ホーム画面のコーチ
-  /// メッセージなど、温かみを出したい場面のワンポイントに使う。
+  /// 応援・元気づけのアクセント（Coral/Pink 系）。クイズ正解時の紙吹雪など、
+  /// 単発の演出だけに使う（本文の文字色には使わない）。
   static const Color warmAccent = Color(0xFFFF7D6B);
 
-  static const Color textPrimary = Color(0xFFF2F5FA);
-  static const Color textSecondary = Color(0xFFA6B1C4);
-  static const Color textMuted = Color(0xFF6E7B92);
+  static const Color textPrimary = Color(0xFF111827);
+  static const Color textSecondary = Color(0xFF4B5563);
+  static const Color textMuted = Color(0xFF6B7280);
 
-  static const Color success = Color(0xFF2ED3A0);
-  static const Color warning = Color(0xFFF2B544);
-  static const Color danger = Color(0xFFF2685C);
+  static const Color success = accent;
+  static const Color warning = Color(0xFF9A6700);
+  static const Color danger = Color(0xFFD1242F);
 
   /// レンジ表のアクション色。
   /// 色だけに頼らないよう、必ず記号ラベルと併用すること。
   static const Color rangeRaise = Color(0xFFE0655B);
   static const Color rangeCall = Color(0xFF3FA96F);
-  static const Color rangeFold = Color(0xFF2A3448);
+  static const Color rangeFold = surfaceHigh;
   static const Color rangeThreeBet = Color(0xFF8F6BE0);
   static const Color rangeFourBet = Color(0xFFC04A8A);
   static const Color rangeMixed = Color(0xFFD9A441);
 
   /// ホームのヘッダーやレベルカードなど「主役」の面に使うグラデーション。
-  /// 単色のフラット面より、遠目にも華やかに見える。
+  /// 白一色より奥行きが出るよう、アクセントをごく薄く滲ませた白。
   static const LinearGradient heroGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF17324A), Color(0xFF0F1B2E)],
+    colors: [Color(0xFFE7F5EC), Color(0xFFFFFFFF)],
   );
 
   /// 連続記録・達成バッジなど、報酬を示す面に使う暖色グラデーション。
@@ -69,11 +76,12 @@ abstract final class AppColors {
   );
 
   /// カードにごく薄く落とす影。フラットな面に最小限の奥行きを足す。
+  /// 白背景の上では暗い影が強く出すぎるため、ダークテーマ時より薄くしている。
   static List<BoxShadow> cardGlow({Color? color}) => [
     BoxShadow(
-      color: (color ?? Colors.black).withValues(alpha: 0.28),
-      blurRadius: 24,
-      offset: const Offset(0, 10),
+      color: (color ?? Colors.black).withValues(alpha: 0.12),
+      blurRadius: 20,
+      offset: const Offset(0, 8),
     ),
   ];
 }
