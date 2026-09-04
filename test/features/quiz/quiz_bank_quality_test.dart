@@ -1,5 +1,6 @@
 import 'package:ai_poker_coach/features/quiz/domain/quiz_category.dart';
 import 'package:ai_poker_coach/features/quiz/infrastructure/quiz_bank.dart';
+import 'package:ai_poker_coach/shared/models/hand_strength.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 /// 問題バンクの品質ルールを機械的に検証する。
@@ -388,6 +389,37 @@ void main() {
           .map((entry) => entry.situation.street.id)
           .toSet();
       expect(streets, hasLength(4));
+    });
+  });
+
+  group('役の捏造防止', () {
+    // 「◯◯が完成しています／しました／しており」のように役の完成を
+    // 断定した問題文は、実際のカード（ヒーローのハンド＋ボード）から
+    // 計算した役と一致していなければならない。
+    // 「完成しうる」（可能性の言及、まだ完成していない）は対象外。
+    final definiteCompletion = RegExp('が完成(?!しうる)');
+
+    test('「役が完成」と断定した問題は、実際のカードと役が一致する', () {
+      for (final entry in situated) {
+        final question = entry.quiz.question;
+        if (!definiteCompletion.hasMatch(question)) continue;
+
+        final allCards = [...entry.situation.heroCards, ...entry.situation.board];
+        if (allCards.length < 5) continue;
+        final actual = HandStrength.best(allCards).category;
+
+        for (final category in HandCategory.values) {
+          if (!question.contains(category.label)) continue;
+          expect(
+            actual,
+            category,
+            reason:
+                '${entry.quiz.id}: 問題文は「${category.label}が完成」と書いているが、'
+                'ヒーローのハンドとボードから計算すると実際は「${actual.label}」。'
+                '問題文: $question',
+          );
+        }
+      }
     });
   });
 }

@@ -164,7 +164,7 @@ abstract final class RiverQuizzes {
       hero: Position.co,
       villain: Position.bb,
       heroCards: 'Ts 9s',
-      board: 'Js Qs 4h 7c 2d',
+      board: 'Js Qs 4h 7s 2d',
       potBb: 20,
       villainProfile: VillainProfile.reg,
       history: ['フロップ・ターンでベットしコールされた', 'リバー: BB check'],
