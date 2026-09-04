@@ -34,20 +34,36 @@ directional bias Jensen's inequality predicts.
 This bias only appears where the sampled chance node sits *between* two
 decisions of the same responding player whose information sets don't
 already fully distinguish the sampled outcome — i.e. exactly the situation
-where the greedy policy has room to specialize to the sample. It does NOT
-appear where sampling happens *before* any decision whose information set
-already encodes the outcome in full — such as `PostflopSubgame`'s own
-hero/villain hand-dealing chance nodes, since `information_set_key` already
-bakes the dealt combo into every later key, so there is no shared decision
-across combos left for a greedy policy to overfit. Concretely: sampling
-*which combos* are dealt is safe; sampling *which turn/river card* is dealt
-is the biased case (the flop-betting decision, taken before the card is
-known, is exactly the kind of decision that has to generalize over the
-sampled outcomes). Treat any `exploitability_mc` result that samples
-turn/river cards as an optimistic (upper-bound-leaning) estimate that
-tightens toward the true value as `k` grows — never as an unbiased
+where the greedy policy has room to specialize to the sample. Treat any
+`exploitability_mc` result as an optimistic (upper-bound-leaning) estimate
+that tightens toward the true value as `k` grows — never as an unbiased
 replacement for the exact computation, and never report it without this
 caveat attached.
+
+CORRECTION (this paragraph originally claimed more than is true — recorded
+here rather than silently deleted, since a later session spent real effort
+disproving it and that's worth keeping visible): sampling *which combos*
+are dealt is **not** simply "safe" the way sampling turn/river is simply
+"biased". An attempt to build a combo-pair sampling tool on that claim
+(`ComboSampledGame`, since reverted — see `BENCHMARKS.md`, "コンボペア
+サンプリングの検証と撤回") found it introduces bias just as large as
+turn/river sampling, for a subtler reason: `PostflopSubgame` deals hero's
+combo first and villain's combo second, *conditioned on* hero's already-
+dealt combo (villain's `chance_outcomes` filters out combos that clash with
+hero's hand). That means villain's combo-dealing chance node occurs at a
+different `history` for every one of hero's combos, so sampling it —
+independently, per history, as `ChanceSampledGame`/`ComboSampledGame` both
+naively do — makes *which* villain combos got explored vary with hero's
+combo, a variable villain's own information sets don't include either. The
+result is the identical aggregate-then-maximize shape that biases
+turn/river sampling, just triggered by a different mechanism (a sample that
+implicitly depends on a hidden variable, rather than an outcome revealed
+after an earlier decision). Only the very first chance node in the tree
+(the one whose `history` doesn't depend on any other hidden variable) was
+verified safe to sample this way, and only for the player whose own
+information sets include it — a narrow enough case that it wasn't judged
+worth shipping on its own. Sampling here should be treated as unsolved,
+not as "solved for combos, unsolved for turn/river".
 
 The same sampled outcomes are reused across every visit to the same history
 (cached by `history`, which is hashable in every game in this package). This
