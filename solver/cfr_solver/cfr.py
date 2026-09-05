@@ -88,11 +88,89 @@ the hot per-node path). This changes nothing about the CFR/CFR+ arithmetic
 itself: it is exactly the same kind of storage-only swap the
 `array.array` change above was, and is held to the same bit-for-bit
 regression bar (`tests/test_node_storage_regression.py`).
+
+## Save/resume (`CFRSolver.save` / `CFRSolver.load`)
+
+`BENCHMARKS.md`'s Stage S2 measurement (32,473,151 information sets, 6.49GB
+RSS, ~4 hours) was thrown away the moment its process exited — there was no
+way to persist a trained solver and continue it later. `save`/`load` fix
+that: they capture every piece of mutable state `train`/`train_external_sampling`
+touch and let a *freshly constructed* `CFRSolver` (in a later process, hours
+or days later) pick up exactly where the saved one left off, producing
+`average_strategy()` output bit-for-bit identical to an uninterrupted run —
+same bar as the storage refactors above, verified by
+`tests/test_cfr_persistence.py`.
+
+What is NOT saved: `self.game`. Reconstructing a `Game` from its own
+constructor arguments is cheap and the caller already knows how to do it
+(`PostflopSubgame(flop_board=..., hero_range_notation=..., ...)`), so `load`
+takes a freshly-built `Game` instance rather than trying to pickle one —
+this also sidesteps ever needing to serialize the game's own internals
+(equity caches, etc.), which are no business of this module's persistence
+format.
+
+The single easiest way to get this *wrong* is the RNG: `train_external_sampling`
+draws from `self._rng` (a `random.Random`), and that stream has already been
+partially consumed by the time a save happens. Re-seeding a fresh
+`Random(same_seed)` on load would silently replay the *same* "random"
+choices the original run already made and moved past — producing a
+resumed run that diverges from an uninterrupted one, not one extra bit at
+a time but from the very first post-resume sample. The fix is
+`random.Random.getstate()`/`.setstate()`, built for exactly this: the full
+Mersenne Twister internal state (624 words + position + the Gaussian
+spare-value cache) round-trips exactly. `test_cfr_persistence.py` is built
+specifically to catch a regression here (it resumes `train_external_sampling`,
+which only that path exercises, not `train`).
+
+**Format**: one binary file — a header (variant, iteration counters, RNG
+state, the small list of distinct action-vocabulary tuples, a `STRIDE`
+sanity value) pickled (chosen over JSON here specifically because
+`random.Random.getstate()`'s internal tuple must round-trip with its exact
+types and exact float bit-pattern for `gauss_next` — pickle guarantees
+both **by construction**; JSON would need extra encode/decode shims for
+tuple-vs-list and is not specified to preserve float bit-patterns across
+implementations, and this header is tiny regardless of encoding, so
+pickle's usual "opaque, larger" downsides don't matter here) — followed by
+raw bytes for the three big parallel arrays (`array.tobytes()` — not JSON:
+at Stage S2 scale that's 32M+ elements per array, where JSON would be both
+far larger on disk and far slower to parse than a direct memory-mapped-
+style byte dump) and a compact length-prefixed blob of the information-set
+key strings, in insertion-id order.
+
+Rebuilding `_index` (the native `NodeIndex`) deliberately reuses only its
+existing `get_or_create`/`items`/`__len__` surface — no new Rust API — by
+relying on a property `NodeIndex` already documents and tests
+(`ids_are_assigned_densely_in_insertion_order` in `native/src/lib.rs`):
+`get_or_create` assigns dense ids `0, 1, 2, ...` strictly in first-seen
+order. So `save` calls `items()` once (after training, exactly like
+`average_strategy()` already does), sorts by id, and writes out just the
+key strings in that order; `load` replays `get_or_create(key)` for those
+same keys in that same order into a fresh `NodeIndex`, which is guaranteed
+to reassign the identical ids — keeping `_node_action_set_id`/`_regret`/
+`_strategy` (restored directly from their saved bytes) correctly aligned
+without `NodeIndex` ever needing to serialize itself.
+
+That reuse has a real cost, honestly measured in
+`tests/test_cfr_persistence.py`'s scale test rather than assumed: `items()`
+allocates one Python `str` per information set (see its own docstring —
+it's designed to be called once, off the hot path, not for this to be
+free), and `load` then pays a second `get_or_create` Rust call per key on
+top of that. At Stage S2's real ~32M-entry scale this is the dominant cost
+of `save`/`load` — see that test's recorded timings for how it actually
+scales; if it ever becomes a real bottleneck the fix would be a dedicated
+bulk export/import on the Rust side (e.g. `NodeIndex.dump_raw()`/
+`load_raw()` operating on encoded key bytes directly, skipping the `String`
+round-trip and the second hash-and-compare pass `get_or_create` redoes for
+keys that are already known-fresh) — deliberately not built here per this
+task's brief (reuse the existing native surface unless it's proven
+insufficient).
 """
 
 from __future__ import annotations
 
+import pickle
 import random
+import struct
 from array import array
 from dataclasses import dataclass, field
 
@@ -100,6 +178,8 @@ from cfr_solver import _native
 from cfr_solver.games.game import Action, Game, History
 
 STRIDE = 3  # the most actions any information set in this package needs
+
+_SAVE_FORMAT_MAGIC = b"CFRSOLV1"
 
 
 def _naive_sum(values: list[float]) -> float:
@@ -114,6 +194,44 @@ def _naive_sum(values: list[float]) -> float:
     for v in values:
         total += v
     return total
+
+
+def _write_block(f, data: bytes) -> None:
+    """Length-prefixed (8-byte little-endian unsigned) block, so `_read_block`
+    knows exactly how many bytes to read back without needing a delimiter
+    that might collide with real data."""
+    f.write(struct.pack("<Q", len(data)))
+    f.write(data)
+
+
+def _read_block(f) -> bytes:
+    (n,) = struct.unpack("<Q", f.read(8))
+    return f.read(n)
+
+
+def _pack_keys(keys: list[str]) -> bytes:
+    """Concatenates `keys` into one blob, each prefixed by its UTF-8 byte
+    length (4-byte little-endian unsigned) — avoids assuming keys never
+    contain any particular delimiter character, and is far cheaper to write
+    and re-read at tens-of-millions-of-keys scale than a JSON list of
+    strings would be."""
+    parts = []
+    for key in keys:
+        encoded = key.encode("utf-8")
+        parts.append(struct.pack("<I", len(encoded)))
+        parts.append(encoded)
+    return b"".join(parts)
+
+
+def _unpack_keys(blob: bytes, count: int) -> list[str]:
+    keys = []
+    offset = 0
+    for _ in range(count):
+        (length,) = struct.unpack_from("<I", blob, offset)
+        offset += 4
+        keys.append(blob[offset : offset + length].decode("utf-8"))
+        offset += length
+    return keys
 
 
 @dataclass(frozen=True)
@@ -146,6 +264,108 @@ class CFRSolver:
         self._iterations_trained = 0
         self._sampled_iterations_trained = 0
         self._rng = random.Random(random_seed)
+
+    def save(self, path: str) -> None:
+        """Serializes every piece of state needed to resume training later
+        (see the module docstring's "Save/resume" section for the full
+        design rationale and format layout) to `path`.
+
+        Does NOT save `self.game` — the caller reconstructs an equivalent
+        fresh `Game` and passes it to `load`.
+        """
+        items = self._index.items()
+        items.sort(key=lambda pair: pair[1])  # ascending by id
+        keys_in_id_order = [key for key, _nid in items]
+        if len(keys_in_id_order) != len(self._index):
+            raise RuntimeError(
+                "NodeIndex.items() returned a different count than __len__ — "
+                "refusing to save a possibly-inconsistent index"
+            )
+
+        header = {
+            "variant": self.variant,
+            "stride": STRIDE,
+            "num_nodes": len(keys_in_id_order),
+            "iterations_trained": self._iterations_trained,
+            "sampled_iterations_trained": self._sampled_iterations_trained,
+            "rng_state": self._rng.getstate(),
+            "action_sets": [list(aset.actions) for aset in self._action_sets],
+        }
+        header_bytes = pickle.dumps(header, protocol=pickle.HIGHEST_PROTOCOL)
+
+        with open(path, "wb") as f:
+            f.write(_SAVE_FORMAT_MAGIC)
+            _write_block(f, header_bytes)
+            _write_block(f, self._node_action_set_id.tobytes())
+            _write_block(f, self._regret.tobytes())
+            _write_block(f, self._strategy.tobytes())
+            _write_block(f, _pack_keys(keys_in_id_order))
+
+    @classmethod
+    def load(cls, path: str, game: Game) -> "CFRSolver":
+        """Reconstructs a `CFRSolver` from a file written by `save`, bound to
+        the caller-provided (freshly built) `game`.
+
+        Resuming training on the result (`train`/`train_external_sampling`)
+        and reading `average_strategy()` produces output bit-for-bit
+        identical to a single uninterrupted run for the same total
+        iteration count — see `tests/test_cfr_persistence.py`. This
+        includes exactly restoring `random.Random`'s internal state (not
+        re-seeding), which is what makes `train_external_sampling` resume
+        safely; see the module docstring for why that specific detail is
+        easy to get wrong.
+        """
+        with open(path, "rb") as f:
+            magic = f.read(len(_SAVE_FORMAT_MAGIC))
+            if magic != _SAVE_FORMAT_MAGIC:
+                raise ValueError(f"{path!r} is not a CFRSolver save file (bad magic bytes)")
+            header = pickle.loads(_read_block(f))
+            node_action_set_id_bytes = _read_block(f)
+            regret_bytes = _read_block(f)
+            strategy_bytes = _read_block(f)
+            keys_blob = _read_block(f)
+
+        if header["stride"] != STRIDE:
+            raise ValueError(
+                f"save file was written with STRIDE={header['stride']}, but this build of "
+                f"cfr.py uses STRIDE={STRIDE} — incompatible, refusing to load"
+            )
+
+        solver = cls(game, variant=header["variant"])
+        solver._rng.setstate(header["rng_state"])
+        solver._iterations_trained = header["iterations_trained"]
+        solver._sampled_iterations_trained = header["sampled_iterations_trained"]
+
+        # Rebuild the shared action-vocabulary cache in its original order —
+        # `_get_action_set_id` appends to an initially-empty
+        # `_action_sets`/`_action_set_lookup`, so replaying the saved list
+        # in order reproduces the original ids exactly (same reasoning as
+        # the NodeIndex replay below).
+        for actions in header["action_sets"]:
+            solver._get_action_set_id(actions)
+
+        # Rebuild `_index` by replaying `get_or_create` in the exact
+        # original id-assignment order (see module docstring). This
+        # reproduces identical ids without any new Rust API, so the arrays
+        # below (restored verbatim from their saved bytes) stay correctly
+        # aligned by node id.
+        keys_in_id_order = _unpack_keys(keys_blob, header["num_nodes"])
+        for key in keys_in_id_order:
+            solver._index.get_or_create(key)
+        if len(solver._index) != header["num_nodes"]:
+            raise RuntimeError(
+                f"replaying saved keys produced {len(solver._index)} node(s), expected "
+                f"{header['num_nodes']} — save file is corrupt or keys collided unexpectedly"
+            )
+
+        solver._node_action_set_id = array("B")
+        solver._node_action_set_id.frombytes(node_action_set_id_bytes)
+        solver._regret = array("d")
+        solver._regret.frombytes(regret_bytes)
+        solver._strategy = array("d")
+        solver._strategy.frombytes(strategy_bytes)
+
+        return solver
 
     def _get_action_set_id(self, actions: list[Action]) -> int:
         canon = tuple(actions)
