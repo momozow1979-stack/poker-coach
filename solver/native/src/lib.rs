@@ -77,6 +77,7 @@
 
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -230,6 +231,44 @@ impl NodeIndexInner {
             .map(|id| (decode(self.arena.get(id)), id))
             .collect()
     }
+
+    /// Total size of the packed-keys blob `write_packed_keys` produces —
+    /// split out so the caller can size a destination buffer (e.g. a
+    /// Python `bytes` object) exactly once, up front.
+    fn packed_keys_len(&self) -> usize {
+        (0..self.arena.len() as u32)
+            .map(|id| 4 + self.arena.get(id)[0] as usize)
+            .sum()
+    }
+
+    /// Writes every key, in id order (`0, 1, 2, ...` — the arena's storage
+    /// order, same order `items()` already produces), into `out` as
+    /// `[4-byte little-endian length][key bytes]` repeated — the exact
+    /// on-disk format `cfr.py`'s `_write_block`/`_unpack_keys` use.
+    /// `out.len()` must equal `packed_keys_len()` exactly.
+    ///
+    /// Exists so `CFRSolver.save()` never has to materialize a Python
+    /// `String` per entry the way `items()` does. At tens of millions of
+    /// entries that materialization was measured (see `cfr.py`'s
+    /// `BENCHMARKS.md` Stage S3 entry) to add well over a gigabyte of
+    /// *peak* RSS beyond the final packed blob's own size, and
+    /// `resource.getrusage().ru_maxrss` never releases that peak for the
+    /// rest of the process's life. Writing directly into a caller-owned
+    /// buffer (rather than building a separate `Vec<u8>` and copying it
+    /// into the final Python `bytes` object) avoids paying for two live
+    /// copies of a buffer that is itself hundreds of megabytes at this
+    /// package's scale.
+    fn write_packed_keys(&self, out: &mut [u8]) {
+        let mut offset = 0usize;
+        for id in 0..self.arena.len() as u32 {
+            let raw = self.arena.get(id);
+            let len = raw[0] as usize;
+            out[offset..offset + 4].copy_from_slice(&(len as u32).to_le_bytes());
+            offset += 4;
+            out[offset..offset + len].copy_from_slice(&raw[1..1 + len]);
+            offset += len;
+        }
+    }
 }
 
 /// Native replacement for `CFRSolver._index: dict[str, int]`. See module
@@ -269,6 +308,23 @@ impl NodeIndex {
     /// what keeps the hot path allocation-free.
     fn items(&self) -> Vec<(String, u32)> {
         self.inner.items()
+    }
+
+    /// See `NodeIndexInner::write_packed_keys` — the memory-efficient
+    /// alternative `CFRSolver.save()` uses instead of `items()`.
+    ///
+    /// Returns real Python `bytes`, not a `list[int]` (PyO3's blanket
+    /// `Vec<u8>` conversion produces the latter — one boxed `int` object
+    /// per byte, defeating the entire point of this method). Writes
+    /// directly into the new `bytes` object's own buffer via
+    /// `PyBytes::new_with`, so only one copy of the packed data ever
+    /// exists, not a separate `Vec<u8>` plus a `bytes` copy of it.
+    fn packed_keys<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
+        let len = self.inner.packed_keys_len();
+        PyBytes::new_bound_with(py, len, |out| {
+            self.inner.write_packed_keys(out);
+            Ok(())
+        })
     }
 }
 
@@ -332,6 +388,34 @@ mod tests {
         got.sort_by_key(|(_, id)| *id);
         expected.sort_by_key(|(_, id)| *id);
         assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn packed_keys_matches_items_in_the_same_length_prefixed_format() {
+        let mut idx = idx();
+        let inserted = ["00010203|xb|c|", "AAAA:pbc", "", "x", "0102030405060708091011|x||"];
+        for key in inserted {
+            idx.get_or_create_impl(key, hash_bytes).unwrap();
+        }
+
+        let len = idx.packed_keys_len();
+        let mut buf = vec![0u8; len];
+        idx.write_packed_keys(&mut buf);
+
+        // Independently reconstruct what `write_packed_keys` should have
+        // produced from `items()` (already verified elsewhere to round-trip
+        // every key/id correctly) and compare byte-for-byte, rather than
+        // trusting the two implementations agree by construction.
+        let mut items = idx.items();
+        items.sort_by_key(|(_, id)| *id);
+        let mut expected = Vec::new();
+        for (key, _id) in items {
+            let bytes = key.as_bytes();
+            expected.extend_from_slice(&(bytes.len() as u32).to_le_bytes());
+            expected.extend_from_slice(bytes);
+        }
+        assert_eq!(buf, expected);
+        assert_eq!(len, expected.len());
     }
 
     #[test]

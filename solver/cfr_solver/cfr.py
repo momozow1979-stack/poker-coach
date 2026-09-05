@@ -209,30 +209,6 @@ def _read_block(f) -> bytes:
     return f.read(n)
 
 
-def _pack_keys(keys: list[str]) -> bytearray:
-    """Concatenates `keys` into one blob, each prefixed by its UTF-8 byte
-    length (4-byte little-endian unsigned) — avoids assuming keys never
-    contain any particular delimiter character, and is far cheaper to write
-    and re-read at tens-of-millions-of-keys scale than a JSON list of
-    strings would be.
-
-    Appends directly into one growable `bytearray` instead of collecting
-    two small `bytes` objects per key into a list before `b"".join(...)`.
-    At tens-of-millions of keys, that list-then-join approach was measured
-    (against a real 13.2M-entry checkpoint) to add several GB of *peak*
-    RSS beyond the final blob size — and `resource.getrusage().ru_maxrss`
-    never goes back down, so that transient spike permanently inflates
-    every RSS reading taken for the rest of the process's life. `f.write()`
-    accepts a `bytearray` directly (buffer protocol), so `_write_block`
-    never needs the immutable `bytes` conversion this used to do."""
-    buf = bytearray()
-    for key in keys:
-        encoded = key.encode("utf-8")
-        buf += struct.pack("<I", len(encoded))
-        buf += encoded
-    return buf
-
-
 def _unpack_keys(blob: bytes, count: int) -> list[str]:
     keys = []
     offset = 0
@@ -283,19 +259,21 @@ class CFRSolver:
         Does NOT save `self.game` — the caller reconstructs an equivalent
         fresh `Game` and passes it to `load`.
         """
-        items = self._index.items()
-        items.sort(key=lambda pair: pair[1])  # ascending by id
-        keys_in_id_order = [key for key, _nid in items]
-        if len(keys_in_id_order) != len(self._index):
-            raise RuntimeError(
-                "NodeIndex.items() returned a different count than __len__ — "
-                "refusing to save a possibly-inconsistent index"
-            )
+        # `packed_keys()` builds the length-prefixed on-disk key blob (see
+        # `_unpack_keys` below for the format it reads back) entirely in
+        # Rust from the arena's already-compact storage — never
+        # materializing a Python `str` per entry the way
+        # `self._index.items()` does. That materialization was measured
+        # (see BENCHMARKS.md's Stage S3 entry) to add well over a gigabyte
+        # of *permanent* peak RSS at tens of millions of entries, and
+        # `resource.getrusage().ru_maxrss` never releases that peak for the
+        # rest of the process's life.
+        packed_keys = self._index.packed_keys()
 
         header = {
             "variant": self.variant,
             "stride": STRIDE,
-            "num_nodes": len(keys_in_id_order),
+            "num_nodes": len(self._index),
             "iterations_trained": self._iterations_trained,
             "sampled_iterations_trained": self._sampled_iterations_trained,
             "rng_state": self._rng.getstate(),
@@ -309,7 +287,7 @@ class CFRSolver:
             _write_block(f, self._node_action_set_id.tobytes())
             _write_block(f, self._regret.tobytes())
             _write_block(f, self._strategy.tobytes())
-            _write_block(f, _pack_keys(keys_in_id_order))
+            _write_block(f, packed_keys)
 
     @classmethod
     def load(cls, path: str, game: Game) -> "CFRSolver":
