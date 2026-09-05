@@ -61,3 +61,7 @@ solver/vendor/
 # AGPL-licensed) — never vendored into this repo, and never distributed.
 solver/vendor/
 
+
+# CFRSolver.save() checkpoints from long-running training (multi-GB binary
+# blobs) — never committed, kept locally so a run can resume across sessions.
+.solver-checkpoints/
