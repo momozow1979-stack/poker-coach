@@ -299,6 +299,117 @@ fn exploitability(
     walk::exploitability(&ctx, &avg, flop_board, max_sweeps).map_err(PyRuntimeError::new_err)
 }
 
+// -- Stage 8R-5: Rayon-parallel counterparts, exposed alongside Stage 8R-4's
+// sequential functions above (added, not replacing -- both stay available,
+// mirroring how `exploitability.py`'s Stage 7 kept its sequential and
+// parallel Python functions side by side). Each of these releases the GIL
+// for the ENTIRE native computation (every policy-iteration sweep, not just
+// individual leaves or sweeps) via `py.allow_threads`, and optionally scopes
+// a custom-sized Rayon thread pool to that one call via `max_workers`
+// (`walk::with_worker_pool`) -- never touching Rayon's global default pool.
+
+#[pyfunction]
+#[pyo3(signature = (flop_board, hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round, avg_strategy, max_sweeps=50, max_workers=None))]
+#[allow(clippy::too_many_arguments)]
+fn actual_value_parallel(
+    py: Python<'_>,
+    flop_board: [u8; 3],
+    hero_combos: Vec<(u8, u8)>,
+    villain_combos: Vec<(u8, u8)>,
+    preflop_contrib: (f64, f64),
+    bet_sizes: (f64, f64, f64),
+    max_wagers_per_round: u8,
+    avg_strategy: &Bound<'_, PyDict>,
+    max_sweeps: u32,
+    max_workers: Option<u32>,
+) -> PyResult<(f64, f64)> {
+    let _ = max_sweeps; // unused by actual_value itself; kept for a uniform call signature
+    let ctx = build_ctx(hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round);
+    let avg = AvgStrategy::from_py_dict(avg_strategy)?;
+    let r = py.allow_threads(|| {
+        walk::with_worker_pool(max_workers, || walk::actual_value_parallel(&ctx, &avg, flop_board))
+    });
+    Ok((r[0], r[1]))
+}
+
+#[pyfunction]
+#[pyo3(signature = (flop_board, hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round, avg_strategy, player, max_sweeps=50, max_workers=None))]
+#[allow(clippy::too_many_arguments)]
+fn best_response_value_parallel(
+    py: Python<'_>,
+    flop_board: [u8; 3],
+    hero_combos: Vec<(u8, u8)>,
+    villain_combos: Vec<(u8, u8)>,
+    preflop_contrib: (f64, f64),
+    bet_sizes: (f64, f64, f64),
+    max_wagers_per_round: u8,
+    avg_strategy: &Bound<'_, PyDict>,
+    player: u8,
+    max_sweeps: u32,
+    max_workers: Option<u32>,
+) -> PyResult<f64> {
+    let ctx = build_ctx(hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round);
+    let avg = AvgStrategy::from_py_dict(avg_strategy)?;
+    py.allow_threads(|| {
+        walk::with_worker_pool(max_workers, || {
+            walk::best_response_value_parallel(&ctx, &avg, player, flop_board, max_sweeps)
+        })
+    })
+    .map_err(PyRuntimeError::new_err)
+}
+
+#[pyfunction]
+#[pyo3(signature = (flop_board, hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round, avg_strategy, max_sweeps=50, max_workers=None))]
+#[allow(clippy::too_many_arguments)]
+fn exploitability_per_player_parallel(
+    py: Python<'_>,
+    flop_board: [u8; 3],
+    hero_combos: Vec<(u8, u8)>,
+    villain_combos: Vec<(u8, u8)>,
+    preflop_contrib: (f64, f64),
+    bet_sizes: (f64, f64, f64),
+    max_wagers_per_round: u8,
+    avg_strategy: &Bound<'_, PyDict>,
+    max_sweeps: u32,
+    max_workers: Option<u32>,
+) -> PyResult<(f64, f64)> {
+    let ctx = build_ctx(hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round);
+    let avg = AvgStrategy::from_py_dict(avg_strategy)?;
+    let gaps = py
+        .allow_threads(|| {
+            walk::with_worker_pool(max_workers, || {
+                walk::exploitability_per_player_parallel(&ctx, &avg, flop_board, max_sweeps)
+            })
+        })
+        .map_err(PyRuntimeError::new_err)?;
+    Ok((gaps[0], gaps[1]))
+}
+
+#[pyfunction]
+#[pyo3(signature = (flop_board, hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round, avg_strategy, max_sweeps=50, max_workers=None))]
+#[allow(clippy::too_many_arguments)]
+fn exploitability_parallel(
+    py: Python<'_>,
+    flop_board: [u8; 3],
+    hero_combos: Vec<(u8, u8)>,
+    villain_combos: Vec<(u8, u8)>,
+    preflop_contrib: (f64, f64),
+    bet_sizes: (f64, f64, f64),
+    max_wagers_per_round: u8,
+    avg_strategy: &Bound<'_, PyDict>,
+    max_sweeps: u32,
+    max_workers: Option<u32>,
+) -> PyResult<f64> {
+    let ctx = build_ctx(hero_combos, villain_combos, preflop_contrib, bet_sizes, max_wagers_per_round);
+    let avg = AvgStrategy::from_py_dict(avg_strategy)?;
+    py.allow_threads(|| {
+        walk::with_worker_pool(max_workers, || {
+            walk::exploitability_parallel(&ctx, &avg, flop_board, max_sweeps)
+        })
+    })
+    .map_err(PyRuntimeError::new_err)
+}
+
 #[pymodule(name = "_native")]
 fn native_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ping, m)?)?;
@@ -318,5 +429,9 @@ fn native_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(best_response_value, m)?)?;
     m.add_function(wrap_pyfunction!(exploitability_per_player, m)?)?;
     m.add_function(wrap_pyfunction!(exploitability, m)?)?;
+    m.add_function(wrap_pyfunction!(actual_value_parallel, m)?)?;
+    m.add_function(wrap_pyfunction!(best_response_value_parallel, m)?)?;
+    m.add_function(wrap_pyfunction!(exploitability_per_player_parallel, m)?)?;
+    m.add_function(wrap_pyfunction!(exploitability_parallel, m)?)?;
     Ok(())
 }
