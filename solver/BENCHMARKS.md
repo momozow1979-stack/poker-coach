@@ -1076,3 +1076,238 @@ IPC/pickleコストを差し引いた、この4コア環境での現実的な速
   確認用に16ペアの計2点のみ）。
 - Rust/ネイティブ実装への書き換えは行っていない（Stage 8として
   別途判断される話であり、今回のスコープ外）。
+
+## Stage 8R-6: 実際のフルスケール局面をCIのfixtureとして固定化
+
+### Context（なぜやったか）
+
+Stage 8R-4/8R-5がRustへ移植したexact exploitability計算は、AA vs KK
+（36コンボペア）のような実際のフルスケール局面ですら、Pythonの逐次実装
+で235.6秒かかっていたところを55.06秒（シーケンシャル）・25.88秒
+（並列）まで縮めた。これは、これまで`tests/test_exploitability_parallel.py`/
+`tests/test_exploitability_native.py`/`tests/test_exploitability_native_parallel.py`
+が明示的に避けてきた「`export_solved_spots.py`が実際に解く本物の局面」を、
+初めてルーチンのCIチェックとして毎回検証できる速さになった、という
+ことを意味する。これまでのテストは（Pythonでは実用外の時間がかかる
+ため）意図的にヒーロー2コンボ×ヴィラン2コンボなどの極小スライスに
+削って検証していた——本物の局面そのものをbit-exactに検証するテストは、
+このセッションまで存在しなかった。
+
+このステージでは、`export_solved_spots.py`のSPOTS 2件（AA vs KK、
+QQ+ vs TT-JJ）それぞれについて、実際に学習を走らせた
+`average_strategy()`の出力をfixtureとしてリポジトリにコミットし、CIは
+そのfixtureをロードしてRustのexact exploitability計算だけを実行・検証
+する（学習はCIでは行わない——学習自体は依然として分単位〜十分単位
+かかるため）。
+
+### fixtureの生成
+
+`export_solved_spots.py`のSPOTS定義と完全に同じ設定で学習した:
+
+| | AA vs KK | QQ+ vs TT-JJ |
+| --- | --- | --- |
+| board | 7h 2d 3s | 7h 2d 3s |
+| hero range | AA（6コンボ） | QQ+（18コンボ） |
+| villain range | KK（6コンボ） | TT-JJ（12コンボ） |
+| コンボペア数 | 36 | 216 |
+| bet_sizes_bb | (2.5, 5.0, 7.5) | (2.5, 5.0, 7.5) |
+| max_wagers_per_round | 1 | 1 |
+| random_seed | 1 | 1 |
+| iterations | 1,000,000 | 3,000,000 |
+| 情報集合数（このセッションで実測） | 446,833 | 1,114,103 |
+| 学習時間（このセッションで実測） | 383.4秒 | 1,271.7秒（≈21.2分） |
+
+AA vs KKの446,833情報集合は、Stage 6（`lru_cache`最適化）・Stage 7
+（並列化）でこれまで繰り返し記録してきた値と完全に一致し、学習の
+再現性が保たれていることを確認できた。
+
+### AA vs KK: 既存の検証済み値をそのまま再利用
+
+AA vs KKのexact exploitability `0.03149967136596232`は、Stage 7
+（Pythonの逐次版と並列版）・Stage 8R-4（Rustシーケンシャル版、
+55.06秒）・Stage 8R-5（Rust並列版、25.88秒）で繰り返しbit-exact一致が
+確認済みの値であり、本ステージでは新たに学習し直すのではなく、この値
+をそのまま`aa_vs_kk_expected_exploitability.json`に記録した——異なる
+random_seedや設定の微妙な違いから値がドリフトするリスクを避けるため。
+このセッションで生成した`average_strategy()`のfixtureに対して、実際に
+`exploitability_native`/`exploitability_parallel_native`を呼び出し、
+両方とも記録済みの値と完全一致することを確認した。
+
+### QQ+ vs TT-JJ: 記録済みの値は丸められた表示値だったため、新たに厳密計算した
+
+`BENCHMARKS.md`のレンジ幅拡張の節に記録されている値`0.03729`は、有効
+数字5桁に丸めた表示値であり、`==`によるbit-exact比較が要求するフル
+精度の浮動小数点数ではなかった。そのままでは「本当に一致しているか」
+を検証できないため、本ステージでは同じ設定（3,000,000反復、
+random_seed=1）で新たに学習し、既存の純Python実装
+`cfr_solver.exploitability.exploitability()`でexact exploitabilityを
+計算し直し、これを新たな厳密値（グラウンドトゥルース）とした。
+
+### 発見した問題: レンジ展開の`set`イテレーション順序がプロセスをまたいで非決定的
+
+QQ+ vs TT-JJのfixture生成中に、**Rustのバグではない、既存のPython実装
+（`cfr_solver/poker/range_notation.py`・`cfr_solver/poker/combos.py`、
+Stage 8Rよりずっと前から存在するコード）に起因する再現性の問題**を
+発見した。
+
+`range_notation.expand()`は複数の169ハンドコードにまたがるレンジ表記
+（`'QQ+'` → `{QQ, KK, AA}`、`'TT-JJ'` → `{TT, JJ}`）を`set[str]`として
+返し、`combos.range_combos()`はこれを`for code in hand_codes:`で直接
+イテレートしている。Pythonは文字列のハッシュをデフォルトで
+プロセスごとにランダム化する（`PYTHONHASHSEED`未設定）ため、この`set`
+のイテレーション順序——つまり`hero_combos`/`villain_combos`の並び順
+——は、**同じコード・同じ設定でも、別々のPythonプロセスを起動する
+たびに変わりうる**。実際に確認した:
+
+```
+$ python3 -c "from cfr_solver.poker.range_notation import expand; print(expand('QQ+'))"
+{'KK', 'QQ', 'AA'}
+$ python3 -c "from cfr_solver.poker.range_notation import expand; print(expand('QQ+'))"
+{'QQ', 'AA', 'KK'}
+$ python3 -c "from cfr_solver.poker.range_notation import expand; print(expand('QQ+'))"
+{'AA', 'QQ', 'KK'}
+```
+
+（`'AA'`・`'KK'`のような単一169ハンドコードのレンジは`set`の要素が
+1つしかないため、この影響を受けない——実際、AA vs KKの
+`hero_combos`/`villain_combos`は3回試しても常にソート済みの順序と
+一致することを確認した。）
+
+この並び順の違いは、どの情報集合がどの正しい戦略を持つか（fixtureの
+`avg_strategy`の中身）には影響しない——情報集合キーは実際のカードの
+値・行動履歴から作られるため、コンボの列挙順序とは無関係。しかし
+**exact exploitabilityの計算（`actual_value`/`best_response_value`の
+chanceノードでの`total += prob * child`という総和、および
+`best_response_value`の反復的な不動点計算）は、コンボの列挙順序に
+浮動小数点の総和順序として依存する**——浮動小数点の加算は結合則が
+成り立たないため、同じ値の集合でも足す順序が変われば最後の数ビット
+が変わりうる。
+
+実際に発生した実害: このステージの最初の`average_strategy()`
+fixtureは、あるプロセス（学習を実行した`gen_qq_plus.py`）で生成
+されたコンボ順序のもとで厳密計算し`0.037279985798492676`を得た。
+その後、**別の新しいプロセス**（`pytest`）でfixtureをロードして
+`PostflopSubgame`を再構築し、同じ`avg_strategy`に対して
+`exploitability_native`を呼び直したところ、`0.037279985798492454`
+という**わずかに異なる値**（絶対差 2.22e-16、相対差 約6e-15——
+浮動小数点の再結合誤差として説明のつく、数ビット分のごく小さな差）
+が返り、`==`によるテストが失敗した。
+
+### 対応: このステージのスコープ内で、コンボ順序を正規化する
+
+`range_notation.py`/`combos.py`自体の修正（例:
+`expand()`が`set`ではなくソート済みの`list`/`tuple`を返すようにする、
+`range_combos()`が`hand_codes`をソートしてからイテレートする、等）は、
+このステージで触ってよいファイルの範囲外であり、依頼の「Rustのバグを
+見つけたら黙って回避せず報告する」という原則を、Rust以外で見つかった
+今回のケースにもそのまま適用し、**`range_notation.py`/`combos.py`は
+一切変更していない**。
+
+代わりに、このステージが新規に追加したファイル（fixture生成スクリプト・
+`tests/test_exploitability_native_real_spot.py`）の中だけで、
+`PostflopSubgame`構築直後に`game.hero_combos = sorted(game.hero_combos)`
+/`game.villain_combos = sorted(game.villain_combos)`を適用し、コンボ
+順序をプロセスに依存しない正規化された順序に固定した
+（`hero_combos`/`villain_combos`をテスト側から直接再代入するのは
+`tests/test_exploitability_parallel.py`の既存テストが
+`game.hero_combos = game.hero_combos[:2]`で行っているのと同じ、この
+コードベースで確立済みのパターン）。この正規化を適用した上で、
+QQ+ vs TT-JJのexact exploitabilityをPython・Rustシーケンシャル・
+Rust並列の3通りで計算し直したところ、3つとも完全に一致した:
+
+```
+python sequential exploitability = 0.037279985798492676 (1,388.8秒 ≈ 23.1分)
+rust   sequential exploitability = 0.037279985798492676 (342.6秒 ≈ 5.7分)
+rust   parallel   exploitability = 0.037279985798492676 (141.4秒 ≈ 2.4分)
+bit-exact match: True（3つとも完全一致、かつ正規化前の最初の計算値
+0.037279985798492676 とも一致——今回はたまたま同じ値になったが、
+これは偶然であり、正規化しない限り再現性は保証されない）
+```
+
+**この`sorted()`による正規化は対症療法であり、根本原因の修正では
+ない**——`range_notation.py`/`combos.py`側で`set`をやめて決定的な
+順序（ソート済みlist等）を返すようにするのが本来あるべき修正だが、
+今回はスコープ外として意図的に行っていない。この問題は今回のRust
+移植（Stage 8R-1〜8R-5）が持ち込んだものではなく、Phase 2からずっと
+存在していたコードの性質であり、**複数の169ハンドコードにまたがる
+レンジ表記（"XX+"、ダッシュレンジなど）を使う限り、`export_solved_spots.py`
+を含むあらゆる箇所で、プロセスをまたいだ厳密な再現性（bit-exact
+reproducibility）が保証されていなかった**、という発見そのものが今回の
+副産物である。（余談だが、`BENCHMARKS.md`の「レンジ幅の拡張」の節に
+記録されている探索的な値`0.03729`と、本ステージで計算した
+`0.03728...`の差も、単なる丸めの問題だけでなく、一部はこの非決定性に
+起因している可能性がある——当時の学習がどのコンボ順序で行われたかは
+記録されておらず、遡って確認できない。）
+
+### 実測した速度向上（exact exploitability計算のみ、学習時間は含まない）
+
+| | AA vs KK（36コンボペア） | QQ+ vs TT-JJ（216コンボペア、正規化済みコンボ順序） |
+| --- | --- | --- |
+| Python 逐次（`exploitability()`） | 235.6秒（Stage 7で記録済み） | 1,388.8秒（≈23.1分、本ステージで新規実測） |
+| Rust シーケンシャル（`exploitability_native`） | 55.06秒（Stage 8R-4で記録済み） | 342.6秒（≈5.7分、本ステージで新規実測） |
+| Rust 並列（`exploitability_parallel_native`、4コア） | 25.88秒（Stage 8R-5で記録済み） | 141.4秒（≈2.4分、本ステージで新規実測） |
+| 速度向上（Python逐次→Rustシーケンシャル） | 4.28倍 | 4.05倍 |
+| 速度向上（Python逐次→Rust並列） | 9.11倍 | 9.82倍 |
+| 速度向上（Rustシーケンシャル→Rust並列） | 2.13倍 | 2.42倍 |
+
+QQ+ vs TT-JJ（AA vs KKの6倍のコンボペア数）でも、速度向上の倍率は
+AA vs KKとほぼ同じ水準（4.0〜4.3倍・9.1〜9.8倍・2.1〜2.4倍）で安定
+しており、Stage 8R-5のコミットメッセージで報告されていた「コンボ
+ペア数が増えても速度向上比が劣化しない」という傾向がここでも
+裏付けられた。
+
+### 新規CIテスト: `tests/test_exploitability_native_real_spot.py`
+
+上記のfixture（学習済み`average_strategy()`と、検証済み/新規計算した
+厳密exploitability値）をリポジトリにコミットし、CIはこれらをロード
+して「Rustのexact exploitability計算だけ」を実行・検証する新しい
+テストファイルを追加した。学習はCIでは一切行わない（fixtureは事前に
+手動生成済み）。`_build_game`は上記の`sorted()`正規化を常に適用する
+（AA vs KKには影響しないが、QQ+ vs TT-JJの再現性に必須）。
+
+実測したテスト全体の所要時間: `pytest -v tests/test_exploitability_native_real_spot.py`
+で**584.70秒（≈9分45秒、2 passed）**（AA vs KK・QQ+ vs TT-JJ の両方、
+シーケンシャル・並列の両entry pointをそれぞれ検証）。内訳はおおよそ
+AA vs KK側が約115秒（55.06秒+25.88秒相当）、QQ+ vs TT-JJ側が約470秒
+（342.6秒+141.4秒相当）——CIの「数十秒」という理想からは外れるが、
+2つのspotそれぞれでシーケンシャル・並列の両entry pointを別個に検証
+している設計上の帰結であり、これは`tests/test_exploitability_native_parallel.py`
+が小さいスライスに対して行っているのと同じ「両方の入口を独立に検証
+する」方針をそのままフルスケール局面に適用した結果。
+
+### fixtureファイルサイズについて、正直に書いておくべきこと
+
+`average_strategy()`の出力は情報集合ごとに1エントリを持つため、情報
+集合数に比例してJSONサイズが大きくなる。コンパクトな区切り文字
+（`separators=(",", ":")`）を使った上でも:
+
+| fixture | サイズ |
+| --- | --- |
+| `aa_vs_kk_avg_strategy.json` | 21,653,285バイト（約20.7MiB） |
+| `qq_plus_vs_tt_jj_avg_strategy.json` | 54,497,375バイト（約52.0MiB） |
+| `aa_vs_kk_expected_exploitability.json` | 536バイト |
+| `qq_plus_vs_tt_jj_expected_exploitability.json` | 約2.0KB |
+
+**これは正直に言って、通常git管理下に置くfixtureとしては大きい**
+（合計約74.4MB追加）。gzip圧縮を試したところ、それぞれ約3.47MB・
+約9.39MB（元の約1/6）まで縮むことを確認したので、今後この2ファイル
+の存在がリポジトリサイズ・クローン時間の実害になった場合は、`gzip`
+で圧縮してコミットし、テスト側で`gzip.open`経由で読むよう変更する
+のが素直な対処法になる（内容は完全に同じままサイズだけ縮められる、
+可逆な変更）。今回は依頼された通りの`.json`という単純な形式のまま
+——CIチェックの新規性そのものの検証を優先し、圧縮という追加の
+複雑さは持ち込まなかったが、**サイズを黙って許容するのではなく、
+ここに明記しておく**。
+
+### スコープ外として意図的に触れていない点
+
+- `cfr_solver/poker/range_notation.py`/`combos.py`の`set`イテレーション
+  順序の根本修正（上記参照）——今回発見した問題だが、このステージで
+  触ってよいファイルの範囲外として意図的に修正していない。
+- `export_solved_spots.py`のSPOTSに含まれる情報（フロップの最初の
+  意思決定のみexportする、というスコープ）そのものは今回変更していない。
+- fixtureの生成はこのセッションで一度手動実行しただけで、CI自体が
+  fixtureを再生成する仕組みは用意していない（意図的——学習をCIで
+  走らせないことが本ステージの目的そのものであるため）。
+- 22+ vs 22+など、さらに広いレンジ幅のfixture化は今回のスコープ外
+  （依頼された2局面のみ）。
