@@ -1,8 +1,9 @@
 //! Rust port of the recursive best-response/actual-value walk
 //! (`_av_walk`/`_br_walk`/`best_response_value` in
 //! `cfr_solver/exploitability.py`), specialized to `PostflopSubgame`
-//! (Stage 8R-4). Single-threaded -- parallelizing the per-combo-pair
-//! subtrees is Stage 8R-5, a separate later stage.
+//! (Stage 8R-4). Stage 8R-5 (below the `-- Stage 8R-5 --` marker) adds
+//! Rayon-parallel counterparts of every function above that marker,
+//! without changing any of them.
 //!
 //! This is a direct structural port: every branch below mirrors the exact
 //! branch in `exploitability.py`, in the same order, doing the same
@@ -11,6 +12,7 @@
 //! `tests/test_exploitability_native.py`). See each function's docstring
 //! for the specific correspondence to its Python counterpart.
 
+use rayon::prelude::*;
 use rustc_hash::FxHashMap;
 
 use crate::history::{BoardBuf, Combo, History, TokenBuf};
@@ -339,4 +341,397 @@ pub fn exploitability(
 ) -> Result<f64, String> {
     let gaps = exploitability_per_player(ctx, avg, flop_board, max_sweeps)?;
     Ok((gaps[0] + gaps[1]) / 2.0)
+}
+
+// ============================================================================
+// -- Stage 8R-5: Rayon-parallel counterparts --------------------------------
+// ============================================================================
+//
+// Direct structural port of `exploitability.py`'s "Parallel exploitability"
+// section (Stage 7) -- `expand_chance_prefix`/`fold_chance_prefix_actual`/
+// `fold_chance_prefix_br` below are line-for-line translations of that
+// module's `_expand_chance_prefix`/`_fold_chance_prefix_actual`/
+// `_fold_chance_prefix_br`. See that module's docstrings (and
+// `solver/BENCHMARKS.md`'s Stage 7 entry) for the full argument that this
+// design reproduces the sequential walk's floating-point result bit-for-bit,
+// not just approximately -- the summary:
+//
+// - `expand_chance_prefix` descends through consecutive chance nodes from
+//   the root using ONLY the generic `is_chance_node`/`chance_outcomes`/
+//   `next_history` primitives (no `PostflopSubgame`-specific "two levels"
+//   hardcoding), collecting every leaf reached (both hero and villain combos
+//   dealt) in the same depth-first order `chance_outcomes` enumerates them,
+//   paired with the cumulative chance-reach probability to that point --
+//   `reach * prob`, same expression, same order, at every level, exactly
+//   reproducing what `reach_others` would hold at that point in the
+//   sequential recursion.
+// - The leaf-level computation (`av_walk`/`br_walk`, wholly unmodified) runs
+//   in parallel via `.par_iter().map(..).collect::<Vec<_>>()` -- an indexed
+//   parallel iterator, so `collect` returns results in the SAME order as the
+//   input `Vec`, regardless of which thread computed which element.
+// - `fold_chance_prefix_actual`/`fold_chance_prefix_br` then walk the exact
+//   same chance-node prefix a second time, single-threaded, popping the next
+//   precomputed leaf result off the collected `Vec` (via its iterator) in
+//   that same depth-first order instead of recursing further -- every
+//   `total += prob * child` here is the identical expression, in the
+//   identical order, that `av_walk`/`br_walk`'s chance-node branch would
+//   have executed, so this is not a reduction (`reduce()`/`fold()`) that
+//   could reassociate the additions, just a replay of the same left-to-right
+//   accumulation the sequential version already does.
+// - For `br_walk`'s `q_accum`: each leaf's own subtree can only ever touch a
+//   given (key, action) more than once if the sequential recursion would
+//   too (this is unmodified code, just given a scoped-local accumulator), so
+//   a leaf's `local_q` is exactly what `br_walk` would have written into a
+//   shared `q_accum` while visiting that leaf's subtree. Merging `local_q`
+//   maps across leaves via a left-to-right `+=` fold, in the same DFS
+//   (combo-pair enumeration) order the sequential recursion visits them,
+//   reproduces that shared accumulation exactly -- a mathematical property
+//   of left folds (`foldl(f, z, xs ++ ys) == foldl(f, foldl(f, z, xs), ys)`)
+//   that holds regardless of which thread computed which leaf's `local_q`.
+//   No node above the leaf level ever touches `q_accum` (every node from the
+//   root down to a leaf is a chance node dealing hero's or villain's combo,
+//   never `player`'s own decision node), so leaf-local + merge captures every
+//   contribution with nothing left over.
+
+/// Descend through consecutive chance nodes from `h` (for `PostflopSubgame`:
+/// exactly two -- "deal hero's combo", then "deal villain's combo" -- the
+/// turn/river card draws happen *inside* the decision subtree below each
+/// leaf, not in this prefix, since `is_chance_node` is false as soon as both
+/// combos are dealt and the flop round hasn't ended yet), returning every
+/// leaf reached in the same depth-first order `rules::chance_outcomes`
+/// visits them, paired with the cumulative chance-reach probability of
+/// getting there. Direct port of `exploitability.py`'s
+/// `_expand_chance_prefix` (Stage 7). One leaf here is exactly one
+/// hero-combo x villain-combo pair -- the unit of parallel work below.
+pub fn expand_chance_prefix(ctx: &GameCtx, h: History, reach: f64) -> Vec<(History, f64)> {
+    if !rules::is_chance_node(&h) {
+        return vec![(h, reach)];
+    }
+    let outcomes = rules::chance_outcomes(
+        &ctx.hero_combos,
+        &ctx.villain_combos,
+        h.hero_combo,
+        h.villain_combo,
+        &h.board,
+    )
+    .expect("chance_outcomes must succeed on a reachable chance node");
+    let mut leaves = Vec::new();
+    for (action, prob) in outcomes {
+        let child_h = rules::next_history(&h, &ctx.hero_combos, &ctx.villain_combos, &action);
+        leaves.extend(expand_chance_prefix(ctx, child_h, reach * prob));
+    }
+    leaves
+}
+
+/// The mirror image of `expand_chance_prefix` for `actual_value`: walks the
+/// exact same chance-node prefix in the exact same order, but instead of
+/// computing a leaf's value by recursing further, pops the next precomputed
+/// per-leaf value off `results` (an iterator already advancing in the same
+/// depth-first order `expand_chance_prefix` produced). Direct port of
+/// `exploitability.py`'s `_fold_chance_prefix_actual`.
+fn fold_chance_prefix_actual(
+    ctx: &GameCtx,
+    h: History,
+    results: &mut std::vec::IntoIter<[f64; 2]>,
+) -> [f64; 2] {
+    if !rules::is_chance_node(&h) {
+        return results.next().expect("results iterator exhausted before every leaf was folded");
+    }
+    let outcomes = rules::chance_outcomes(
+        &ctx.hero_combos,
+        &ctx.villain_combos,
+        h.hero_combo,
+        h.villain_combo,
+        &h.board,
+    )
+    .expect("chance_outcomes must succeed on a reachable chance node");
+    let mut total = [0.0f64; 2];
+    for (action, prob) in outcomes {
+        let child_h = rules::next_history(&h, &ctx.hero_combos, &ctx.villain_combos, &action);
+        let child = fold_chance_prefix_actual(ctx, child_h, results);
+        total[0] += prob * child[0];
+        total[1] += prob * child[1];
+    }
+    total
+}
+
+/// The mirror image of `expand_chance_prefix` for `best_response_value`:
+/// walks the same chance-node prefix in the same order, and at each leaf
+/// pops the next precomputed `(value, local_q)` pair off `results`, merging
+/// `local_q`'s buckets into the shared `q_accum` via `+=` (see this
+/// module's Stage 8R-5 section docs for why that reproduces the sequential
+/// `bucket[a] += reach_others * child_values[a]` accumulation exactly, in
+/// the same order, regardless of which thread computed which leaf). Direct
+/// port of `exploitability.py`'s `_fold_chance_prefix_br`.
+fn fold_chance_prefix_br(
+    ctx: &GameCtx,
+    h: History,
+    results: &mut std::vec::IntoIter<(f64, QAccum)>,
+    q_accum: &mut QAccum,
+) -> f64 {
+    if !rules::is_chance_node(&h) {
+        let (value, local_q) =
+            results.next().expect("results iterator exhausted before every leaf was folded");
+        for (key, entry) in local_q {
+            let bucket = q_accum.entry(key).or_insert_with(|| QEntry::new(entry.order()));
+            for &a in entry.order() {
+                bucket.vals[action_index(a)] += entry.vals[action_index(a)];
+            }
+        }
+        return value;
+    }
+    let outcomes = rules::chance_outcomes(
+        &ctx.hero_combos,
+        &ctx.villain_combos,
+        h.hero_combo,
+        h.villain_combo,
+        &h.board,
+    )
+    .expect("chance_outcomes must succeed on a reachable chance node");
+    let mut total = 0.0f64;
+    for (action, prob) in outcomes {
+        let child_h = rules::next_history(&h, &ctx.hero_combos, &ctx.villain_combos, &action);
+        total += prob * fold_chance_prefix_br(ctx, child_h, results, q_accum);
+    }
+    total
+}
+
+/// Runs `f` inside a scoped Rayon thread pool of `max_workers` threads when
+/// given, or the ambient (global default, `RAYON_NUM_THREADS`-controlled)
+/// pool when `None` -- scoped to this one call only, never mutating any
+/// global Rayon state, per Rayon's `ThreadPoolBuilder`/`ThreadPool::install`
+/// API.
+pub fn with_worker_pool<F, R>(max_workers: Option<u32>, f: F) -> R
+where
+    F: FnOnce() -> R + Send,
+    R: Send,
+{
+    match max_workers {
+        Some(n) if n > 0 => {
+            let pool = rayon::ThreadPoolBuilder::new()
+                .num_threads(n as usize)
+                .build()
+                .expect("failed to build a scoped Rayon thread pool");
+            pool.install(f)
+        }
+        _ => f(),
+    }
+}
+
+/// Parallel, per-combo-pair equivalent of `actual_value`. Bit-exact with
+/// `actual_value` regardless of how many threads actually do the work (see
+/// this module's Stage 8R-5 section docs) -- verified in
+/// `tests/test_exploitability_native_parallel.py`.
+pub fn actual_value_parallel(ctx: &GameCtx, avg: &AvgStrategy, flop_board: [u8; 3]) -> [f64; 2] {
+    let init = ctx.initial_history(flop_board);
+    let leaves = expand_chance_prefix(ctx, init, 1.0);
+
+    // -- parallel phase: independent per-leaf subtree walks, no shared state.
+    let leaf_values: Vec<[f64; 2]> =
+        leaves.par_iter().map(|&(h, _reach)| av_walk(ctx, avg, h)).collect();
+
+    // -- sequential phase: order-preserving replay of the same chance-node
+    // additions `av_walk` itself would have performed.
+    let mut results = leaf_values.into_iter();
+    fold_chance_prefix_actual(ctx, init, &mut results)
+}
+
+/// One sweep's per-leaf work for `best_response_value_parallel`: computes,
+/// for every combo-pair leaf, that leaf's own subtree walk (using the
+/// *previous* sweep's frozen `policy`) into a fresh, leaf-local `QAccum` --
+/// exactly what `br_walk` would do if given a shared `q_accum`, just scoped
+/// to one leaf's own contributions so it can run independently of every
+/// other leaf.
+fn br_sweep_leaf_results(
+    ctx: &GameCtx,
+    avg: &AvgStrategy,
+    player: u8,
+    policy: &Policy,
+    leaves: &[(History, f64)],
+) -> Vec<(f64, QAccum)> {
+    leaves
+        .par_iter()
+        .map(|&(h, reach)| {
+            let mut local_q: QAccum = FxHashMap::default();
+            let value = br_walk(ctx, avg, player, policy, h, reach, &mut local_q);
+            (value, local_q)
+        })
+        .collect()
+}
+
+/// Parallel, per-combo-pair equivalent of `best_response_value`. Same
+/// policy-iteration structure as the sequential version (same convergence
+/// guarantee, same `max_sweeps` safety cap, same exact-fixed-point check):
+/// each sweep dispatches every combo pair's subtree walk across the Rayon
+/// pool using the previous sweep's frozen `policy`, then folds the results
+/// back into one `q_accum` and one greedy policy update exactly as the
+/// sequential version would, before moving to the next sweep. Only the
+/// per-leaf subtree walks run in parallel -- the sweep loop itself, like the
+/// sequential version's, is inherently iterative (each sweep genuinely needs
+/// the previous one's completed policy) and stays single-threaded. Bit-exact
+/// with `best_response_value` regardless of thread count -- verified in
+/// `tests/test_exploitability_native_parallel.py`.
+pub fn best_response_value_parallel(
+    ctx: &GameCtx,
+    avg: &AvgStrategy,
+    player: u8,
+    flop_board: [u8; 3],
+    max_sweeps: u32,
+) -> Result<f64, String> {
+    let init = ctx.initial_history(flop_board);
+    let leaves = expand_chance_prefix(ctx, init, 1.0);
+
+    let mut policy: Policy = FxHashMap::default();
+    let mut converged = false;
+
+    for _ in 0..max_sweeps {
+        let leaf_results = br_sweep_leaf_results(ctx, avg, player, &policy, &leaves);
+        let mut q_accum: QAccum = FxHashMap::default();
+        let mut results = leaf_results.into_iter();
+        fold_chance_prefix_br(ctx, init, &mut results, &mut q_accum);
+
+        let mut new_policy: Policy = FxHashMap::default();
+        new_policy.reserve(q_accum.len());
+        for (key, entry) in q_accum.iter() {
+            new_policy.insert(key.clone(), entry.argmax());
+        }
+
+        if new_policy == policy {
+            converged = true;
+            break;
+        }
+        policy = new_policy;
+    }
+
+    if !converged {
+        return Err(format!(
+            "best_response_value_parallel did not converge within {max_sweeps} sweeps for \
+             player {player} -- the games in this package are small finite-horizon games and \
+             should converge in a handful of sweeps, so this indicates a bug"
+        ));
+    }
+
+    let final_results = br_sweep_leaf_results(ctx, avg, player, &policy, &leaves);
+    let mut throwaway: QAccum = FxHashMap::default();
+    let mut results = final_results.into_iter();
+    Ok(fold_chance_prefix_br(ctx, init, &mut results, &mut throwaway))
+}
+
+/// Parallel equivalent of `exploitability_per_player`. Bit-exact with
+/// `exploitability_per_player` regardless of thread count.
+pub fn exploitability_per_player_parallel(
+    ctx: &GameCtx,
+    avg: &AvgStrategy,
+    flop_board: [u8; 3],
+    max_sweeps: u32,
+) -> Result<[f64; 2], String> {
+    let actual = actual_value_parallel(ctx, avg, flop_board);
+    let mut gaps = [0.0f64; 2];
+    for player in 0u8..2 {
+        let br = best_response_value_parallel(ctx, avg, player, flop_board, max_sweeps)?;
+        gaps[player as usize] = br - actual[player as usize];
+    }
+    Ok(gaps)
+}
+
+/// Parallel equivalent of `exploitability`: the average of
+/// `exploitability_per_player_parallel`. Bit-exact with `exploitability`
+/// regardless of thread count.
+pub fn exploitability_parallel(
+    ctx: &GameCtx,
+    avg: &AvgStrategy,
+    flop_board: [u8; 3],
+    max_sweeps: u32,
+) -> Result<f64, String> {
+    let gaps = exploitability_per_player_parallel(ctx, avg, flop_board, max_sweeps)?;
+    Ok((gaps[0] + gaps[1]) / 2.0)
+}
+
+#[cfg(test)]
+mod parallel_tests {
+    use super::*;
+
+    fn tiny_ctx() -> GameCtx {
+        // AA (2 combos) vs KK (2 combos), matching
+        // `tests/test_exploitability_native.py`'s `_tiny_game` slice --
+        // small enough to run instantly as a `cargo test`.
+        GameCtx {
+            hero_combos: vec![(51, 47), (51, 46)], // As/Ah, As/Ad-ish stand-ins; exact ids
+            // don't matter for this structural test, only that they're two
+            // distinct combos disjoint from the villain combos and the board.
+            villain_combos: vec![(45, 41), (45, 40)],
+            preflop_contrib: (2.5, 2.5),
+            bet_sizes: (2.5, 5.0, 7.5),
+            max_wagers_per_round: 1,
+        }
+    }
+
+    fn flop_board() -> [u8; 3] {
+        [0, 4, 8]
+    }
+
+    #[test]
+    fn combo_pair_leaf_count_matches_hero_times_villain_combos() {
+        let ctx = tiny_ctx();
+        let init = ctx.initial_history(flop_board());
+        let leaves = expand_chance_prefix(&ctx, init, 1.0);
+        assert_eq!(leaves.len(), ctx.hero_combos.len() * ctx.villain_combos.len());
+        let total_prob: f64 = leaves.iter().map(|&(_, p)| p).sum();
+        assert!(
+            (total_prob - 1.0).abs() < 1e-12,
+            "leaf probabilities should sum to ~1.0, got {total_prob}"
+        );
+    }
+
+    #[test]
+    fn expand_then_fold_actual_reproduces_plain_av_walk_sequentially() {
+        // Isolates "did enumeration order match" from "did parallelism
+        // introduce a bug" -- process leaves sequentially through the new
+        // expand/fold machinery (no Rayon involved yet) and confirm it's
+        // bit-identical to calling `av_walk` directly from the root.
+        let ctx = tiny_ctx();
+        let avg = AvgStrategy::from_entries([]);
+        let init = ctx.initial_history(flop_board());
+
+        let expected = av_walk(&ctx, &avg, init);
+
+        let leaves = expand_chance_prefix(&ctx, init, 1.0);
+        let leaf_values: Vec<[f64; 2]> =
+            leaves.iter().map(|&(h, _reach)| av_walk(&ctx, &avg, h)).collect();
+        let mut results = leaf_values.into_iter();
+        let got = fold_chance_prefix_actual(&ctx, init, &mut results);
+
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn actual_value_parallel_matches_sequential_actual_value() {
+        let ctx = tiny_ctx();
+        let avg = AvgStrategy::from_entries([]);
+        let expected = actual_value(&ctx, &avg, flop_board());
+        let got = actual_value_parallel(&ctx, &avg, flop_board());
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn best_response_value_parallel_matches_sequential_best_response_value() {
+        let ctx = tiny_ctx();
+        let avg = AvgStrategy::from_entries([]);
+        for player in 0u8..2 {
+            let expected = best_response_value(&ctx, &avg, player, flop_board(), 50).unwrap();
+            let got = best_response_value_parallel(&ctx, &avg, player, flop_board(), 50).unwrap();
+            assert_eq!(got, expected);
+        }
+    }
+
+    #[test]
+    fn with_worker_pool_none_and_some_produce_the_same_result() {
+        let ctx = tiny_ctx();
+        let avg = AvgStrategy::from_entries([]);
+        let a = with_worker_pool(None, || actual_value_parallel(&ctx, &avg, flop_board()));
+        let b = with_worker_pool(Some(1), || actual_value_parallel(&ctx, &avg, flop_board()));
+        let c = with_worker_pool(Some(2), || actual_value_parallel(&ctx, &avg, flop_board()));
+        assert_eq!(a, b);
+        assert_eq!(b, c);
+    }
 }
