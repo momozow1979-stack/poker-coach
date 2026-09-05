@@ -45,6 +45,26 @@ class RangeHandGuidance {
 /// 内訳（[RangeEntry.blend] の主・副アクションの割合）も、実測ソルバー値
 /// ではなく「標準的なプリフロップ理論に基づいて整理した学習用の目安」
 /// であり、これを厳密なGTO頻度として断定しない。
+///
+/// vsOpen シナリオ（[RangeDefinitions._vsOpen] で追加した11件）の裏取りに
+/// ついて: この env のネットワーク境界上、主要なプリフロップチャート配信
+/// サイト（RangeConverter・PreflopWizard・RedChipPoker・PokerCoaching・
+/// TwoPlusTwo・Scribd 等）は個別ページの直接取得ができず、検索結果の
+/// スニペット経由でのみ内容を確認できた。得られた範囲で確認できたのは:
+/// 「3Bet頻度は早いポジションのオープンほど低く（UTGクラス想定で目安7.5%）、
+/// 遅いポジションほど広がる（COクラス想定で目安16%）」「典型的な3Betレンジは
+/// QQ+/AKs/AKo中心の価値に、A5s-A2s等のブロッカーやスーテッドコネクターの
+/// ブラフを添える構成」「SBはBBよりも引き締めた3Bet/Foldに寄りやすい」
+/// という、独立した複数の情報源に共通する一般論——このアプリの11シナリオ
+/// （UTGクラス対面ほど価値のみ、レイトポジション対面ほどA5s-A2s系ブロッカー
+/// ブラフを追加、SBをBB防衛より引き締める、という設計）と方向性が一致する
+/// ことを確認した。ただしハンド単位の完全一致を検証したわけではなく、
+/// 自前のソルバー（`solver/vendor/TexasSolver`）でのクロスチェックは、
+/// このツールがプリフロップ単独（ボード無し）の解を出せない仕様のため
+/// 実施できなかった（2026年9月、`solver/vendor/TexasSolver/src/tools/
+/// CommandLineTool.cpp` の `set_board` がボード無し入力を受け付けないことを
+/// ソースコードで確認済み）。この注記はポーカーに詳しい人間によるレビュー
+/// の代わりにはならず、あくまで「学習用の目安」という位置づけは変えない。
 abstract final class RangeGuidanceBuilder {
   static RangeHandGuidance build({
     required RangeSpot spot,
