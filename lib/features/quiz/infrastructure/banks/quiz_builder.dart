@@ -1,4 +1,5 @@
 import '../../../../shared/models/playing_card.dart';
+import '../../../../shared/models/poker_action.dart';
 import '../../../../shared/models/position.dart';
 import '../../../../shared/models/street.dart';
 import '../../../../shared/models/table_type.dart';
@@ -48,6 +49,13 @@ Quiz buildQuiz({
   required String practicalView,
   required String commonMistake,
   String? relatedRangeSpotId,
+
+  /// true にすると、各選択肢のラベルから [inferActionType] でアクション種別を
+  /// 推測して付与する。全カテゴリへの一括付与はまだ内容確認が済んでいないため、
+  /// 選択肢が一貫して「Fold」「Raise 2.5BB」のような定型のアクション名で
+  /// 書かれていることを確認済みのカテゴリ（プリフロップ・フロップ）だけで
+  /// 有効にしている。
+  bool tagActionTypes = false,
 }) {
   return Quiz(
     id: id,
@@ -68,7 +76,11 @@ Quiz buildQuiz({
     question: question,
     choices: [
       for (var i = 0; i < choices.length; i++)
-        QuizChoice(id: '$id-c$i', label: choices[i]),
+        QuizChoice(
+          id: '$id-c$i',
+          label: choices[i],
+          actionType: tagActionTypes ? inferActionType(choices[i]) : null,
+        ),
     ],
     correctChoiceId: '$id-c$correctIndex',
     explanation: QuizExplanation(
@@ -84,6 +96,32 @@ Quiz buildQuiz({
 List<String> _splitCards(String cards) => cards.isEmpty
     ? const []
     : cards.split(' ').where((card) => card.isNotEmpty).toList();
+
+/// 選択肢のラベルから対応するアクション種別を推測する。
+///
+/// 出題バンクの選択肢は「Fold」「Call」「Raise 2.5BB」「3Bet 8BB」のような、
+/// 定型のアクション名（英語表記）+ 任意のサイズや注釈、という書式でほぼ
+/// 統一されている。既知のアクション語を含む場合だけ種別を返し、
+/// 「相手のベットを待つ」のような概念的な選択肢には何も返さない
+/// （無理にアクション種別へ当てはめない）。
+///
+/// 複合語（`Check-Raise`・`Re-raise`・`3Bet`/`4Bet`）は、それ単体の語
+/// （`Check`・`Raise`・`Bet`）にも一致してしまうため、判定の前段で拾う。
+PokerActionType? inferActionType(String label) {
+  if (label.contains('Check-Raise') || label.contains('Re-raise')) {
+    return PokerActionType.raise;
+  }
+  if (label.contains('3Bet') || label.contains('4Bet')) {
+    return PokerActionType.raise;
+  }
+  if (label.contains('All-in')) return PokerActionType.allIn;
+  if (label.contains('Fold')) return PokerActionType.fold;
+  if (label.contains('Call')) return PokerActionType.call;
+  if (label.contains('Check')) return PokerActionType.check;
+  if (label.contains('Raise')) return PokerActionType.raise;
+  if (label.contains('Bet')) return PokerActionType.bet;
+  return null;
+}
 
 /// 卓の状況を伴わない、定義を問う問題を組み立てる。
 ///

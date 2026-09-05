@@ -5,8 +5,22 @@ import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/canvas_text.dart';
+import '../models/poker_action.dart';
 import '../models/position.dart';
 import '../models/table_type.dart';
+
+/// [PokerTableView] にチップアニメーションを再生させるための情報。
+///
+/// どの席が・どんな種類のアクションをしたか、だけを持つ軽量な値オブジェクト。
+/// サイズ（BB 額）はこのアニメーションには不要なので持たない。
+class TableLastAction {
+  const TableLastAction({required this.position, required this.actionType});
+
+  /// アクションをした席。[PokerTableView.heroPosition] や
+  /// [PokerTableView.villainPosition] と同じ [Position] を使う。
+  final Position position;
+  final PokerActionType actionType;
+}
 
 /// テーブルの席を俯瞰で描く図。
 ///
@@ -26,6 +40,7 @@ class PokerTableView extends StatelessWidget {
     this.height = 148,
     this.onSeatTap,
     this.rotateHeroToBottom = true,
+    this.lastAction,
   });
 
   final TableType tableType;
@@ -43,6 +58,11 @@ class PokerTableView extends StatelessWidget {
 
   /// ヒーローを手前（下）に配置するか。
   final bool rotateHeroToBottom;
+
+  /// 直前のアクション。渡すと、その席からポット中央へ小さいチップが
+  /// 動くアニメーションを一度だけ再生する（任意。既存の呼び出し元には
+  /// 影響しない追加パラメータ）。
+  final TableLastAction? lastAction;
 
   static const double seatRadius = 17;
 
@@ -116,6 +136,21 @@ class PokerTableView extends StatelessWidget {
                         center: seatCenter(size, i, seats.length, 1),
                         onTap: () => onSeatTap!(seats[i]),
                       ),
+                  if (lastAction != null &&
+                      seats.contains(lastAction!.position))
+                    _ChipTravel(
+                      key: ValueKey(
+                        '${lastAction!.position.name}-${lastAction!.actionType.name}',
+                      ),
+                      start: seatCenter(
+                        size,
+                        seats.indexOf(lastAction!.position),
+                        seats.length,
+                        1,
+                      ),
+                      end: Offset(size.width / 2, size.height / 2),
+                      color: lastAction!.actionType.color,
+                    ),
                 ],
               );
             },
@@ -124,6 +159,67 @@ class PokerTableView extends StatelessWidget {
       ),
     );
   }
+}
+
+/// アクションをした席からポット中央へ動く、小さいチップ。
+///
+/// 既存の [PokerTableView] の席演出（[TweenAnimationBuilder]）と同じ
+/// パターンを踏襲した、一度きりの単純な移動アニメーション。
+class _ChipTravel extends StatelessWidget {
+  const _ChipTravel({
+    super.key,
+    required this.start,
+    required this.end,
+    required this.color,
+  });
+
+  final Offset start;
+  final Offset end;
+  final Color color;
+
+  static const double _radius = 6;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return Positioned(
+        left: end.dx - _radius,
+        top: end.dy - _radius,
+        child: _chip,
+      );
+    }
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 480),
+      curve: Curves.easeOutCubic,
+      builder: (context, t, child) {
+        final position = Offset.lerp(start, end, t)!;
+        return Positioned(
+          left: position.dx - _radius,
+          top: position.dy - _radius,
+          child: Opacity(opacity: (1 - t * 0.3).clamp(0.0, 1.0), child: child),
+        );
+      },
+      child: _chip,
+    );
+  }
+
+  Widget get _chip => Container(
+    width: _radius * 2,
+    height: _radius * 2,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: color,
+      border: Border.all(color: Colors.white, width: 1.5),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.2),
+          blurRadius: 3,
+          offset: const Offset(0, 1),
+        ),
+      ],
+    ),
+  );
 }
 
 /// 席の上に重ねる透明なタップ領域。

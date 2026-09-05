@@ -1,3 +1,7 @@
+import 'package:flutter/material.dart';
+
+import '../../core/theme/app_colors.dart';
+
 /// プレイヤーが選べるアクション。
 ///
 /// ベットサイズは種類ではなく [HandAction.sizeBb] で持つ。
@@ -34,6 +38,35 @@ enum PokerActionType {
       _ => check,
     };
   }
+}
+
+/// [PokerActionType] ごとの色・アイコン。
+///
+/// 色覚特性や白黒表示でも区別できるよう、アイコン（形）を必ず併用する
+/// 前提のセットにしてある（`RangeAction` の既存方針と同じ考え方）。
+/// 新しい色は増やさず、既存の [AppColors] のうち意味が重なるものを使う:
+/// コール＝レンジ表の Call 色、ベット/レイズ/オールインは
+/// レンジ表の Raise/3Bet/4Bet 色（段階が上がるほど攻撃的、という並びを流用）。
+/// フォールド・チェックにはレンジ表側に対応する色が無いため、
+/// 既存の中立色（textMuted / info）を使う。
+extension PokerActionTypeVisuals on PokerActionType {
+  Color get color => switch (this) {
+    PokerActionType.fold => AppColors.textMuted,
+    PokerActionType.check => AppColors.info,
+    PokerActionType.call => AppColors.rangeCall,
+    PokerActionType.bet => AppColors.rangeRaise,
+    PokerActionType.raise => AppColors.rangeThreeBet,
+    PokerActionType.allIn => AppColors.rangeFourBet,
+  };
+
+  IconData get icon => switch (this) {
+    PokerActionType.fold => Icons.close_rounded,
+    PokerActionType.check => Icons.remove_rounded,
+    PokerActionType.call => Icons.compare_arrows_rounded,
+    PokerActionType.bet => Icons.arrow_upward_rounded,
+    PokerActionType.raise => Icons.trending_up_rounded,
+    PokerActionType.allIn => Icons.bolt_rounded,
+  };
 }
 
 /// 「誰が何をしたか」を表す 1 アクション。

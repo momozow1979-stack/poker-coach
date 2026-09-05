@@ -1,4 +1,5 @@
 import '../../../shared/models/playing_card.dart';
+import '../../../shared/models/poker_action.dart';
 import '../../../shared/models/position.dart';
 import '../../../shared/models/street.dart';
 import '../../../shared/models/table_type.dart';
@@ -42,10 +43,18 @@ class QuizSituation {
 
 /// 回答の選択肢。
 class QuizChoice {
-  const QuizChoice({required this.id, required this.label});
+  const QuizChoice({required this.id, required this.label, this.actionType});
 
   final String id;
   final String label;
+
+  /// この選択肢が表すポーカーのアクション種別。
+  ///
+  /// 「フォールド」「レイズ」のような、実際のアクションを表す選択肢だけに
+  /// 設定する。用語問題の選択肢のように、概念や説明文が並ぶ場合は null のまま
+  /// でよい（無理にアクション種別へ当てはめない）。null なら選択肢ボタンは
+  /// アクションの色・アイコンを表示しない。
+  final PokerActionType? actionType;
 }
 
 /// 回答後に表示する解説。
