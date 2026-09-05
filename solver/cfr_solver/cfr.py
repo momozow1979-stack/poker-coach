@@ -64,6 +64,30 @@ neighboring node's slots.
 `array.array`'s own `.extend()` already amortizes growth (same
 doubling-style strategy CPython's `list` uses internally), so there is no
 hand-rolled capacity/resize logic here to get wrong.
+
+### `_index`: native `NodeIndex` instead of `dict[str, int]`
+
+The three structures above (`_node_action_set_id`/`_regret`/`_strategy`)
+account for only ~49 bytes/information-set. Measurement in `BENCHMARKS.md`
+found `_index: dict[str, int]` itself costs the other ~147 bytes/entry — a
+floor a prior pure-Python optimization pass (bit-packing keys into
+integers) already hit and could not get under, because it's CPython's own
+per-entry dict bookkeeping plus a separately heap-allocated `str` object per
+key, not anything about *what* was stored. `_index` is therefore the one
+piece of this module backed by a native (Rust/PyO3) type,
+`cfr_solver._native.NodeIndex` (`solver/native/src/lib.rs`): every
+information-set key this package's games produce is short and drawn from a
+small, bounded character set, so `NodeIndex` stores each key's bytes inline
+in a fixed-size buffer inside its Rust `HashMap` — no per-entry heap
+allocation — instead of as a separate Python `str` object. Its surface is
+intentionally the minimum `_get_node_id`/`average_strategy`/
+`num_information_sets` need: `get_or_create(key) -> (id, was_new)`,
+`__len__`, and `items()` (which reconstructs the original key strings, but
+only once, when `average_strategy()` is called after training — never on
+the hot per-node path). This changes nothing about the CFR/CFR+ arithmetic
+itself: it is exactly the same kind of storage-only swap the
+`array.array` change above was, and is held to the same bit-for-bit
+regression bar (`tests/test_node_storage_regression.py`).
 """
 
 from __future__ import annotations
@@ -72,6 +96,7 @@ import random
 from array import array
 from dataclasses import dataclass, field
 
+from cfr_solver import _native
 from cfr_solver.games.game import Action, Game, History
 
 STRIDE = 3  # the most actions any information set in this package needs
@@ -112,7 +137,7 @@ class CFRSolver:
             raise ValueError(f"unknown variant {variant!r}, expected 'cfr' or 'cfr_plus'")
         self.game = game
         self.variant = variant
-        self._index: dict[str, int] = {}
+        self._index = _native.NodeIndex()
         self._action_set_lookup: dict[tuple[Action, ...], int] = {}
         self._action_sets: list[_ActionSet] = []
         self._node_action_set_id = array("B")
@@ -140,11 +165,9 @@ class CFRSolver:
         return aset_id
 
     def _get_node_id(self, key: str, actions: list[Action]) -> int:
-        nid = self._index.get(key)
-        if nid is not None:
+        nid, is_new = self._index.get_or_create(key)
+        if not is_new:
             return nid
-        nid = len(self._index)
-        self._index[key] = nid
         self._node_action_set_id.append(self._get_action_set_id(actions))
         self._regret.extend([0.0] * STRIDE)
         self._strategy.extend([0.0] * STRIDE)
