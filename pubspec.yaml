@@ -75,6 +75,15 @@ flutter:
   #
   # ThemeData.fontFamily に指定している 'Noto Sans JP' と同じ family 名にする。
   # weight は 400 と 700 の2つだけ。w800 を指定している箇所は 700 が使われる。
+  #
+  # このTTFは元のNoto Sans JP（1weightあたり約5.1MB）から、
+  # assets/fonts/subset_fonts.py でサブセット化したもの（約2.2MB）。
+  # 日本語+基本ラテン文字しか使わないアプリなのに、フルセットのNoto Sans JP
+  # は他言語（簡体字・繁体字・ハングル圏で共有される字形やCyrillic等)まで
+  # 含んでおり、初回ロードが不必要に重かったため。lib/・test/・assets/*.json
+  # で実際に使われている文字は1つ残らずカバーされていることを検証済み
+  # （subset_fonts.py実行時に自動検証）。新しい文字（クイズ内容の追加等)で
+  # 豆腐（□）が出たら、subset_fonts.py を再実行してサブセットを更新する。
   fonts:
     - family: Noto Sans JP
       fonts:
