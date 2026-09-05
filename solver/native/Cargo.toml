@@ -1,0 +1,23 @@
+[package]
+name = "cfr_solver_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "_native"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# `extension-module` is required by maturin's build (Python provides the
+# libpython symbols at dynamic-load time) but breaks `cargo test` (the test
+# binary links directly and there's no embedding Python process to provide
+# them). Gating it behind a Cargo feature, on by default, lets
+# `maturin develop`/`build` work unchanged while `cargo test
+# --no-default-features` (used for the pure-Rust unit tests below) links
+# against libpython normally instead. This is the standard PyO3 recipe for
+# `cargo test`-ability, not specific to anything in this crate.
+pyo3 = { version = "0.22.6" }
+
+[features]
+extension-module = ["pyo3/extension-module"]
+default = ["extension-module"]

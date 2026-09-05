@@ -41,6 +41,12 @@ jobs:
         with:
           python-version: '3.12'
 
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: solver/native -> target
+
       - name: Install solver package
         run: pip install -e ".[dev]"
 
