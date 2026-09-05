@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../shared/models/poker_action.dart';
 
 /// 回答選択肢のボタン。回答後は正解 / 不正解を色と記号の両方で示す。
 class QuizChoiceButton extends StatelessWidget {
@@ -13,6 +14,7 @@ class QuizChoiceButton extends StatelessWidget {
     required this.isRevealed,
     required this.isCorrectChoice,
     required this.isSelected,
+    this.actionType,
   });
 
   final String label;
@@ -20,6 +22,11 @@ class QuizChoiceButton extends StatelessWidget {
   final bool isRevealed;
   final bool isCorrectChoice;
   final bool isSelected;
+
+  /// この選択肢が表すアクション種別。null なら色付きアイコンは出さない。
+  /// 回答後は正解 / 不正解の色・記号（[_icon]）が優先され、
+  /// このアイコンは常にラベルの前に小さく添えるだけにとどめる。
+  final PokerActionType? actionType;
 
   Color get _borderColor {
     if (!isRevealed) {
@@ -71,6 +78,10 @@ class QuizChoiceButton extends StatelessWidget {
             ),
             child: Row(
               children: [
+                if (actionType != null) ...[
+                  _ActionBadge(actionType: actionType!),
+                  const SizedBox(width: AppSpacing.sm),
+                ],
                 Expanded(
                   child: Text(
                     label,
@@ -105,5 +116,30 @@ class QuizChoiceButton extends StatelessWidget {
           .scaleXY(begin: 1.03, end: 1, duration: 180.ms, curve: Curves.easeIn);
     }
     return content;
+  }
+}
+
+/// 選択肢が表すアクション種別を、色付きアイコンで小さく示すバッジ。
+///
+/// 色だけに頼らないよう、必ず形の違うアイコン（[PokerActionTypeVisuals.icon]）
+/// を併用する。正解 / 不正解の表示（[QuizChoiceButton._icon]）とは役割が違い、
+/// こちらは回答前後を問わず「この選択肢は何のアクションか」を示し続ける。
+class _ActionBadge extends StatelessWidget {
+  const _ActionBadge({required this.actionType});
+
+  final PokerActionType actionType;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: actionType.color.withValues(alpha: 0.14),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(actionType.icon, size: 16, color: actionType.color),
+    );
   }
 }

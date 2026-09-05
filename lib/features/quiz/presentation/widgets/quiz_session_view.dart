@@ -123,6 +123,7 @@ class _QuizSessionViewState extends State<QuizSessionView> {
                 delay: Duration(milliseconds: 60 * i),
                 child: QuizChoiceButton(
                   label: quiz.choices[i].label,
+                  actionType: quiz.choices[i].actionType,
                   isRevealed: isRevealed,
                   isCorrectChoice: quiz.choices[i].id == quiz.correctChoiceId,
                   isSelected: quiz.choices[i].id == selectedChoiceId,

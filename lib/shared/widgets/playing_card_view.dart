@@ -84,6 +84,9 @@ class PlayingCardView extends StatelessWidget {
 /// カードを横並びで表示する。
 ///
 /// [dealAnimation] を有効にすると、1 枚ずつめくれるように現れる。
+/// [folded] を true にすると、フェード + 少し沈むアニメーションで
+/// 「そのハンドを降りた」ことを示す（`folded` が false→true に変わった
+/// 瞬間だけ再生される。逆方向にも対応している）。
 class PlayingCardRow extends StatelessWidget {
   const PlayingCardRow({
     super.key,
@@ -92,6 +95,7 @@ class PlayingCardRow extends StatelessWidget {
     this.spacing = AppSpacing.sm,
     this.dealAnimation = false,
     this.dealDelay = Duration.zero,
+    this.folded = false,
   });
 
   final List<PlayingCard> cards;
@@ -102,10 +106,13 @@ class PlayingCardRow extends StatelessWidget {
   /// 1 枚目が現れるまでの待ち時間。
   final Duration dealDelay;
 
+  /// true にすると、フォールドしたようにカードをフェードアウトさせる。
+  final bool folded;
+
   @override
   Widget build(BuildContext context) {
     final animate = dealAnimation && !MediaQuery.disableAnimationsOf(context);
-    return Wrap(
+    final content = Wrap(
       spacing: spacing,
       runSpacing: spacing,
       children: [
@@ -120,6 +127,21 @@ class PlayingCardRow extends StatelessWidget {
           else
             PlayingCardView(card: cards[i], width: width),
       ],
+    );
+
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    final duration = reduceMotion
+        ? Duration.zero
+        : const Duration(milliseconds: 260);
+    return AnimatedSlide(
+      duration: duration,
+      curve: Curves.easeIn,
+      offset: folded ? const Offset(0, 0.18) : Offset.zero,
+      child: AnimatedOpacity(
+        duration: duration,
+        opacity: folded ? 0.0 : 1.0,
+        child: content,
+      ),
     );
   }
 }
