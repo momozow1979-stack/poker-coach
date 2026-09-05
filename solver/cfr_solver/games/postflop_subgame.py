@@ -23,31 +23,54 @@ evaluates the best 5-card hand out of the 2 hole + 5 board cards.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from cfr_solver.games.game import Action, Game, History
 from cfr_solver.poker.cards import DECK, evaluate_best_hand
 from cfr_solver.poker.combos import Combo, range_combos
 from cfr_solver.poker.range_notation import expand as expand_range
 
+# `exploitability.best_response_value`'s `walk` visits the SAME history many
+# times over (once per policy-iteration sweep, for both `actual_value` and
+# both players' best responses), and the exact same (board, flop_a, turn_a,
+# river_a) state recurs identically across every one of a spot's hero/villain
+# combo pairs — the round/street bookkeeping below never depends on which
+# combo was dealt. Profiling `exploitability()` on the AA-vs-KK spot
+# (`BENCHMARKS.md`, "高速ハンド評価器...") found ~100s spent redundantly
+# re-deriving this same "what street, whose turn, is this round over" answer
+# from scratch on every single visit. All of the functions below are pure
+# functions of small, bounded-cardinality, hashable inputs (a handful of
+# action-token strings and board tuples per spot) — an ideal `lru_cache` fit:
+# caching turns the repeat visits into O(1) dict lookups without changing a
+# single branch of the original logic (verified in
+# `tests/test_postflop_subgame_optimization_regression.py` against frozen
+# naive/uncached reference copies of each function, over every reachable
+# input).
 
+
+@lru_cache(maxsize=None)
 def _round_done(tokens: str) -> bool:
     return tokens == "xx" or (bool(tokens) and tokens[-1] in ("c", "f"))
 
 
+@lru_cache(maxsize=None)
 def _round_folded(tokens: str) -> bool:
     return bool(tokens) and tokens[-1] == "f"
 
 
-def _legal_for_tokens(tokens: str, max_wagers: int) -> list[Action]:
+@lru_cache(maxsize=None)
+def _legal_for_tokens(tokens: str, max_wagers: int) -> tuple[Action, ...]:
     if tokens == "" or tokens[-1] == "x":
-        return ["x", "b"]
+        return ("x", "b")
     if tokens[-1] == "b":
         if tokens.count("b") < max_wagers:
-            return ["f", "c", "b"]
-        return ["f", "c"]
+            return ("f", "c", "b")
+        return ("f", "c")
     raise ValueError(f"legal_actions called on a completed round: {tokens!r}")
 
 
-def _simulate_round(tokens: str, bet_size: float) -> tuple[list[float], int | None]:
+@lru_cache(maxsize=None)
+def _simulate_round(tokens: str, bet_size: float) -> tuple[tuple[float, float], int | None]:
     contrib = [0.0, 0.0]
     level = 0.0
     actor = 0
@@ -58,9 +81,42 @@ def _simulate_round(tokens: str, bet_size: float) -> tuple[list[float], int | No
         elif ch == "c":
             contrib[actor] = level
         elif ch == "f":
-            return contrib, actor
+            return (contrib[0], contrib[1]), actor
         actor = 1 - actor
-    return contrib, None
+    return (contrib[0], contrib[1]), None
+
+
+@lru_cache(maxsize=None)
+def _active_round_for(
+    board: tuple[int, ...],
+    flop_a: str,
+    turn_a: str,
+    river_a: str,
+    bet_sizes: tuple[float, float, float],
+) -> tuple[str, float, int] | None:
+    """Module-level, cached twin of `PostflopSubgame._active_round` — identical
+    logic, just pulled out of the class so `lru_cache` can key on the
+    (board, action-strings, bet_sizes) tuple directly instead of needing an
+    instance-aware cache. `bet_sizes` is passed through so this stays a pure
+    function shareable across every `PostflopSubgame` instance with the same
+    bet sizing (harmless: results depend only on the arguments, never on
+    which instance asked)."""
+    if len(board) == 3:
+        return (flop_a, bet_sizes[0], 0) if not _round_done(flop_a) else None
+    if len(board) == 4:
+        return (turn_a, bet_sizes[1], 1) if not _round_done(turn_a) else None
+    return (river_a, bet_sizes[2], 2) if not _round_done(river_a) else None
+
+
+@lru_cache(maxsize=None)
+def _card_digits(cards: tuple[int, ...]) -> str:
+    """2-zero-padded-digits-per-card encoding used by `information_set_key`
+    (see that method's docstring). Own-combo and board tuples repeat across
+    every history that shares them (same combo dealt to many boards, same
+    board reached by many combos), so caching this small, pure formatting
+    step avoids re-running `str.join`/`f"{c:02d}"` from scratch on every one
+    of the many information-set-key calls that share a combo or a board."""
+    return "".join(f"{c:02d}" for c in cards)
 
 
 def _payoffs_from_fold(total_contrib: list[float], folder: int) -> list[float]:
@@ -114,12 +170,10 @@ class PostflopSubgame(Game):
 
     def _active_round(self, board: tuple[int, ...], flop_a: str, turn_a: str, river_a: str):
         """(tokens, bet_size, street_index) for whichever round is currently
-        being bet, or None if we're between streets / at showdown."""
-        if len(board) == 3:
-            return (flop_a, self.bet_sizes[0], 0) if not _round_done(flop_a) else None
-        if len(board) == 4:
-            return (turn_a, self.bet_sizes[1], 1) if not _round_done(turn_a) else None
-        return (river_a, self.bet_sizes[2], 2) if not _round_done(river_a) else None
+        being bet, or None if we're between streets / at showdown. Delegates
+        to the cached module-level `_active_round_for` (same logic, just
+        memoized — see that function's docstring)."""
+        return _active_round_for(board, flop_a, turn_a, river_a, self.bet_sizes)
 
     # -- Game interface -------------------------------------------------
 
@@ -190,7 +244,11 @@ class PostflopSubgame(Game):
         active = self._active_round(board, flop_a, turn_a, river_a)
         assert active is not None
         tokens, _bet_size, _street = active
-        return _legal_for_tokens(tokens, self.max_wagers_per_round)
+        # `_legal_for_tokens` is `lru_cache`d and returns a shared tuple —
+        # `list(...)` here gives every caller its own fresh list (matching
+        # the pre-caching behavior exactly) while still skipping the cached
+        # function's branching on a repeat (tokens, max_wagers) pair.
+        return list(_legal_for_tokens(tokens, self.max_wagers_per_round))
 
     def returns(self, history: History) -> list[float]:
         hero_combo, villain_combo, board, flop_a, turn_a, river_a = history
@@ -250,6 +308,12 @@ class PostflopSubgame(Game):
         own_combo = hero_combo if player == 0 else villain_combo
         for c in (*own_combo, *board):
             assert 0 <= c <= 51, f"card id {c} out of range 0..51 — key encoding assumes 2 digits"
-        combo_digits = "".join(f"{c:02d}" for c in own_combo)
-        board_digits = "".join(f"{c:02d}" for c in board)
+        # `_card_digits` is `lru_cache`d: the same `own_combo` and the same
+        # `board` each recur across many information-set-key calls (every
+        # other combo pair sharing this board, every later street reusing
+        # this same dealt combo), so this reuses the formatted digit string
+        # instead of re-running `str.join`/`f"{c:02d}"` from scratch each
+        # time (see module-level docstring above `_card_digits`).
+        combo_digits = _card_digits(own_combo)
+        board_digits = _card_digits(board)
         return f"{combo_digits}{board_digits}|{flop_a}|{turn_a}|{river_a}"
