@@ -14,6 +14,7 @@ class RangeHandGuidance {
     required this.beginnerNote,
     required this.gtoNote,
     required this.practicalNote,
+    this.blend,
   });
 
   final StartingHand hand;
@@ -25,6 +26,14 @@ class RangeHandGuidance {
   final String beginnerNote;
   final String gtoNote;
   final String practicalNote;
+
+  /// [action] が [RangeAction.mixed] のときだけ埋まる、内訳データ
+  /// （[RangeEntry.blend] をそのまま引き継いだもの）。
+  ///
+  /// [frequencyLabel] はこれをテキスト化した文言だが、UI 側で帯グラフ
+  /// （`ActionFrequencyBar`）のような視覚的な表現を作りたい場合は、
+  /// テキストを再パースするのではなくこちらを直接参照する。
+  final RangeActionBlend? blend;
 }
 
 /// レンジ表の解説文を組み立てる。
@@ -51,6 +60,7 @@ abstract final class RangeGuidanceBuilder {
       beginnerNote: _beginnerNote(position, entry),
       gtoNote: _gtoNote(spot, entry),
       practicalNote: _practicalNote(spot, entry),
+      blend: entry.blend,
     );
   }
 

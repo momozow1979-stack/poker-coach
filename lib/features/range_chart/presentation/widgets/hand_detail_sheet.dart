@@ -2,9 +2,30 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../shared/models/poker_action.dart';
+import '../../../../shared/widgets/action_frequency_bar.dart';
 import '../../../../shared/widgets/collapsible_section.dart';
 import '../../domain/range_action.dart';
 import '../../domain/range_guidance.dart';
+
+/// [RangeAction] を [ActionFrequencyBar] が扱う [PokerActionType] に対応させる。
+///
+/// 両者は別の enum（プリフロップのレンジ表アクション / ポストフロップも含む
+/// 汎用アクション）なので、そのままでは渡せない。色は
+/// `PokerActionTypeVisuals` が既に踏襲している対応（Call→Call、
+/// Bet/Raise/All-in→Raise/3Bet/4Bet）と揃えてある。
+/// [RangeAction.mixed] はミックス内訳の主・副アクションには現れない
+/// （`RangeDefinitions` 参照）ため、通常は到達しない安全策として fold 扱いにする。
+extension on RangeAction {
+  PokerActionType get asPokerActionType => switch (this) {
+    RangeAction.raise => PokerActionType.bet,
+    RangeAction.call => PokerActionType.call,
+    RangeAction.threeBet => PokerActionType.raise,
+    RangeAction.fourBet => PokerActionType.allIn,
+    RangeAction.fold => PokerActionType.fold,
+    RangeAction.mixed => PokerActionType.fold,
+  };
+}
 
 /// ハンドをタップしたときに出す詳細シート。
 class HandDetailSheet extends StatelessWidget {
@@ -26,6 +47,7 @@ class HandDetailSheet extends StatelessWidget {
     final color = guidance.action == RangeAction.fold
         ? AppColors.textMuted
         : guidance.action.color;
+    final blend = guidance.blend;
 
     return SafeArea(
       child: Padding(
@@ -82,13 +104,36 @@ class HandDetailSheet extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: AppSpacing.xs),
-              Text(
-                '${guidance.hand.description} ・ ${guidance.frequencyLabel}',
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
+              if (blend == null)
+                Text(
+                  '${guidance.hand.description} ・ ${guidance.frequencyLabel}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                )
+              else ...[
+                Text(
+                  guidance.hand.description,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
-              ),
+                const SizedBox(height: AppSpacing.sm),
+                ActionFrequencyBar(
+                  segments: [
+                    ActionFrequencySegment(
+                      actionType: blend.primary.asPokerActionType,
+                      share: blend.primaryShare,
+                    ),
+                    ActionFrequencySegment(
+                      actionType: blend.secondary.asPokerActionType,
+                      share: blend.secondaryShare,
+                    ),
+                  ],
+                ),
+              ],
               const SizedBox(height: AppSpacing.lg),
               _Section(title: 'なぜこのアクションか', body: guidance.reason),
               // 補足はタップで開く。開いた瞬間の文字量を抑える。
