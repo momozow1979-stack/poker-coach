@@ -33,6 +33,13 @@ abstract final class PositionQuizzes {
     required String practicalView,
     required String commonMistake,
     String? relatedRangeSpotId,
+
+    /// true にすると、各選択肢のラベルから [inferActionType] でアクション種別を
+    /// 推測して付与する。ポジション問題は「Fold/Call/Raise/All-in」のような
+    /// 定型のアクション選択肢と、ポジション理論そのものを問う概念的な選択肢
+    /// （日本語の説明文）が混在するため、ファイル全体には一括で有効化せず、
+    /// 選択肢が明確にアクション語だけで構成されている設問だけで個別に true を渡す。
+    bool tagActionTypes = false,
   }) {
     return buildQuiz(
       id: id,
@@ -56,6 +63,7 @@ abstract final class PositionQuizzes {
       practicalView: practicalView,
       commonMistake: commonMistake,
       relatedRangeSpotId: relatedRangeSpotId,
+      tagActionTypes: tagActionTypes,
     );
   }
 
@@ -88,6 +96,7 @@ abstract final class PositionQuizzes {
           'リンプすると BB に無料でフロップを見せたうえ、'
           '不利なポジションで戦うことになります。',
       relatedRangeSpotId: '6max_sb_open',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps002',
@@ -195,6 +204,7 @@ abstract final class PositionQuizzes {
           '安く見られる場面でこそ価値が出るハンドで、'
           '高い値段では割に合いません。',
       relatedRangeSpotId: '6max_co_open',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps005',
@@ -260,6 +270,7 @@ abstract final class PositionQuizzes {
           'BTN で参加できることと、'
           'どこからでも参加できることは別です。',
       relatedRangeSpotId: '6max_btn_open',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps007',
@@ -321,6 +332,7 @@ abstract final class PositionQuizzes {
           '機械的に締めてしまうミスです。'
           'アーリーが降りた後は、人数に関係なく広く戦えます。',
       relatedRangeSpotId: '9max_hj_open',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps009',
@@ -389,6 +401,7 @@ abstract final class PositionQuizzes {
       commonMistake:
           'SB を「BB と同じようなもの」と考えてコールしてしまうミスです。'
           'BB は最後に行動できますが、SB は違います。',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps011',
@@ -419,6 +432,7 @@ abstract final class PositionQuizzes {
           '極端に締めてしまうミスです。'
           'そこまで狭いと、レンジが読まれて利益が出ません。',
       relatedRangeSpotId: '9max_utg_open',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps012',
@@ -446,6 +460,7 @@ abstract final class PositionQuizzes {
           'すべてのポジションで同じレンジを使ってしまうミスです。'
           'レンジ表がポジションごとに分かれているのには理由があります。',
       relatedRangeSpotId: '6max_co_open',
+      tagActionTypes: true,
     ),
     // ── 中級 ──────────────────────────────────────────────
     _q(
@@ -521,6 +536,7 @@ abstract final class PositionQuizzes {
           '不利なポジションでは、'
           'ポットが大きくなるほど扱いが難しくなります。',
       relatedRangeSpotId: '6max_bb_defense',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps015',
@@ -589,6 +605,7 @@ abstract final class PositionQuizzes {
           '固定してしまうミスです。'
           '相手が降りやすいなら、不利なポジションでも広げる価値があります。',
       relatedRangeSpotId: '6max_sb_open',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps017',
@@ -658,6 +675,7 @@ abstract final class PositionQuizzes {
           '「AQ は強いから 4Bet」と'
           '手の絶対的な強さだけで決めてしまうミスです。'
           '重要なのは、その動きに対して相手が何を残すかです。',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps019',
@@ -692,6 +710,7 @@ abstract final class PositionQuizzes {
           '「JJ は 3Bet されると困るからコール」と'
           '先回りして守ってしまうミスです。'
           'ポジションがある状況では、攻めるほうが得です。',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps020',
@@ -724,6 +743,7 @@ abstract final class PositionQuizzes {
           '「BB は最後まで受けるだけ」と'
           '決めてしまうミスです。'
           '相手が弱さを示したら、そこから先は自分で取りにいきます。',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps021',
@@ -758,6 +778,7 @@ abstract final class PositionQuizzes {
           '一律に決めてしまうミスです。'
           'レンジ有利があるなら、不利なポジションでも打ちます。',
       relatedRangeSpotId: '6max_utg_open',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps022',
@@ -827,6 +848,7 @@ abstract final class PositionQuizzes {
           '考えてしまうミスです。'
           'ポジションは判断を助けますが、'
           '弱いハンドを強くはしません。',
+      tagActionTypes: true,
     ),
     // ── 上級 ──────────────────────────────────────────────
     _q(
@@ -1067,6 +1089,7 @@ abstract final class PositionQuizzes {
           '2 人のときと同じサイズで打ってしまうミスです。'
           '後ろに 1 人残っているだけで、'
           '「レイズされる」という新しいリスクが生まれます。',
+      tagActionTypes: true,
     ),
     _q(
       id: 'ps030',

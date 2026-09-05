@@ -1,9 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../../shared/models/poker_action.dart';
+import '../../../../shared/models/starting_hand.dart';
+import '../../../../shared/widgets/action_frequency_bar.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/collapsible_section.dart';
+import '../../../range_chart/application/range_providers.dart';
+import '../../../range_chart/domain/range_action.dart';
+import '../../../range_chart/domain/range_entry.dart';
 import '../../domain/quiz.dart';
 import '../../domain/quiz_category.dart';
 
@@ -11,7 +18,7 @@ import '../../domain/quiz_category.dart';
 ///
 /// 最初に見せるのは「正解かどうか」と「短い理由」だけにして、
 /// GTO / 実戦 / よくあるミスは畳んでおく。
-class QuizExplanationView extends StatelessWidget {
+class QuizExplanationView extends ConsumerWidget {
   const QuizExplanationView({
     super.key,
     required this.quiz,
@@ -26,15 +33,20 @@ class QuizExplanationView extends StatelessWidget {
   final VoidCallback? onOpenRange;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final explanation = quiz.explanation;
     final isTerm = quiz.category == QuizCategory.terminology;
+    final frequency = _resolveRangeFrequency(ref, quiz);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _ResultBanner(isCorrect: isCorrect, quiz: quiz),
         const SizedBox(height: AppSpacing.md),
         _ReasonCard(body: explanation.shortReason),
+        if (frequency != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          _RangeFrequencyCard(data: frequency),
+        ],
         const SizedBox(height: AppSpacing.sm),
         const _MoreLabel(),
         const SizedBox(height: AppSpacing.sm),
@@ -213,3 +225,156 @@ class _MoreLabel extends StatelessWidget {
     );
   }
 }
+
+/// [QuizExplanationView] が実データを解決できたときに描画する頻度バー。
+///
+/// [ActionFrequencyBar] は実在するレンジ表（[RangeChart.entryFor]）の値を
+/// そのまま表示するだけで、ここでは頻度を一切作らない。
+class _RangeFrequencyCard extends StatelessWidget {
+  const _RangeFrequencyCard({required this.data});
+
+  final _RangeFrequencyData data;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.grid_on_rounded,
+                size: 16,
+                color: AppColors.accent,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  'レンジ表での ${data.hand.code}（${data.spotTitle}）',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          ActionFrequencyBar(segments: data.segments),
+        ],
+      ),
+    );
+  }
+}
+
+/// 頻度バーの描画に必要な情報。
+class _RangeFrequencyData {
+  const _RangeFrequencyData({
+    required this.hand,
+    required this.spotTitle,
+    required this.segments,
+  });
+
+  final StartingHand hand;
+  final String spotTitle;
+  final List<ActionFrequencySegment> segments;
+}
+
+/// クイズに紐づくレンジ表スポットと、ヒーローの具体的な2枚のカードから、
+/// 実在するレンジ表の頻度データを解決する。
+///
+/// 次のすべてを満たすときだけ実データを返す。1つでも欠ければ null を返し、
+/// 呼び出し側は頻度バーを出さずテキスト解説だけにフォールバックする
+/// （存在しない頻度を捏造しない）。
+/// - 解説に `relatedRangeSpotId` が設定されている
+/// - その ID で実際にレンジ表が引ける（[RangeRepository.chartById]）
+/// - 状況にヒーローの具体的な2枚が設定されており、[StartingHand] に変換できる
+/// - レンジ表が示すアクションが、この設問の正解の選択肢
+///   （[QuizChoice.actionType]、Task 1 で付与済み）と一致する
+///
+/// 最後の条件が肝心: `relatedRangeSpotId` は「オープンレイズ表」のような
+/// “参考になる関連チャート” を指すだけで、必ずしもその設問が問う決断
+/// そのもの（例: 3Bet に直面した場面、フロップのベット判断）ではない。
+/// 一致を確認せずに表示すると、例えば「3Bet が正解」の設問に
+/// 「オープンレイズ表では Call」という一見矛盾する数字を、
+/// あたかもこの設問の答えであるかのように出してしまう。
+/// そのため、正解の選択肢と食い違うときは意図的に表示しない。
+_RangeFrequencyData? _resolveRangeFrequency(WidgetRef ref, Quiz quiz) {
+  final spotId = quiz.explanation.relatedRangeSpotId;
+  final situation = quiz.situation;
+  if (spotId == null || situation == null || situation.heroCards.length != 2) {
+    return null;
+  }
+
+  final chart = ref.watch(rangeChartByIdProvider(spotId));
+  if (chart == null) return null;
+
+  final hand = StartingHand.fromCards(
+    situation.heroCards[0],
+    situation.heroCards[1],
+  );
+  final entry = chart.entryFor(hand);
+  final segments = _segmentsIfConsistent(entry, quiz.correctChoice.actionType);
+  if (segments == null || segments.isEmpty) return null;
+
+  return _RangeFrequencyData(
+    hand: hand,
+    spotTitle: chart.spot.title,
+    segments: segments,
+  );
+}
+
+/// [entry] が表す実際のアクションと、設問の正解 [correctActionType] が
+/// 一致するときだけ区間を組み立てる。一致しなければ null
+/// （＝表示しない）。MIX ハンドは、主・副いずれかが正解と一致すれば
+/// 一致とみなし、両方の内訳をそのまま見せる。
+List<ActionFrequencySegment>? _segmentsIfConsistent(
+  RangeEntry entry,
+  PokerActionType? correctActionType,
+) {
+  if (correctActionType == null) return null;
+
+  final blend = entry.blend;
+  if (entry.action == RangeAction.mixed) {
+    if (blend == null) return null;
+    final primaryType = _pokerActionFor(blend.primary);
+    final secondaryType = _pokerActionFor(blend.secondary);
+    if (correctActionType != primaryType &&
+        correctActionType != secondaryType) {
+      return null;
+    }
+    return [
+      ActionFrequencySegment(
+        actionType: primaryType,
+        share: blend.primaryShare,
+      ),
+      ActionFrequencySegment(
+        actionType: secondaryType,
+        share: blend.secondaryShare,
+      ),
+    ];
+  }
+
+  final actionType = _pokerActionFor(entry.action);
+  if (correctActionType != actionType) return null;
+  return [
+    ActionFrequencySegment(actionType: actionType, share: entry.frequency),
+  ];
+}
+
+/// レンジ表のアクション区分をクイズ側の [PokerActionType] に対応づける。
+///
+/// [PokerActionType] にはプリフロップのレイズ段階（オープン / 3Bet / 4Bet）
+/// の区別が無いため、いずれも raise にまとめる。
+PokerActionType _pokerActionFor(RangeAction action) => switch (action) {
+  RangeAction.raise ||
+  RangeAction.threeBet ||
+  RangeAction.fourBet => PokerActionType.raise,
+  RangeAction.call => PokerActionType.call,
+  RangeAction.fold => PokerActionType.fold,
+  // mixed は呼び出し側（_segmentsIfConsistent）で必ず blend 経由に
+  // 分岐させ、ここには来ない。
+  RangeAction.mixed => PokerActionType.raise,
+};

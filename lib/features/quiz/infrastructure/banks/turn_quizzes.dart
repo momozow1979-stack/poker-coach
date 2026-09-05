@@ -56,6 +56,7 @@ abstract final class TurnQuizzes {
       practicalView: practicalView,
       commonMistake: commonMistake,
       relatedRangeSpotId: relatedRangeSpotId,
+      tagActionTypes: true,
     );
   }
 
