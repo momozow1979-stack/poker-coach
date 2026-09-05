@@ -196,7 +196,7 @@ def _naive_sum(values: list[float]) -> float:
     return total
 
 
-def _write_block(f, data: bytes) -> None:
+def _write_block(f, data: bytes | bytearray) -> None:
     """Length-prefixed (8-byte little-endian unsigned) block, so `_read_block`
     knows exactly how many bytes to read back without needing a delimiter
     that might collide with real data."""
@@ -209,18 +209,28 @@ def _read_block(f) -> bytes:
     return f.read(n)
 
 
-def _pack_keys(keys: list[str]) -> bytes:
+def _pack_keys(keys: list[str]) -> bytearray:
     """Concatenates `keys` into one blob, each prefixed by its UTF-8 byte
     length (4-byte little-endian unsigned) — avoids assuming keys never
     contain any particular delimiter character, and is far cheaper to write
     and re-read at tens-of-millions-of-keys scale than a JSON list of
-    strings would be."""
-    parts = []
+    strings would be.
+
+    Appends directly into one growable `bytearray` instead of collecting
+    two small `bytes` objects per key into a list before `b"".join(...)`.
+    At tens-of-millions of keys, that list-then-join approach was measured
+    (against a real 13.2M-entry checkpoint) to add several GB of *peak*
+    RSS beyond the final blob size — and `resource.getrusage().ru_maxrss`
+    never goes back down, so that transient spike permanently inflates
+    every RSS reading taken for the rest of the process's life. `f.write()`
+    accepts a `bytearray` directly (buffer protocol), so `_write_block`
+    never needs the immutable `bytes` conversion this used to do."""
+    buf = bytearray()
     for key in keys:
         encoded = key.encode("utf-8")
-        parts.append(struct.pack("<I", len(encoded)))
-        parts.append(encoded)
-    return b"".join(parts)
+        buf += struct.pack("<I", len(encoded))
+        buf += encoded
+    return buf
 
 
 def _unpack_keys(blob: bytes, count: int) -> list[str]:

@@ -53,6 +53,11 @@ solver/**/__pycache__/
 solver/**/*.egg-info/
 solver/solved_spots.json
 
+# CFRSolver.save()/.load() training checkpoints — multi-GB binary blobs that
+# belong on disk (this repo's persistent-enough filesystem), never in git.
+# See BENCHMARKS.md's full-hand-range resume section for what's stored here.
+/.solver-checkpoints/
+
 # Rust native extension build output (solver/native/) — Cargo build
 # artifacts, never committed.
 solver/native/target/
