@@ -53,6 +53,15 @@ solver/**/__pycache__/
 solver/**/*.egg-info/
 solver/solved_spots.json
 
+# Rust native extension build output (solver/native/) — Cargo build
+# artifacts, never committed.
+solver/native/target/
+
+# maturin's editable/develop build drops the compiled extension module
+# straight into the package directory — never committed either.
+solver/cfr_solver/_native*.so
+solver/cfr_solver/_native*.pyd
+
 # External solvers cloned locally for cross-validation only (e.g. TexasSolver,
 # AGPL-licensed) — never vendored into this repo, and never distributed.
 solver/vendor/

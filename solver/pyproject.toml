@@ -9,11 +9,13 @@ dependencies = []
 dev = ["pytest>=8.0"]
 
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.15,<2.0"]
+build-backend = "maturin"
 
-[tool.setuptools.packages.find]
-include = ["cfr_solver*"]
+[tool.maturin]
+manifest-path = "native/Cargo.toml"
+module-name = "cfr_solver._native"
+python-source = "."
 
 [tool.pytest.ini_options]
 # solver/vendor/ (gitignored — e.g. a local TexasSolver checkout used for
