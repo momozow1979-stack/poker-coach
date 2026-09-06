@@ -209,17 +209,6 @@ def _read_block(f) -> bytes:
     return f.read(n)
 
 
-def _unpack_keys(blob: bytes, count: int) -> list[str]:
-    keys = []
-    offset = 0
-    for _ in range(count):
-        (length,) = struct.unpack_from("<I", blob, offset)
-        offset += 4
-        keys.append(blob[offset : offset + length].decode("utf-8"))
-        offset += length
-    return keys
-
-
 @dataclass(frozen=True)
 class _ActionSet:
     """A shared, immutable action vocabulary. `actions` is never mutated —
@@ -260,8 +249,9 @@ class CFRSolver:
         fresh `Game` and passes it to `load`.
         """
         # `packed_keys()` builds the length-prefixed on-disk key blob (see
-        # `_unpack_keys` below for the format it reads back) entirely in
-        # Rust from the arena's already-compact storage — never
+        # `load()`'s `self._index.load_packed_keys(...)` for the Rust-side
+        # code that reads it back) entirely in Rust from the arena's
+        # already-compact storage — never
         # materializing a Python `str` per entry the way
         # `self._index.items()` does. That materialization was measured
         # (see BENCHMARKS.md's Stage S3 entry) to add well over a gigabyte
@@ -308,50 +298,62 @@ class CFRSolver:
             if magic != _SAVE_FORMAT_MAGIC:
                 raise ValueError(f"{path!r} is not a CFRSolver save file (bad magic bytes)")
             header = pickle.loads(_read_block(f))
-            node_action_set_id_bytes = _read_block(f)
-            regret_bytes = _read_block(f)
-            strategy_bytes = _read_block(f)
+
+            if header["stride"] != STRIDE:
+                raise ValueError(
+                    f"save file was written with STRIDE={header['stride']}, but this build of "
+                    f"cfr.py uses STRIDE={STRIDE} — incompatible, refusing to load"
+                )
+
+            solver = cls(game, variant=header["variant"])
+            solver._rng.setstate(header["rng_state"])
+            solver._iterations_trained = header["iterations_trained"]
+            solver._sampled_iterations_trained = header["sampled_iterations_trained"]
+
+            # Rebuild the shared action-vocabulary cache in its original
+            # order — `_get_action_set_id` appends to an initially-empty
+            # `_action_sets`/`_action_set_lookup`, so replaying the saved
+            # list in order reproduces the original ids exactly.
+            for actions in header["action_sets"]:
+                solver._get_action_set_id(actions)
+
+            # Read each array's raw bytes immediately before building the
+            # `array` object from it, reusing one local name so the
+            # previous block's raw bytes can be freed before the next is
+            # read — rather than holding all three raw blobs (~2x their
+            # combined size, counting the `array` copies made from them)
+            # alive simultaneously for the rest of this function. At
+            # tens-of-millions-of-entries scale this is exactly the kind
+            # of avoidable peak the `save()`-side fixes above target.
+            raw = _read_block(f)
+            solver._node_action_set_id = array("B")
+            solver._node_action_set_id.frombytes(raw)
+            raw = _read_block(f)
+            solver._regret = array("d")
+            solver._regret.frombytes(raw)
+            raw = _read_block(f)
+            solver._strategy = array("d")
+            solver._strategy.frombytes(raw)
+            del raw
+
             keys_blob = _read_block(f)
 
-        if header["stride"] != STRIDE:
-            raise ValueError(
-                f"save file was written with STRIDE={header['stride']}, but this build of "
-                f"cfr.py uses STRIDE={STRIDE} — incompatible, refusing to load"
-            )
-
-        solver = cls(game, variant=header["variant"])
-        solver._rng.setstate(header["rng_state"])
-        solver._iterations_trained = header["iterations_trained"]
-        solver._sampled_iterations_trained = header["sampled_iterations_trained"]
-
-        # Rebuild the shared action-vocabulary cache in its original order —
-        # `_get_action_set_id` appends to an initially-empty
-        # `_action_sets`/`_action_set_lookup`, so replaying the saved list
-        # in order reproduces the original ids exactly (same reasoning as
-        # the NodeIndex replay below).
-        for actions in header["action_sets"]:
-            solver._get_action_set_id(actions)
-
-        # Rebuild `_index` by replaying `get_or_create` in the exact
-        # original id-assignment order (see module docstring). This
-        # reproduces identical ids without any new Rust API, so the arrays
-        # below (restored verbatim from their saved bytes) stay correctly
-        # aligned by node id.
-        keys_in_id_order = _unpack_keys(keys_blob, header["num_nodes"])
-        for key in keys_in_id_order:
-            solver._index.get_or_create(key)
+        # Rebuild `_index` directly from the packed blob in Rust — in the
+        # exact original id-assignment order (the blob is written, and
+        # read back, in id order), so the arrays above stay correctly
+        # aligned by node id. `load_packed_keys` never constructs a Python
+        # `str` per key the way the previous `_unpack_keys`-based replay
+        # did; that materialization was measured — via a real crash, not a
+        # synthetic benchmark — to push this process's memory usage past a
+        # hard cgroup limit while reconstructing a ~59M-entry index (see
+        # BENCHMARKS.md's Stage S3 entry).
+        solver._index.load_packed_keys(keys_blob)
+        del keys_blob
         if len(solver._index) != header["num_nodes"]:
             raise RuntimeError(
                 f"replaying saved keys produced {len(solver._index)} node(s), expected "
                 f"{header['num_nodes']} — save file is corrupt or keys collided unexpectedly"
             )
-
-        solver._node_action_set_id = array("B")
-        solver._node_action_set_id.frombytes(node_action_set_id_bytes)
-        solver._regret = array("d")
-        solver._regret.frombytes(regret_bytes)
-        solver._strategy = array("d")
-        solver._strategy.frombytes(strategy_bytes)
 
         return solver
 

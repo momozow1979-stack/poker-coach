@@ -197,29 +197,42 @@ impl NodeIndexInner {
         hash_fn: impl Fn(&[u8]) -> u64,
     ) -> PyResult<(u32, bool)> {
         let raw = encode(key)?;
+        Ok(self.get_or_create_raw_impl(raw, hash_fn))
+    }
+
+    /// Core of `get_or_create_impl`, factored out so a caller that already
+    /// has a `RawKey` in hand (e.g. `load_packed_keys`, decoding straight
+    /// from a save file's blob) can reuse the exact same hash/arena/overflow
+    /// logic without going through `encode`/`&str` at all — no Rust
+    /// `String`, no Python `str`, per key.
+    fn get_or_create_raw_impl(
+        &mut self,
+        raw: RawKey,
+        hash_fn: impl Fn(&[u8]) -> u64,
+    ) -> (u32, bool) {
         let bytes = &raw[..1 + raw[0] as usize];
         let h = hash_fn(bytes);
 
         if let Some(&id) = self.primary.get(&h) {
             if *self.arena.get(id) == raw {
-                return Ok((id, false));
+                return (id, false);
             }
             // Same hash, different key: a genuine collision (or, under a
             // test's deliberately-degenerate hash_fn, an expected one).
             // Verified byte comparison — never trust the hash alone.
             for &(candidate_raw, candidate_id) in &self.overflow {
                 if candidate_raw == raw {
-                    return Ok((candidate_id, false));
+                    return (candidate_id, false);
                 }
             }
             let id = self.arena.push(raw);
             self.overflow.push((raw, id));
-            return Ok((id, true));
+            return (id, true);
         }
 
         let id = self.arena.push(raw);
         self.primary.insert(h, id);
-        Ok((id, true))
+        (id, true)
     }
 
     fn len(&self) -> usize {
@@ -268,6 +281,52 @@ impl NodeIndexInner {
             out[offset..offset + len].copy_from_slice(&raw[1..1 + len]);
             offset += len;
         }
+    }
+
+    /// The load-side counterpart to `write_packed_keys`: reconstructs every
+    /// entry directly from a packed-keys blob (the same format, read back
+    /// in the same order it was written — id order — so the resulting ids
+    /// exactly match the original), without ever constructing a Rust
+    /// `String` or Python `str` for a key.
+    ///
+    /// `CFRSolver.load()` used to do this in Python: `_unpack_keys` decoded
+    /// the *entire* blob into a `list[str]` up front, then replayed
+    /// `get_or_create` once per key. At the ~59M-entry scale this package
+    /// reached in practice, that materialization step alone was measured
+    /// (via a real crash, not a synthetic benchmark — see `BENCHMARKS.md`'s
+    /// Stage S3 entry) to push this process's cgroup memory usage from a
+    /// clean start straight past a 13.34GiB hard limit, before training
+    /// ever resumed. `hash_fn` is exposed the same way `get_or_create_impl`
+    /// exposes it, purely so unit tests can force collisions deterministically.
+    fn load_packed_keys(&mut self, blob: &[u8], hash_fn: impl Fn(&[u8]) -> u64) -> PyResult<()> {
+        let mut offset = 0usize;
+        while offset < blob.len() {
+            if offset + 4 > blob.len() {
+                return Err(PyValueError::new_err(
+                    "packed-keys blob truncated: expected a 4-byte length prefix",
+                ));
+            }
+            let len = u32::from_le_bytes(blob[offset..offset + 4].try_into().unwrap()) as usize;
+            offset += 4;
+            if len > KEY_CAPACITY {
+                return Err(PyValueError::new_err(format!(
+                    "packed-keys blob contains a key of {len} bytes, exceeding NodeIndex's \
+                     fixed capacity of {KEY_CAPACITY} bytes — file is corrupt or was written by \
+                     an incompatible version"
+                )));
+            }
+            if offset + len > blob.len() {
+                return Err(PyValueError::new_err(
+                    "packed-keys blob truncated: key bytes run past the end of the buffer",
+                ));
+            }
+            let mut raw: RawKey = [0u8; KEY_CAPACITY + 1];
+            raw[0] = len as u8;
+            raw[1..1 + len].copy_from_slice(&blob[offset..offset + len]);
+            offset += len;
+            self.get_or_create_raw_impl(raw, &hash_fn);
+        }
+        Ok(())
     }
 }
 
@@ -325,6 +384,14 @@ impl NodeIndex {
             self.inner.write_packed_keys(out);
             Ok(())
         })
+    }
+
+    /// See `NodeIndexInner::load_packed_keys` — the memory-efficient
+    /// alternative `CFRSolver.load()` uses instead of decoding the blob
+    /// into a `list[str]` (via `_unpack_keys`) and replaying `get_or_create`
+    /// once per key from Python.
+    fn load_packed_keys(&mut self, blob: &[u8]) -> PyResult<()> {
+        self.inner.load_packed_keys(blob, hash_bytes)
     }
 }
 
@@ -416,6 +483,52 @@ mod tests {
         }
         assert_eq!(buf, expected);
         assert_eq!(len, expected.len());
+    }
+
+    #[test]
+    fn load_packed_keys_round_trips_write_packed_keys_exactly() {
+        let mut original = idx();
+        let inserted = ["00010203|xb|c|", "AAAA:pbc", "", "x", "0102030405060708091011|x||"];
+        let mut expected_ids = Vec::new();
+        for key in inserted {
+            let (id, _) = original.get_or_create_impl(key, hash_bytes).unwrap();
+            expected_ids.push(id);
+        }
+
+        let len = original.packed_keys_len();
+        let mut blob = vec![0u8; len];
+        original.write_packed_keys(&mut blob);
+
+        let mut reloaded = idx();
+        reloaded.load_packed_keys(&blob, hash_bytes).unwrap();
+
+        assert_eq!(reloaded.len(), original.len());
+        // Same ids for the same keys, in the same order — this is what
+        // `CFRSolver.load()` relies on to keep the parallel
+        // `_node_action_set_id`/`_regret`/`_strategy` arrays aligned by id.
+        for (key, expected_id) in inserted.iter().zip(expected_ids) {
+            let (id, created) = reloaded.get_or_create_impl(key, hash_bytes).unwrap();
+            assert_eq!(id, expected_id);
+            assert!(!created, "key {key:?} should already exist after load_packed_keys");
+        }
+    }
+
+    #[test]
+    fn load_packed_keys_rejects_a_key_longer_than_capacity() {
+        let mut idx = idx();
+        // A single bogus entry claiming a length far beyond KEY_CAPACITY.
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&((KEY_CAPACITY as u32) + 1).to_le_bytes());
+        blob.extend_from_slice(&vec![b'x'; KEY_CAPACITY + 1]);
+        assert!(idx.load_packed_keys(&blob, hash_bytes).is_err());
+    }
+
+    #[test]
+    fn load_packed_keys_rejects_a_truncated_blob() {
+        let mut idx = idx();
+        // Length prefix claims 10 bytes of key data, but none follow.
+        let blob = 10u32.to_le_bytes().to_vec();
+        assert!(idx.load_packed_keys(&blob, hash_bytes).is_err());
     }
 
     #[test]
