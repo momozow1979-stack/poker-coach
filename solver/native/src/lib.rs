@@ -14,11 +14,13 @@ use pyo3::types::PyDict;
 
 mod cards;
 mod history;
+mod node_index;
 mod rules;
 mod strategy;
 mod walk;
 
 use history::{BoardBuf, History, TokenBuf};
+use node_index::NodeIndex;
 use strategy::AvgStrategy;
 use walk::GameCtx;
 
@@ -413,6 +415,7 @@ fn exploitability_parallel(
 #[pymodule(name = "_native")]
 fn native_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ping, m)?)?;
+    m.add_class::<NodeIndex>()?;
     m.add_function(wrap_pyfunction!(evaluate_5card_native, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_best_hand_native, m)?)?;
     m.add_function(wrap_pyfunction!(_debug_round_done, m)?)?;
