@@ -2,6 +2,7 @@ import '../../../core/errors/friendly_error.dart';
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../domain/app_user.dart';
@@ -19,6 +20,14 @@ class SupabaseAuthGateway implements AuthGateway {
   final SupabaseClient _client;
 
   AuthFailure? _lastFailure;
+
+  /// モバイルでOAuthの戻り先として使うカスタムスキーム。
+  ///
+  /// `android/app/src/main/AndroidManifest.xml` の intent-filter と
+  /// `ios/Runner/Info.plist` の CFBundleURLTypes に同じ値を登録している。
+  /// Supabase ダッシュボード側にも Authentication → URL Configuration →
+  /// Redirect URLs にこのURLを追加する必要がある。
+  static const _mobileRedirectUrl = 'io.pokercoach.app://login-callback';
 
   @override
   AuthFailure? get lastFailure => _lastFailure;
@@ -109,6 +118,46 @@ class SupabaseAuthGateway implements AuthGateway {
       return _map(user)!;
     } on AuthException catch (error) {
       throw AuthFailure(_signInMessage(error));
+    }
+  }
+
+  @override
+  Future<void> signInWithGoogle() async {
+    try {
+      // Web はデフォルト（現在のページに戻る）に任せ、モバイルだけカスタム
+      // スキームで戻す。ブラウザ／外部アプリを開くだけで、この呼び出し自体は
+      // 成功か失敗（起動できたか）しか分からない——実際のサインインは
+      // ユーザーがGoogle側の操作を終えてこのアプリに戻ってきたときに
+      // [changes]（`onAuthStateChange` 経由）で分かる。
+      await _client.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: kIsWeb ? null : _mobileRedirectUrl,
+      );
+      _lastFailure = null;
+    } on AuthException catch (error) {
+      final failure = AuthFailure(
+        friendlyErrorMessage(
+          error.message,
+          offline:
+              'いまネットワークに接続できていません。'
+              '通信できる場所で、もう一度お試しください。',
+          fallback: 'Googleログインを開始できませんでした（${error.message}）。',
+        ),
+      );
+      _lastFailure = failure;
+      throw failure;
+    } catch (error) {
+      final failure = AuthFailure(
+        friendlyErrorMessage(
+          error,
+          offline:
+              'いまネットワークに接続できていません。'
+              '通信できる場所で、もう一度お試しください。',
+          fallback: 'Googleログインを開始できませんでした。時間をおいて、もう一度お試しください。',
+        ),
+      );
+      _lastFailure = failure;
+      throw failure;
     }
   }
 

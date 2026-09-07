@@ -27,6 +27,17 @@ abstract class AuthGateway {
   /// 既存アカウントにログインする（別端末からの復帰）。
   Future<AppUser> signIn({required String email, required String password});
 
+  /// Googleアカウントでサインインする。
+  ///
+  /// ブラウザ（または外部アプリ）でGoogleのログイン画面を開くだけで、
+  /// その場では結果は返らない——ユーザーがGoogle側の操作を終えてこの
+  /// アプリに戻ってきたときに、[changes] でサインインが分かる（[signIn]
+  /// と同様の扱い。この端末の未登録の履歴は置き換わる）。
+  ///
+  /// 起動自体に失敗した（未設定・オフラインなど）場合は [AuthFailure] を
+  /// 投げる。
+  Future<void> signInWithGoogle();
+
   /// サインアウトし、匿名セッションを取り直す。
   Future<void> signOut();
 }
@@ -56,6 +67,10 @@ class OfflineAuthGateway implements AuthGateway {
     required String email,
     required String password,
   }) async => throw const AuthFailure('オフラインのためログインできません。');
+
+  @override
+  Future<void> signInWithGoogle() async =>
+      throw const AuthFailure('オフラインのためログインできません。');
 
   @override
   Future<void> signOut() async {}

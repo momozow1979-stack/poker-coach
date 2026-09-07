@@ -55,6 +55,10 @@ class AccountController extends Notifier<AppUser?> {
     return user;
   }
 
+  /// Googleアカウントでサインインする（ブラウザ／外部アプリを開くだけで、
+  /// この場では返らない。実際のサインインは [changes] で分かる）。
+  Future<void> signInWithGoogle() => _gateway.signInWithGoogle();
+
   Future<void> signOut() async {
     await _gateway.signOut();
     state = _gateway.currentUser;

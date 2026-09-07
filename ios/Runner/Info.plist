@@ -26,6 +26,23 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<!-- Googleログイン（Supabase OAuth）が、ブラウザでの認証を終えた後にこの
+	     アプリへ戻ってくるためのカスタムスキーム。
+	     supabase_auth_gateway.dart の _mobileRedirectUrl と揃えること。
+	     Supabase ダッシュボード側にも Authentication → URL Configuration →
+	     Redirect URLs に "io.pokercoach.app://login-callback" を追加する
+	     必要がある。 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>io.pokercoach.app</string>
+			</array>
+		</dict>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

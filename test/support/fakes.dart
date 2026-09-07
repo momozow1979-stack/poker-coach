@@ -169,6 +169,17 @@ class FakeAuthGateway implements AuthGateway {
       _emit(AppUser(id: 'user-of-$email', isAnonymous: false, email: email));
 
   @override
+  Future<void> signInWithGoogle() async {
+    _emit(
+      AppUser(
+        id: 'google-${++_counter}',
+        isAnonymous: false,
+        email: 'google-user-$_counter@example.com',
+      ),
+    );
+  }
+
+  @override
   Future<void> signOut() async {
     _user = null;
     await ensureSignedIn();

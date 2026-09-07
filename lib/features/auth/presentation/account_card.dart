@@ -1,20 +1,62 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/errors/friendly_error.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../profile/application/learning_providers.dart';
 import '../../profile/infrastructure/learning_sync_service.dart';
 import '../application/auth_providers.dart';
+import '../domain/app_user.dart';
 import 'auth_sheet.dart';
 
 /// アカウントと保存状況をまとめたカード。マイページに置く。
-class AccountCard extends ConsumerWidget {
+class AccountCard extends ConsumerStatefulWidget {
   const AccountCard({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AccountCard> createState() => _AccountCardState();
+}
+
+class _AccountCardState extends ConsumerState<AccountCard> {
+  bool _googleBusy = false;
+  String? _googleError;
+
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _googleBusy = true;
+      _googleError = null;
+    });
+
+    try {
+      final sync = ref.read(learningSyncControllerProvider.notifier);
+      // ブラウザ／外部アプリに切り替わる前に、今のぶんを送り切っておく
+      // （メール登録・ログインと同じ配慮。実際のサインインはこの後、
+      // アプリに戻ってきたタイミングで [changes] 経由で反映される）。
+      await sync.syncNow();
+      await ref.read(accountProvider.notifier).signInWithGoogle();
+    } on AuthFailure catch (failure) {
+      if (mounted) setState(() => _googleError = failure.message);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _googleError = friendlyErrorMessage(
+            error,
+            offline:
+                'ネットワークに接続できませんでした。'
+                '通信できる場所で、もう一度お試しください。',
+            fallback: 'うまく処理できませんでした。時間をおいて、もう一度お試しください。',
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _googleBusy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final user = ref.watch(accountProvider);
     final sync = ref.watch(learningSyncControllerProvider);
     final failure = ref.read(accountProvider.notifier).lastFailure;
@@ -110,6 +152,26 @@ class AccountCard extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: AppSpacing.md),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _googleBusy ? null : _signInWithGoogle,
+                icon: const Icon(Icons.g_mobiledata_rounded, size: 24),
+                label: Text(_googleBusy ? '処理中…' : 'Googleでログイン'),
+              ),
+            ),
+            if (_googleError case final error?) ...[
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                error,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.6,
+                  color: AppColors.danger,
+                ),
+              ),
+            ],
           ],
         ],
       ),
