@@ -1076,3 +1076,1826 @@ IPC/pickleコストを差し引いた、この4コア環境での現実的な速
   確認用に16ペアの計2点のみ）。
 - Rust/ネイティブ実装への書き換えは行っていない（Stage 8として
   別途判断される話であり、今回のスコープ外）。
+
+## Stage 8: 判断ゲート — Stage 6+7の最適化は実レンジ幅に間に合うか
+
+### Context（何を判断するか）
+
+プラン（`/root/.claude/plans/logical-crunching-riddle.md`「追記: ソルバー
+継続」節）の判断ゲート: Stage 6（`lru_cache`によるホットパスの重複計算
+除去、exploitability計算だけで見ると-19.4%、学習時間込みの合計で
+-12.6%）とStage 7（`ProcessPoolExecutor`によるコンボペア単位の並列化、
+16ペアで2.71倍・36ペアで2.80倍）を組み合わせれば、アプリの実データ
+（BTNオープン612コンボ×BBコールコール494コンボ、ブロック後で約
+302,328コンボペア——`BENCHMARKS.md`「情報集合の保存方式」節参照）の
+exact exploitabilityを、プランの言う「数時間〜1日程度」の予算内で
+計算できるようになったのか、それとも依然として足りず、Rust等への
+書き換えを別途スコープする必要があるのか、を判断する。
+
+**このステージでは実装は一切変更しない。** 計測・分析・判断のみを行う。
+
+### なぜ16・36ペアの実測だけでは外挿として不十分か
+
+Stage 7自身の実測は16ペアと36ペアの2点のみで、しかも**速度向上比は
+ほぼ横ばい（2.71倍→2.80倍）**だった。この2点だけから「実スケール
+（302,328ペア、36ペアの約8,400倍）でもこの比率が保たれる」と仮定して
+線形外挿するのは、以下のどちらの方向にも誤りうる:
+
+- **改善方向の仮説**: `ProcessPoolExecutor`のワーカープロセス起動や
+  `initializer`経由の`game`受け渡しといった「1回きりの固定コスト」は、
+  ペア数が増えるほど全体に占める割合が薄まるはずなので、ペア数を
+  増やせばむしろ4倍に近づいていくかもしれない。
+- **悪化方向の仮説**: Stage 7自身の記録（本ファイル上のStage 7
+  「なぜ4倍ではなく2.83倍なのか」節）が既に指摘している通り、
+  `best_response_value_parallel`は**sweepごとに`policy`辞書全体を
+  全コンボペア分のタスクに個別添付して送信**しており、これは
+  ペア数に比例してIPCコストが増える性質のものである。しかも
+  `policy`辞書自体のサイズは実際に見つかった情報集合数に応じて
+  育つため、コンボペア数が増えるほどIPCコストがさらに悪化する
+  可能性がある。
+
+**どちらも実測なしの憶測でしかない。** 依頼の指示通り、実際に
+もっと大きいペア数で計測して確かめた。
+
+### 計測方法（再現可能な記述）
+
+Stage 6/7と同じフロップボード（7♥2♦3♠）上に、`tests/test_exploitability_parallel.py`の
+`PostflopSubgame(...).hero_combos = game.hero_combos[:2]`という
+スライス手法を踏襲しつつ、**ヒーロー「88+」・ヴィラン「22-77」という
+互いに素なペアレンジ**（ボードでブロックされた分を除いてヒーロー42
+コンボ・ヴィラン27コンボ）から必要な数だけスライスして使った。
+
+同じレンジ「22+」を両者に使う案を最初に試したところ、少数コンボに
+スライスすると両者が同じ低ランクの組み合わせを共有してしまい
+「every villain combo clashes with hero's dealt combo」という
+`RuntimeError`で失敗した（役の取り合いになった）。互いに素な
+ランク帯を選んだことで、スライスサイズによらずこの問題が構造的に
+起きなくなる。
+
+**このレンジは実際のプリフロップレンジ形状を再現するものではなく、
+純粋にコンボ「ペア数」を制御するための道具である**——盤面・
+ベットサイズ・`max_wagers_per_round`が固定なら、1コンボペアあたりの
+計算コストは「どのコンボが配られたか」ではなく「ゲーム木の形」
+（フロップ/ターン/リバーの各ラウンドで踏む分岐の数）で決まるので、
+これで問題ない。
+
+`avg_strategy={}`（一様戦略）を使用——Stage 7自身の16/36ペア
+スケーリング確認と全く同じ方法論（正しさの検証ではなく速度の
+スケーリング確認が目的なので、学習済み戦略は不要）。
+
+各サイズについて、同一プロセス内で`exploitability(...)`
+（シーケンシャル）→`exploitability_parallel(..., max_workers=4)`
+（並列）の順に実行し、各フェーズ開始直前に`os.getloadavg()`を記録、
+戻り値が完全一致（`par == seq`）することも確認した。実際に使った
+スクリプト（コミットはしていない使い捨てスクリプト——再現できるよう
+全文をここに残す）:
+
+```python
+from cfr_solver.exploitability import exploitability, exploitability_parallel
+from cfr_solver.games.postflop_subgame import PostflopSubgame
+from cfr_solver.poker.cards import parse_card
+import os, time
+
+def flop_board():
+    return [parse_card(c) for c in ("7h", "2d", "3s")]
+
+def make_game(n_hero, n_villain):
+    g = PostflopSubgame(flop_board(), hero_range_notation="88+", villain_range_notation="22-77")
+    g.hero_combos = g.hero_combos[:n_hero]
+    g.villain_combos = g.villain_combos[:n_villain]
+    return g
+
+def measure(n_hero, n_villain):
+    n_pairs = n_hero * n_villain
+    avg_strategy = {}
+    print("loadavg before sequential:", os.getloadavg())
+    g_seq = make_game(n_hero, n_villain)
+    t0 = time.perf_counter(); seq = exploitability(g_seq, avg_strategy); t1 = time.perf_counter()
+    seq_time = t1 - t0
+    print("loadavg before parallel:", os.getloadavg())
+    g_par = make_game(n_hero, n_villain)
+    t0 = time.perf_counter(); par = exploitability_parallel(g_par, avg_strategy, max_workers=4); t1 = time.perf_counter()
+    par_time = t1 - t0
+    print(f"N={n_pairs}: sequential={seq_time:.2f}s parallel={par_time:.2f}s bit-exact={par==seq} speedup={seq_time/par_time:.3f}x")
+
+measure(8, 8)
+measure(15, 20)
+```
+
+64ペア（ヒーロー8コンボ×ヴィラン8コンボ）と300ペア（ヒーロー15コンボ×
+ヴィラン20コンボ）の2点で計測した——依頼にあった「数百〜数千ペア」の
+範囲のうち、このセッション内で実行完了できる現実的な規模として選んだ
+（300ペアのシーケンシャル計測だけで約32分かかっている。302,328ペア
+そのものを解くのは、後述の通りこのシーケンシャル実測だけで数週間
+規模になるため、セッション内での実行対象には最初から含めていない）。
+
+### 結果: 速度向上は「拡大」ではなく「縮小」した
+
+Stage 7既存の2点（16・36ペア）と合わせた4点:
+
+| コンボペア数 | シーケンシャル | 並列（4ワーカー） | 速度向上 | seq/ペア | 並列/ペア | 計測時のloadavg（1分値、シーケンシャル開始直前） |
+| --- | --- | --- | --- | --- | --- | --- |
+| 16（Stage 7既測） | 85.2秒 | 31.4秒 | 2.71倍 | 5.325秒 | 1.963秒 | 2.87 |
+| 36（Stage 7既測） | 208.1秒 | 74.4秒 | 2.80倍 | 5.781秒 | 2.067秒 | 2.07 |
+| **64（新規計測）** | **349.18秒** | **132.79秒** | **2.63倍** | 5.456秒 | 2.075秒 | 1.01（クリーン） |
+| **300（新規計測）** | **1941.95秒** | **1050.29秒** | **1.85倍** | 6.473秒 | 3.501秒 | **4.26**（他セッションの負荷が高い状態で開始） |
+
+いずれのサイズでも並列版・シーケンシャル版の戻り値は完全一致
+（bit-exact、`par == seq`）。
+
+**当初の想定（固定オーバーヘッドは大きいNでより薄まり、速度向上は
+改善するかもしれない）とは逆の結果になった**: 16→36ペアではほぼ
+横ばい（2.71→2.80倍）だったが、64ペアで既にわずかに後退し
+（2.63倍）、300ペアでは明確に悪化した（1.85倍）。**速度向上は
+ペア数が増えるほど拡大するどころか、縮小する傾向にある**、というのが
+このステージで実際に測って分かった、当初の仮説を覆す事実である。
+
+### 正直な留保: 300ペア計測とその解釈上の注意点
+
+300ペアのシーケンシャル計測は、開始直前のloadavg（1分値4.26）が
+示す通り、**他セッションの負荷が高い状態で始まった**（並列計測開始時
+には1.01まで下がっている——他セッションの負荷が一時的だった可能性が
+高い）。この負荷がシーケンシャル計測を実際より遅くしていたとすれば、
+それは「シーケンシャル時間を水増しし、結果として速度向上比を実際より
+大きく見せる」方向のバイアスになる。つまり**この負荷条件は、観測された
+悪化傾向を疑う理由にはならない——もしむしろ公平な負荷条件で計測できて
+いたら、実際の並列効率の悪化はここで測った1.85倍よりもさらに悪い
+可能性がある**。この負荷条件を「悪化傾向は負荷のせいだった」と
+説明に使うことはできない、という点は明記しておく。
+
+もう一点、素直に指摘すべき未解決の観察がある: **シーケンシャル側の
+1ペアあたりの時間そのものも、64ペア（5.456秒）から300ペア
+（6.473秒）にかけて約19%増えている。** 理屈の上では、盤面・
+ベットサイズ・`max_wagers_per_round`が同じである限り、1コンボペア
+あたりの木の形（したがって計算コスト）はどのコンボが配られたかに
+依存しないはずで、シーケンシャル側にはIPCのような「ペア数に依存して
+育つ」共有コストも存在しない（`policy`はプロセス内のただのPython
+辞書で、プロセス間シリアライズは発生しない）。したがって、この
+19%の増加が(a)上記のloadavg 4.26という負荷条件だけで説明できるのか、
+(b)何か他のN依存のコストが実在するのか、**このセッションでは切り分け
+られていない。** 未解決の観察として記録するに留め、確定した原因が
+あるかのようには書かない。
+
+### 考えられるメカニズム: コード確認済みの事実と、未検証の仮説を分けて書く
+
+**事実（`cfr_solver/exploitability.py`のソースを直接確認した内容）**:
+`best_response_value_parallel`は、収束するまでの各policy-iteration
+sweepごとに`tasks = [(player, policy, history, reach) for history, reach in leaves]`
+を新規に組み立てており、その時点の`policy`辞書**全体**を、全コンボ
+ペア分（`leaves`の要素数）のタスクそれぞれに個別添付してワーカーに
+送信している。ワーカー側からの戻り値`local_q`（コンボペアごとの
+部分的な情報集合辞書）も同様にペアごとに個別にシリアライズされて
+返ってくる。`policy`辞書のサイズは、そのプレイヤーの実際に到達した
+情報集合数——つまりヒーロー側の応答ならヒーローの distinct コンボ数
+に、ヴィラン側の応答ならヴィランの distinct コンボ数に、それぞれ
+概ね比例して育つ（相手の非公開のコンボには依存しないため、
+「コンボペア数」そのものよりは緩やかに育つ）。
+
+**仮説（このセッションでは切り分け測定をしておらず、未確認）**:
+sweepあたりのIPC転送量が「タスク数（＝コンボペア数N）× policy辞書
+サイズ（コンボ数、おおよそ√N程度で育つと考えられる）」に比例すると
+すれば、これはNにほぼ比例するのではなく、Nよりやや急な
+（N^1.5に近い）ペースで増える計算になる。実際、64→300ペア
+（N比4.69倍）での「並列版のうち理想的な4分割コンピュートでは
+説明できない残差」（＝オーバーヘッド相当分、下記参照）は12.4倍に
+増えており、これは指数にするとN^1.63相当——上記の仮説とおおよそ
+整合する数字ではあるが、**たった2点からの推定であり、確定的な
+法則として扱うべきではない。** `actual_value_parallel`
+（sweepを回さない、1回きりの並列呼び出し）と
+`best_response_value_parallel`（sweepごとに`policy`を再送する）を
+別々に計測して切り分ければこの仮説を検証できるが、**このセッションの
+時間内では実施していない——次にこの領域を掘り下げる際の具体的な
+着手点として記録するに留める。**
+
+（残差の計算: `理想4分割時間 = シーケンシャル時間 / 4`だとすると、
+64ペアでは349.18/4=87.30秒に対し実測132.79秒——残差45.50秒
+（実測時間の34.3%）。300ペアでは1941.95/4=485.49秒に対し実測
+1050.29秒——残差564.80秒（実測時間の53.8%）。**この「オーバー
+ヘッド相当の残差」が占める割合自体が、64ペアの34%から300ペアの
+54%へと、ペア数が増えるほど大きくなっている**——「4コアの理想的な
+分割から説明できない何か」が、ペア数の増加とともに相対的にも
+絶対的にも重くなっている、という点は2点の実測から直接言える。）
+
+### 実スケール（BTNオープン612コンボ×BBコール494コンボ ≈ 302,328コンボペア）への外挿
+
+**シーケンシャル版の見積もり**: 実測した1ペアあたりの時間
+（64ペア5.456秒〜300ペア6.473秒の範囲、上記の通りこの増加の
+原因は未確定）をそのままレンジとして使うと:
+
+302,328ペア × 5.456〜6.473秒/ペア ≈ **約165万〜196万秒
+（約19.1〜22.7日）**
+
+**この数字は独立した傍証と整合する**: 本ファイル「情報集合の保存
+方式」節に記録済みの、Cactus Kev評価器・Stage 6のlru_cache・Stage 7の
+並列化のいずれも入る**前**の素朴な実装での実測（1,170コンボペアで
+約2時間、1ペアあたり約6.15秒）を単純にこのスケールへ比例させると
+約21.5日になり、ほぼ同じ範囲に収まる。**つまり、ここまでの最適化
+（Cactus Kev評価器＋Stage 6のlru_cache）を経てもなお、シーケンシャル
+実行時間は実スケールでほぼ変わらず数週間規模のままである**——
+これはStage 6自身の結論（プロファイリングの結果、ボトルネックは
+ハンド評価ではなく素朴なPython再帰オーバーヘッドそのものだった）と
+整合する、意外ではない結果。
+
+**並列版の見積もり——2通りに分けて書く**:
+
+1. **楽観的な下限**（「直近で測った1.849倍という比率が、これ以上
+   悪化せずそのまま実スケールまで保たれる」という**仮定**、実測の
+   トレンドの延長ではなく、あえて悪化を無視した最良ケースとして）:
+
+   165万〜196万秒 ÷ 1.849 ≈ **約89.2万〜105.8万秒
+   （約10.3〜12.3日）**
+
+2. **実測トレンドを踏まえた場合**: 実測4点（16→36→64→300ペア）で
+   速度向上比は2.71→2.80→2.63→1.85倍と**明確に悪化傾向**にあり、
+   1.85倍という数字自体、今回測った中で最も大きいペア数（300）での
+   最も悪い値である。302,328ペアは300ペアのさらに約1,008倍——
+   この悪化傾向がそのまま(あるいはさらに)続くと仮定すれば、
+   実際の速度向上比は1.85倍よりも**低い**可能性が高く、悪くすれば
+   並列版がシーケンシャル版より遅くなる（速度向上1倍を下回る）
+   領域に入っていてもおかしくない。**ただし、たった4点・約19倍の
+   レンジしかない実測から、その1,000倍先を具体的な数値として
+   外挿するのは統計的に無理があるため、ここでは特定の「悲観的な
+   見積もり数値」はあえて出さない。** 言えるのは方向だけである:
+   実際の所要時間は、上記1の「約10.3〜12.3日」という楽観的な数字
+   **以上**になる可能性が高く、それを下回ることはむしろ考えにくい。
+
+### より大きなマシンでの見積もり（明示的な仮定であり、実測ではない）
+
+**このマシンには4コアしかなく、これ以上のコア数では一切実測して
+いない。** 以下は全て、実測に基づかない仮定・推測であることを
+明記した上で書く。
+
+素朴な仮定は「並列化できる計算部分はコア数に応じてほぼ線形に速くなり、
+コア数を増やせば増やすほど速度向上はコア数に近づいていく」という
+ものだが、上記の残差分析（64ペアで実測時間の34%、300ペアで54%が
+「理想的な4分割では説明できない」オーバーヘッド相当）を踏まえると、
+この素朴な仮定はおそらく実スケールには当てはまらない。
+
+`ProcessPoolExecutor.map`によるタスクの送信・結果の回収は、
+タスク数×ペイロードサイズに比例するシリアライズコストであり、
+このコストの大部分はメインプロセス側の処理（ワーカーへの送信前の
+pickle化、ワーカーからの結果のpickle復元）に依存する。**コア数を
+増やしても、このメインプロセス側のシリアライズ自体が並列化される
+わけではない**——コア数を増やして得られるのは「並列化できる計算
+部分」の追加の高速化だけであり、上記の通りその「計算部分」が
+占める割合はペア数が増えるほど小さくなっている(64ペアで66%、300
+ペアで46%)、というのがこのマシンでの実測が示す傾向。
+
+したがって（あくまで仮定）: 16〜32コア級のクラウドマシンを使えば
+「計算部分」自体はこの4コア環境よりもさらに分割されて速くなる
+可能性は高いが、**「オーバーヘッド部分」（実測ではメインプロセス側の
+シリアライズコストが主因と推定される）はコア数を増やしてもほとんど
+縮まらないと考えられる。** 300ペア時点で既にオーバーヘッド相当が
+564.8秒（実測時間の54%）を占めており、これが実スケール
+（302,328ペア、約1,008倍）でどこまで増えるかは実測していないため
+不明だが、上で観察した「ペア数が増えるほどオーバーヘッドの相対
+比率も絶対量も増える」という傾向を踏まえると、**単純に「もっと
+コアを積めば解決する」とは言い切れない**、というのがこのマシンでの
+実測から導ける、コア数に関する唯一の誠実な結論。
+
+### 結論（判断ゲート）
+
+- **このマシン（4コア）では、実スケール（約302,328コンボペア）の
+  exact exploitability計算は、最も楽観的な仮定（直近で測った1.85倍
+  という速度向上比が、実測で観察された悪化傾向にもかかわらず
+  これ以上悪化しないと仮定した場合）でも約10.3〜12.3日かかる
+  ——プランの言う「数時間〜1日程度」という予算を、最良ケースでも
+  10倍以上超過する。**
+- **実測されたトレンド（ペア数が増えるほど速度向上比が縮小する）を
+  そのまま受け取るなら、実際の所要時間はこの10.3〜12.3日という
+  数字よりもさらに長くなる可能性が高い。** 具体的な数値までは
+  4点の実測から責任を持って外挿できないため出していないが、方向は
+  明確である。
+- **より大きなマシン（16〜32コア級クラウド、実測はしていない明示的な
+  仮定）でも、この判断は変わらない可能性が高い。** 観測された
+  オーバーヘッド（メインプロセス側のシリアライズコストと推定され、
+  ペア数が増えるほど相対的にも絶対的にも重くなる）はコア数を増やしても
+  縮まらないと考えられるため、コア数を増やすだけでは「数時間〜1日」の
+  予算に収まるとは言えない。
+
+**したがって判断ゲートの結論: Stage 6（`lru_cache`によるホットパス
+キャッシュ）とStage 7（`ProcessPoolExecutor`によるコンボペア並列化）
+を組み合わせても、実際のアプリのレンジ幅（BTNオープン612コンボ×
+BBコール494コンボ ≈ 302,328コンボペア）のexact exploitability計算を
+「数時間〜1日程度」の予算内に収めるには、このマシンでも、仮定上の
+より大きなマシンでも、依然として足りない。** プランの言う通り、
+これは「Rust等ネイティブ実装への書き換えを別途スコープする」という
+判断を裏付ける結果であり、**その書き換え自体は今回のステージの
+スコープ外**（プランでも別途判断される、より大きな作業として
+位置づけられている）なので、ここでは着手しない。実際に新しい
+スポットを解いてエクスポートする作業（Stage 9相当）も、同様に
+このステージのスコープ外として着手しない。
+## Stage 8R-6: 実際のフルスケール局面をCIのfixtureとして固定化
+
+### Context（なぜやったか）
+
+Stage 8R-4/8R-5がRustへ移植したexact exploitability計算は、AA vs KK
+（36コンボペア）のような実際のフルスケール局面ですら、Pythonの逐次実装
+で235.6秒かかっていたところを55.06秒（シーケンシャル）・25.88秒
+（並列）まで縮めた。これは、これまで`tests/test_exploitability_parallel.py`/
+`tests/test_exploitability_native.py`/`tests/test_exploitability_native_parallel.py`
+が明示的に避けてきた「`export_solved_spots.py`が実際に解く本物の局面」を、
+初めてルーチンのCIチェックとして毎回検証できる速さになった、という
+ことを意味する。これまでのテストは（Pythonでは実用外の時間がかかる
+ため）意図的にヒーロー2コンボ×ヴィラン2コンボなどの極小スライスに
+削って検証していた——本物の局面そのものをbit-exactに検証するテストは、
+このセッションまで存在しなかった。
+
+このステージでは、`export_solved_spots.py`のSPOTS 2件（AA vs KK、
+QQ+ vs TT-JJ）それぞれについて、実際に学習を走らせた
+`average_strategy()`の出力をfixtureとしてリポジトリにコミットし、CIは
+そのfixtureをロードしてRustのexact exploitability計算だけを実行・検証
+する（学習はCIでは行わない——学習自体は依然として分単位〜十分単位
+かかるため）。
+
+### fixtureの生成
+
+`export_solved_spots.py`のSPOTS定義と完全に同じ設定で学習した:
+
+| | AA vs KK | QQ+ vs TT-JJ |
+| --- | --- | --- |
+| board | 7h 2d 3s | 7h 2d 3s |
+| hero range | AA（6コンボ） | QQ+（18コンボ） |
+| villain range | KK（6コンボ） | TT-JJ（12コンボ） |
+| コンボペア数 | 36 | 216 |
+| bet_sizes_bb | (2.5, 5.0, 7.5) | (2.5, 5.0, 7.5) |
+| max_wagers_per_round | 1 | 1 |
+| random_seed | 1 | 1 |
+| iterations | 1,000,000 | 3,000,000 |
+| 情報集合数（このセッションで実測） | 446,833 | 1,114,103 |
+| 学習時間（このセッションで実測） | 383.4秒 | 1,271.7秒（≈21.2分） |
+
+AA vs KKの446,833情報集合は、Stage 6（`lru_cache`最適化）・Stage 7
+（並列化）でこれまで繰り返し記録してきた値と完全に一致し、学習の
+再現性が保たれていることを確認できた。
+
+### AA vs KK: 既存の検証済み値をそのまま再利用
+
+AA vs KKのexact exploitability `0.03149967136596232`は、Stage 7
+（Pythonの逐次版と並列版）・Stage 8R-4（Rustシーケンシャル版、
+55.06秒）・Stage 8R-5（Rust並列版、25.88秒）で繰り返しbit-exact一致が
+確認済みの値であり、本ステージでは新たに学習し直すのではなく、この値
+をそのまま`aa_vs_kk_expected_exploitability.json`に記録した——異なる
+random_seedや設定の微妙な違いから値がドリフトするリスクを避けるため。
+このセッションで生成した`average_strategy()`のfixtureに対して、実際に
+`exploitability_native`/`exploitability_parallel_native`を呼び出し、
+両方とも記録済みの値と完全一致することを確認した。
+
+### QQ+ vs TT-JJ: 記録済みの値は丸められた表示値だったため、新たに厳密計算した
+
+`BENCHMARKS.md`のレンジ幅拡張の節に記録されている値`0.03729`は、有効
+数字5桁に丸めた表示値であり、`==`によるbit-exact比較が要求するフル
+精度の浮動小数点数ではなかった。そのままでは「本当に一致しているか」
+を検証できないため、本ステージでは同じ設定（3,000,000反復、
+random_seed=1）で新たに学習し、既存の純Python実装
+`cfr_solver.exploitability.exploitability()`でexact exploitabilityを
+計算し直し、これを新たな厳密値（グラウンドトゥルース）とした。
+
+### 発見した問題: レンジ展開の`set`イテレーション順序がプロセスをまたいで非決定的
+
+QQ+ vs TT-JJのfixture生成中に、**Rustのバグではない、既存のPython実装
+（`cfr_solver/poker/range_notation.py`・`cfr_solver/poker/combos.py`、
+Stage 8Rよりずっと前から存在するコード）に起因する再現性の問題**を
+発見した。
+
+`range_notation.expand()`は複数の169ハンドコードにまたがるレンジ表記
+（`'QQ+'` → `{QQ, KK, AA}`、`'TT-JJ'` → `{TT, JJ}`）を`set[str]`として
+返し、`combos.range_combos()`はこれを`for code in hand_codes:`で直接
+イテレートしている。Pythonは文字列のハッシュをデフォルトで
+プロセスごとにランダム化する（`PYTHONHASHSEED`未設定）ため、この`set`
+のイテレーション順序——つまり`hero_combos`/`villain_combos`の並び順
+——は、**同じコード・同じ設定でも、別々のPythonプロセスを起動する
+たびに変わりうる**。実際に確認した:
+
+```
+$ python3 -c "from cfr_solver.poker.range_notation import expand; print(expand('QQ+'))"
+{'KK', 'QQ', 'AA'}
+$ python3 -c "from cfr_solver.poker.range_notation import expand; print(expand('QQ+'))"
+{'QQ', 'AA', 'KK'}
+$ python3 -c "from cfr_solver.poker.range_notation import expand; print(expand('QQ+'))"
+{'AA', 'QQ', 'KK'}
+```
+
+（`'AA'`・`'KK'`のような単一169ハンドコードのレンジは`set`の要素が
+1つしかないため、この影響を受けない——実際、AA vs KKの
+`hero_combos`/`villain_combos`は3回試しても常にソート済みの順序と
+一致することを確認した。）
+
+この並び順の違いは、どの情報集合がどの正しい戦略を持つか（fixtureの
+`avg_strategy`の中身）には影響しない——情報集合キーは実際のカードの
+値・行動履歴から作られるため、コンボの列挙順序とは無関係。しかし
+**exact exploitabilityの計算（`actual_value`/`best_response_value`の
+chanceノードでの`total += prob * child`という総和、および
+`best_response_value`の反復的な不動点計算）は、コンボの列挙順序に
+浮動小数点の総和順序として依存する**——浮動小数点の加算は結合則が
+成り立たないため、同じ値の集合でも足す順序が変われば最後の数ビット
+が変わりうる。
+
+実際に発生した実害: このステージの最初の`average_strategy()`
+fixtureは、あるプロセス（学習を実行した`gen_qq_plus.py`）で生成
+されたコンボ順序のもとで厳密計算し`0.037279985798492676`を得た。
+その後、**別の新しいプロセス**（`pytest`）でfixtureをロードして
+`PostflopSubgame`を再構築し、同じ`avg_strategy`に対して
+`exploitability_native`を呼び直したところ、`0.037279985798492454`
+という**わずかに異なる値**（絶対差 2.22e-16、相対差 約6e-15——
+浮動小数点の再結合誤差として説明のつく、数ビット分のごく小さな差）
+が返り、`==`によるテストが失敗した。
+
+### 対応: このステージのスコープ内で、コンボ順序を正規化する
+
+`range_notation.py`/`combos.py`自体の修正（例:
+`expand()`が`set`ではなくソート済みの`list`/`tuple`を返すようにする、
+`range_combos()`が`hand_codes`をソートしてからイテレートする、等）は、
+このステージで触ってよいファイルの範囲外であり、依頼の「Rustのバグを
+見つけたら黙って回避せず報告する」という原則を、Rust以外で見つかった
+今回のケースにもそのまま適用し、**`range_notation.py`/`combos.py`は
+一切変更していない**。
+
+代わりに、このステージが新規に追加したファイル（fixture生成スクリプト・
+`tests/test_exploitability_native_real_spot.py`）の中だけで、
+`PostflopSubgame`構築直後に`game.hero_combos = sorted(game.hero_combos)`
+/`game.villain_combos = sorted(game.villain_combos)`を適用し、コンボ
+順序をプロセスに依存しない正規化された順序に固定した
+（`hero_combos`/`villain_combos`をテスト側から直接再代入するのは
+`tests/test_exploitability_parallel.py`の既存テストが
+`game.hero_combos = game.hero_combos[:2]`で行っているのと同じ、この
+コードベースで確立済みのパターン）。この正規化を適用した上で、
+QQ+ vs TT-JJのexact exploitabilityをPython・Rustシーケンシャル・
+Rust並列の3通りで計算し直したところ、3つとも完全に一致した:
+
+```
+python sequential exploitability = 0.037279985798492676 (1,388.8秒 ≈ 23.1分)
+rust   sequential exploitability = 0.037279985798492676 (342.6秒 ≈ 5.7分)
+rust   parallel   exploitability = 0.037279985798492676 (141.4秒 ≈ 2.4分)
+bit-exact match: True（3つとも完全一致、かつ正規化前の最初の計算値
+0.037279985798492676 とも一致——今回はたまたま同じ値になったが、
+これは偶然であり、正規化しない限り再現性は保証されない）
+```
+
+**この`sorted()`による正規化は対症療法であり、根本原因の修正では
+ない**——`range_notation.py`/`combos.py`側で`set`をやめて決定的な
+順序（ソート済みlist等）を返すようにするのが本来あるべき修正だが、
+今回はスコープ外として意図的に行っていない。この問題は今回のRust
+移植（Stage 8R-1〜8R-5）が持ち込んだものではなく、Phase 2からずっと
+存在していたコードの性質であり、**複数の169ハンドコードにまたがる
+レンジ表記（"XX+"、ダッシュレンジなど）を使う限り、`export_solved_spots.py`
+を含むあらゆる箇所で、プロセスをまたいだ厳密な再現性（bit-exact
+reproducibility）が保証されていなかった**、という発見そのものが今回の
+副産物である。（余談だが、`BENCHMARKS.md`の「レンジ幅の拡張」の節に
+記録されている探索的な値`0.03729`と、本ステージで計算した
+`0.03728...`の差も、単なる丸めの問題だけでなく、一部はこの非決定性に
+起因している可能性がある——当時の学習がどのコンボ順序で行われたかは
+記録されておらず、遡って確認できない。）
+
+### 実測した速度向上（exact exploitability計算のみ、学習時間は含まない）
+
+| | AA vs KK（36コンボペア） | QQ+ vs TT-JJ（216コンボペア、正規化済みコンボ順序） |
+| --- | --- | --- |
+| Python 逐次（`exploitability()`） | 235.6秒（Stage 7で記録済み） | 1,388.8秒（≈23.1分、本ステージで新規実測） |
+| Rust シーケンシャル（`exploitability_native`） | 55.06秒（Stage 8R-4で記録済み） | 342.6秒（≈5.7分、本ステージで新規実測） |
+| Rust 並列（`exploitability_parallel_native`、4コア） | 25.88秒（Stage 8R-5で記録済み） | 141.4秒（≈2.4分、本ステージで新規実測） |
+| 速度向上（Python逐次→Rustシーケンシャル） | 4.28倍 | 4.05倍 |
+| 速度向上（Python逐次→Rust並列） | 9.11倍 | 9.82倍 |
+| 速度向上（Rustシーケンシャル→Rust並列） | 2.13倍 | 2.42倍 |
+
+QQ+ vs TT-JJ（AA vs KKの6倍のコンボペア数）でも、速度向上の倍率は
+AA vs KKとほぼ同じ水準（4.0〜4.3倍・9.1〜9.8倍・2.1〜2.4倍）で安定
+しており、Stage 8R-5のコミットメッセージで報告されていた「コンボ
+ペア数が増えても速度向上比が劣化しない」という傾向がここでも
+裏付けられた。
+
+### 新規CIテスト: `tests/test_exploitability_native_real_spot.py`
+
+上記のfixture（学習済み`average_strategy()`と、検証済み/新規計算した
+厳密exploitability値）をリポジトリにコミットし、CIはこれらをロード
+して「Rustのexact exploitability計算だけ」を実行・検証する新しい
+テストファイルを追加した。学習はCIでは一切行わない（fixtureは事前に
+手動生成済み）。`_build_game`は上記の`sorted()`正規化を常に適用する
+（AA vs KKには影響しないが、QQ+ vs TT-JJの再現性に必須）。
+
+実測したテスト全体の所要時間: `pytest -v tests/test_exploitability_native_real_spot.py`
+で**584.70秒（≈9分45秒、2 passed）**（AA vs KK・QQ+ vs TT-JJ の両方、
+シーケンシャル・並列の両entry pointをそれぞれ検証）。内訳はおおよそ
+AA vs KK側が約115秒（55.06秒+25.88秒相当）、QQ+ vs TT-JJ側が約470秒
+（342.6秒+141.4秒相当）——CIの「数十秒」という理想からは外れるが、
+2つのspotそれぞれでシーケンシャル・並列の両entry pointを別個に検証
+している設計上の帰結であり、これは`tests/test_exploitability_native_parallel.py`
+が小さいスライスに対して行っているのと同じ「両方の入口を独立に検証
+する」方針をそのままフルスケール局面に適用した結果。
+
+### fixtureファイルサイズについて、正直に書いておくべきこと
+
+`average_strategy()`の出力は情報集合ごとに1エントリを持つため、情報
+集合数に比例してJSONサイズが大きくなる。コンパクトな区切り文字
+（`separators=(",", ":")`）を使った上でも:
+
+| fixture | サイズ |
+| --- | --- |
+| `aa_vs_kk_avg_strategy.json` | 21,653,285バイト（約20.7MiB） |
+| `qq_plus_vs_tt_jj_avg_strategy.json` | 54,497,375バイト（約52.0MiB） |
+| `aa_vs_kk_expected_exploitability.json` | 536バイト |
+| `qq_plus_vs_tt_jj_expected_exploitability.json` | 約2.0KB |
+
+**これは正直に言って、通常git管理下に置くfixtureとしては大きい**
+（合計約74.4MB追加）。gzip圧縮を試したところ、それぞれ約3.47MB・
+約9.39MB（元の約1/6）まで縮むことを確認したので、今後この2ファイル
+の存在がリポジトリサイズ・クローン時間の実害になった場合は、`gzip`
+で圧縮してコミットし、テスト側で`gzip.open`経由で読むよう変更する
+のが素直な対処法になる（内容は完全に同じままサイズだけ縮められる、
+可逆な変更）。今回は依頼された通りの`.json`という単純な形式のまま
+——CIチェックの新規性そのものの検証を優先し、圧縮という追加の
+複雑さは持ち込まなかったが、**サイズを黙って許容するのではなく、
+ここに明記しておく**。
+
+### スコープ外として意図的に触れていない点
+
+- `cfr_solver/poker/range_notation.py`/`combos.py`の`set`イテレーション
+  順序の根本修正（上記参照）——今回発見した問題だが、このステージで
+  触ってよいファイルの範囲外として意図的に修正していない。
+- `export_solved_spots.py`のSPOTSに含まれる情報（フロップの最初の
+  意思決定のみexportする、というスコープ）そのものは今回変更していない。
+- fixtureの生成はこのセッションで一度手動実行しただけで、CI自体が
+  fixtureを再生成する仕組みは用意していない（意図的——学習をCIで
+  走らせないことが本ステージの目的そのものであるため）。
+- 22+ vs 22+など、さらに広いレンジ幅のfixture化は今回のスコープ外
+  （依頼された2局面のみ）。
+
+## Stage 8R-7: 実レンジ幅でのRust厳密exploitability計算 — 判断ゲート（2026-09-05計測）
+
+### Context（何を判断するか）
+
+Stage 8R-1〜8R-6でRustへ移植したexact exploitability計算（ハンド評価器・
+ゲームルール・逐次walk・Rayon並列walk・実スポットfixture）が、実際に
+プランの目標——実レンジ幅（BTNオープン612コンボ×BBコールコール494コンボ）
+のexact exploitabilityを「数時間〜1日程度」で計算できるようになったか
+を判断する、8段階計画のStage 8Rパート最後のゲート。Stage 8（Python）の
+判断ゲートが「Stage 6+7ではこの予算に10倍以上届かない」と結論した後を
+受けて、「Rustへの書き換えで実際にこの予算に届くようになったか」を、
+Stage 8と全く同じ計測の厳密さ・正直さの基準で再検証する。
+
+**このステージでは実装は一切変更しない。** 計測・分析・判断のみを行う。
+
+### ビルドモードの確認（最優先で確認すべき前提条件）
+
+このステージの計測が意味を持つ唯一の条件は、Rust拡張が`--release`
+モードでビルドされていること（デバッグビルドは10〜50倍遅くなりうる）。
+`solver/pyproject.toml`の`[tool.maturin]`は`manifest-path`/`module-name`/
+`python-source`のみを指定しており、ビルドプロファイルを明示していない。
+実際に確認した:
+
+```
+$ rm -rf native/target && pip install -e ".[dev]" --no-build-isolation
+...
+Building editable for cfr-solver (pyproject.toml): finished with status 'done'
+Successfully installed cfr-solver-0.1.0
+```
+
+- クリーンビルド後、`native/target/`以下には**`release/`ディレクトリしか
+  生成されなかった**（`debug/`は一度も作られていない）。
+- インストールされた`.so`（`cfr_solver/_native.cpython-311-x86_64-linux-gnu.so`、
+  979,504バイト）は、`cmp`で`native/target/release/lib_native.so`と
+  **バイト単位で完全に一致**することを確認した。
+- 参考として、同じセッション内の別ワークツリー（両方のプロファイルを
+  ビルド済み）で比較すると、debugビルドの`.so`は7,767,664バイト、
+  releaseビルドは587,200バイトで、**約13.2倍**のサイズ差がある
+  ——releaseかdebugかは.soのサイズだけで容易に判別できる、という
+  ことも合わせて確認した。
+- 念のため`maturin develop --release`も明示的に試したが、このサンドボックス
+  には有効化されたvirtualenvが存在しないため（`pip install -e`で
+  システム全体にインストールする運用のため）、`maturin develop`
+  コマンド自体がエラーで失敗した。これは想定内——`pip install -e`は
+  maturinの**ビルドバックエンド**（PEP 660の`build_editable`フック、
+  既定で`--release`相当）経由でビルドされるのに対し、`maturin develop`
+  は**別のCLIコマンド**（venvが必須、`--release`を付けない限りdebug
+  既定）であり、両者は別のコードパス。今回`pip install -e`だけで
+  releaseビルドになっていたのは偶然ではなく、この2つの経路の違いに
+  よるものだと確認できた。
+- バージョン: Python 3.11.15、maturin 1.15.0、rustc/cargo 1.94.1。
+
+**結論: 今回の計測はすべて`--release`ビルドで行われている。**
+
+### 実スケール（実レンジ幅）の正確な検証
+
+依頼にあった「推測せず実際にレンジを組んで確認する」を実行した。
+`lib/features/range_chart/infrastructure/range_definitions.dart`から
+6MAXのBTNオープンレンジ（`raise`のみ、mixed除く、97ハンドコード）と
+BB のBTNオープンに対するコールレンジ（`call`のみ、mixed除く、80ハンド
+コード）を取り出し、Stage 6〜8R一貫して使ってきたボード`7h 2d 3s`上で
+実際に展開した:
+
+```
+BTN raise-only combos: 612
+BB call-only combos: 494
+raw product: 612 * 494 = 302,328
+```
+
+**この612・494・302,328という数字は、本ファイル「情報集合の保存方式」
+節に既に記録されている値と完全に一致する。** ただし、依頼の指示通り
+「積をそのまま信用しない」で追加検証したところ、新しい事実が見つかった:
+
+**`PostflopSubgame`はヴィラン側の配りchanceノードで、ヒーローの
+コンボと物理的にカードが被る（同じカードを共有する）ヴィランコンボを
+実行時に除外している**（`postflop_subgame.py`のvillain-deal chance
+ノード）。つまり302,328という積は「组み合わせ論的な総数」であって、
+「実際に木が評価するペア数」ではない。612×494通りのすべてのペアに
+ついて、カード共有の有無を実際に数え上げたところ:
+
+```
+clashing pairs: 29,421 (9.7%)
+usable (actually-solved) pairs: 272,907
+```
+
+**実際にゲーム木が評価するのは302,328ではなく272,907ペア**——この
+9.7%の差は、以降の外挿すべてに影響するため、本ステージでは272,907を
+「実際のスケール」の基準値として扱う（302,328は参考として併記する）。
+
+### 計測方法（再現可能な記述）
+
+Stage 7/8/8R-5が確立した合成レンジ構築法——ボード`7h 2d 3s`上に互いに
+素なランク帯（ヒーロー「88+」・ヴィラン「22-77」）を作り、
+`.hero_combos[:n]`/`.villain_combos[:n]`でスライスする——をそのまま
+再利用した（Stage 8自身の判断ゲートも同じ方法論だった）。
+
+**ただしこの方法だけでは足りなかった**: ペアのみのランク帯は169ハンド
+コードのうち13種類のペアコードしか使えないため、最大でも
+「TT+」vs「22-99」の30×39=1,170ペアが理論上限であり、依頼にある
+「数千ペア」に届かない。そこで、**同じ`combos_for_hand_code`/
+`range_combos`プリミティブ（Stage 7/8/8R-5と全く同じ関数）を使ったまま**、
+ヒーロー側のランク集合`{A,K,Q,J,T,9}`とヴィラン側のランク集合
+`{8,7,6,5,4,3,2}`を完全に排反にし、それぞれのランク集合内のペア・
+スーテッド・オフスートすべてのハンドコードを使う、という拡張を行った
+（ヒーロー最大276コンボ・ヴィラン最大300コンボ、両者が重複コンボを
+一切持たないことをプログラムで確認済み）。ランクが完全に排反である
+ため、スライスサイズによらず「ヴィランの全コンボがヒーローの配られた
+コンボとカードが被る」というエラーは構造的に起きない——Stage 8が
+最初のペア専用帯を選んだのと全く同じ理由付けを、より広いレンジにも
+そのまま適用しただけであり、新しい構築ロジックを発明したわけではない。
+36ペアで両方式（狭い版・広い版）を計測し、1ペアあたりコストが
+ほぼ同じ（1193ms vs 1243ms）であることを確認済み——ボード・ベット
+サイズ・`max_wagers_per_round`が同じなら1ペアあたりコストは
+「どのランク/スートが配られたか」ではなく「木の形」で決まる、という
+Stage 8自身の理屈通りの結果。
+
+`avg_strategy={}`（一様戦略フォールバック）を使用——これもStage 7/8の
+既存のスケーリング確認と全く同じ選択（速度のスケーリング確認が目的で、
+正しさの検証ではないため）。ただし、依頼にあった通り明記しておくべき
+留保がある: **一様戦略を使うと、best-responseの不動点計算
+（policy-iteration sweep）が収束するまでのsweep回数が、実際に学習済みの
+`avg_strategy`を使った場合と異なりうる**——本ステージ末尾で見つかった
+並列版のメモリ増加が、もしsweep回数に依存する現象だとすれば
+（未確認の仮説、後述）、実際の学習済み戦略ではこのメモリ増加が
+より早く/より遅く顕在化する可能性がある。これは`avg_strategy={}`を
+選んだことの直接的な副作用として正直に記録しておく。
+
+各サイズについて、同一プロセス内で`exploitability_native(...)`
+（シーケンシャル）→`exploitability_parallel_native(..., max_workers=4)`
+（並列、4コア全部）の順に実行し、各フェーズ開始直前に`os.getloadavg()`
+を記録、戻り値の完全一致（bit-exact、`par == seq`）も毎回確認した。
+
+**このセッションの実行環境について、正直に書いておくべきこと**:
+計測の前半（36・300ペア）は、`ps aux`で確認したところ、**別のエージェント
+セッションが同じ4コアサンドボックス上で`pytest -v`のフルスイートと
+別のPythonスクリプトを同時に実行しており**（loadavgが2.1〜4.6まで
+変動）、明確な負荷競合状態だった。1000ペア計測の途中でこの負荷が
+消え（シーケンシャル計測は負荷下、並列計測はクリーンな状態でloadavg
+1.0まで低下）、3000ペア計測はクリーンな状態（loadavg 1.0〜1.4)で
+行えた。この負荷変動が並列版の速度向上比に与える影響は、後述の
+結果に明確に表れている。
+
+### 計測結果: シーケンシャル・並列の実測値
+
+| Nペア | コンボプール | 開始時loadavg(1分) | seq (s) | par (s, 4ワーカー) | 速度向上 | seq/ペア (ms) | par/ペア (ms) | bit-exact |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 36 | 狭い(88+/22-77) | 2.45（負荷あり） | 44.757 | 27.657 | 1.618x | 1243.2 | 768.3 | ✓ |
+| 36 | 広い(AKQJT9/2876543) | 1.28（軽い負荷） | 42.958 | 20.285 | 2.118x | 1193.3 | 563.5 | ✓ |
+| 300 | 狭い | 2.11→4.62（負荷増大中） | 378.603 | 195.723 | 1.934x | 1262.0 | 652.4 | ✓ |
+| 1,000 | 広い | 2.37→1.01（負荷消滅） | 1415.480 | 489.311 | **2.893x** | 1415.5 | 489.3 | ✓ |
+| 3,000 | 広い | 1.44（クリーン） | 3987.777 | **OOM（後述）** | — | 1329.3 | — | — |
+
+参考: Stage 8R-5自身が記録済みの値（狭いプール、クリーンな条件、絶対時間は
+未記録・比率のみ）: 16ペア2.39x・36ペア2.16x・64ペア2.28x・300ペア2.44x。
+今回の36ペア（広いプール、軽い負荷）2.118xはこの範囲にほぼ収まるが、
+今回の300ペア(1.934x)・36ペア狭いプール(1.618x)は明確にそれより低く、
+これは上述の負荷競合が原因だと考えられる——**負荷のかかった計測結果は
+実際の並列効率を過小評価する方向にバイアスがかかる**（Stage 6の
+`lru_cache`計測がこれを既に指摘済みの通り、負荷は常に「余計にかかる」
+方向にしか働かないため）。負荷が消えた1,000ペアで2.893xと、これまでの
+どの計測より高い値が出たことは、この解釈と整合する。
+
+**シーケンシャル1ペアあたりコストは、36〜3,000ペア（約83倍のスケール
+差）でほぼ横ばい**（1193〜1415ms、系統的な増加傾向は見られない）——
+Stage 8自身の理論的予想（1ペアあたりコストは木の形で決まり、ペア数や
+負荷とは無関係）と整合する。
+
+### 発見: 並列版で3,000ペアがメモリ不足（OOM）で強制終了した
+
+**これは事前に想定していなかった、本ステージの最も重要な発見である。**
+3,000ペアの並列計測（`exploitability_parallel_native`、4ワーカー）が、
+シーケンシャル計測の完了後、**カーネルのOOM Killerに強制終了された**
+（`dmesg`で確認: `Memory cgroup out of memory: Killed process ... anon-rss:13931096kB`）。
+
+「同一プロセス内でシーケンシャル計測の後に並列計測を呼んだせいで
+メモリが残っていた」という可能性を切り分けるため、**並列呼び出しだけを
+単独の新規プロセスで**（事前のシーケンシャル呼び出し無し）再実行し、
+20秒おきにRSSを記録した:
+
+```
+[watch] t=0s   rss=12MB
+[watch] t=20s  rss=13MB
+[watch] t=40s  rss=13MB
+[watch] t=60s  rss=13MB
+[watch] t=80s  rss=13MB
+[watch] t=100s rss=2318MB
+[watch] t=120s rss=5107MB
+[watch] t=140s rss=7591MB
+[watch] t=160s rss=10083MB
+[watch] t=180s rss=12668MB
+（この直後、OOM Killerにより強制終了。cgroupのメモリ上限は約14GBと
+ 推定される——`free -h`が報告する15GiBの物理RAMより少し小さい）
+```
+
+**80秒までは13MBで平坦、その後180秒までの100秒間で12.6GBまで急増**
+——単独プロセスでも同じ現象が再現し、「シーケンシャル計測の残留メモリ」
+という説明は棄却された。**並列パス自体が、3,000ペア規模で急速な
+メモリ増加を起こしている。**
+
+一方、**1,000ペアでは並列計測が489.311秒で正常完了**しており（前節の
+表参照）、クラッシュしていない。したがって**このメモリ急増の閾値は、
+このマシン（14〜15GB級）では1,000ペアと3,000ペアの間のどこかにある**。
+
+**原因の特定は行っていない**（本ステージはRust/Pythonソースコードの
+変更が禁止された計測専用のステージであり、プロファイリングや
+コード修正はスコープ外）。Stage 8R-5自身の実装説明（コードは読んだが
+変更していない）から立てられる、**未検証の仮説**をひとつだけ記録して
+おく: `best_response_value_parallel`のpolicy-iteration sweepループは
+1sweepごとに`leaves.par_iter().map(..).collect::<Vec<_>>()`を実行して
+おり、各リーフ（コンボペア）の`local_q`アキュムレータがsweepを
+またいで解放されずに蓄積されているとすれば、メモリは
+「コンボペア数×sweep回数」にほぼ比例して増えることになり、観測された
+「最初は平坦、途中から急増」というパターン（sweep回数がコンボペア数の
+増加とともに増える、あるいは初期のsweepは軽く後半のsweepが重くなる、
+等の非線形性があれば）と矛盾しない。**ただしこれはコードを読んだ
+だけの推測であり、プロファイリングによる確認は行っていない**——事実と
+推測を混同しないという本ファイルの一貫した方針により、明確に「未確認の
+仮説」として記録するに留める。
+
+**このOOM発見が持つ意味は重大である**: 実スケール（272,907ペア）は
+3,000ペア（クラッシュした規模）のさらに約91倍。メモリ制約は計算時間の
+予算とは独立した制約であり、「もっと時間をかければ解決する」種類の
+問題ではない。**現状の並列Rust実装は、このメモリ級（14〜15GB）の
+マシンでは、実スケールに到達するはるか手前（全体のわずか約1%の
+規模）で確実にクラッシュし、完走できない。** これは時間の見積もり
+以前の、より根本的な足切り条件であり、Stage 8R-1〜8R-6のどの段階でも
+これまで報告されていなかった新しい発見である。
+
+（なお、シーケンシャル版についても3,000ペアでのメモリ推移は計測して
+いない——クラッシュしなかった事実は確認できたが、「メモリが増加して
+いないこと」を確認したわけではない。実スケールでのシーケンシャル版の
+メモリ挙動は、本ステージでは未検証のまま残る。）
+
+### `avg_strategy`変換コストの計測（Stage 8R-4の「未計測」を解消）
+
+Stage 8R-4の報告で「妥当だが未計測」と留保されていた、Python
+`avg_strategy`辞書をRustの`AvgStrategy`に変換するコストを、実際の
+情報集合数のオーダー（Stage S2の進行中チェックポイント——本ファイル
+「情報集合の保存方式」節に記録済みの11.5M〜31M件——に合わせ、数千万件
+規模）で計測した。
+
+**方法**: `from_py_dict`を直接呼び出すPython公開APIが無いため、
+固定の最小サイズゲーム（ヒーロー1コンボ×ヴィラン1コンボ）に対して
+`exploitability_native`を、`avg_strategy={}`の場合と、巨大な合成
+`avg_strategy`辞書を渡した場合とで実行し、その差分を変換コストとみなした
+（`FxHashMap`のルックアップはサイズによらずO(1)のはずなので、辞書
+サイズに応じて変わるコストは変換部分だけのはず）。各サイズ3回実行し
+最小値を採用（負荷は常に時間を「増やす」方向にしか働かないため、
+最小値が最も負荷の影響を受けていない値に近い、という前セクションと
+同じ理屈）。
+
+| 合成エントリ数 | 実行時間（3回中の最小） | ベースライン差分 | 1エントリあたり |
+| --- | --- | --- | --- |
+| 0（ベースライン） | 1.2106秒 | — | — |
+| 500,000 | 1.5849秒 | 0.3743秒 | 0.749μs |
+| 2,000,000 | 3.1721秒 | 1.9615秒 | 0.981μs |
+| 5,000,000 | 6.5294秒 | 5.3188秒 | 1.064μs |
+| 10,000,000 | 13.5253秒 | 12.3147秒 | 1.231μs |
+
+全5点の最小二乗フィット: 約1.235μs/エントリ（切片0.883秒）。
+
+**正直に書いておくべき留保**: 1エントリあたりのコストが0.749→1.231μs
+とサイズとともに増加しているように見えるが、これはこの計測を行った
+時間帯にわたって**別セッションの負荷（loadavg）も同時に上昇していた**
+（3.4→5.5）ことと時期が重なっており、真にサイズに対して超線形な
+コストなのか、単なる負荷混入なのかを本ステージでは切り分けていない。
+`from_py_dict`のRustコードは事前に`reserve()`で容量確保した上で
+1パスするだけの実装であり、アルゴリズム上、超線形になる理由は見当たら
+ない——したがって負荷混入である可能性の方が高いと考えられるが、
+確定はしていない。
+
+**実スケール（情報集合数13M〜30M）への外挿**: 上記フィット
+（1.235μs/エントリ）を使うと、**約16〜37秒**——本ステージが計測する
+実行時間全体（数日オーダー）に対して**無視できる規模**であることが、
+Stage 8R-4の「妥当だが未計測」という留保に対する、実測による初めての
+確認となった。
+
+### 実スケール（272,907ペア）への外挿と、その不確実性
+
+**シーケンシャル**（クラッシュ未確認、実測はしたが3,000ペアまで）:
+5点の1ペアあたりコスト（1193.3〜1415.5ms、系統的なNへの依存は見られず、
+平坦に近い）をそのまま使うと:
+
+```
+272,907ペア × [1.1933秒, 1.4155秒]/ペア
+  = [325,652秒, 386,294秒]
+  = [90.5時間, 107.3時間]
+  = 約 [3.77日, 4.47日]
+```
+
+（参考: クラッシュ除去前の生の積302,328ペアを使った場合は約
+[4.17日, 4.95日] — ただし実際にゲーム木が評価するのは272,907ペアの方
+なので、こちらが実スケールに対応する数字ではない。）
+
+**並列**（3,000ペアでOOMクラッシュ済み、以下は「もしメモリの壁が
+無かったら」という仮定の下でのみ意味を持つ数字であることに注意）:
+クラッシュしていない点（36〜1,000ペア）のうち、負荷が最もクリーンで
+最大の規模だった1,000ペアの489.3ms/ペアを使うと:
+
+```
+272,907ペア × 0.4893秒/ペア = 133,536秒 = 37.1時間 = 約1.55日
+```
+
+**しかしこの1.55日という数字は、現状のRust並列実装では実際には
+到達不可能な仮定の数字である**——3,000ペア（実スケールのわずか約1.1%）
+で既にメモリ不足のためクラッシュしており、実際にこの並列パスで
+272,907ペアを完走させることは、メモリの壁を解消しない限り現状では
+不可能である。この数字は「時間だけを見ればここまで速い」という
+参考値としてのみ記載する。
+
+**外挿の不確実性について、Stage 8自身の判断ゲートと同じ基準で正直に
+書く**: シーケンシャルの外挿は、実測した最大規模（3,000ペア）から
+実スケール（272,907ペア）まで約91倍の外挿であり、これはStage 8自身の
+外挿幅（300ペアから302,328ペアまで約1,008倍）よりは小さいが、それでも
+1桁半ほどの外挿であることに変わりはない。1ペアあたりコストが
+36〜3,000ペア（約83倍のスケール差）で系統的なトレンドを示さなかった
+ことは外挿の妥当性を支持する材料だが、それより上のスケールで本当に
+平坦であり続ける保証ではない。したがって上記の[3.77日, 4.47日]という
+範囲は、**確定した予測ではなく、現時点の実測から導ける最も誠実な
+範囲**として扱うべきである。
+
+### 8R-7b: ハードウェアクラスについて（未解決の問い、明示的にフラグ）
+
+このサンドボックスは4コア・15GiB（`free -h`実測）で、OOM発生時の
+`dmesg`から実際のcgroupメモリ上限は約14GBと推定される。**このマシンが
+実際の本番運用で使われるマシンクラスと同じかどうかは、このセッション
+からは判断できない**——これは製品・インフラ側の意思決定事項であり、
+推測で埋めるべきではないと判断し、未解決のまま明記する。より大きな
+メモリのマシン（例: 64GB以上）であれば、今回発見したOOMの壁は
+先送りされる（あるいは実スケールに到達する前には起きなくなる）
+可能性が高いが、これも実測はしていない仮定に過ぎない。時間の予算
+（コア数）については、Stage 8自身が指摘した「メインプロセス側の
+シリアライズコストはコア数を増やしても縮まらない」という懸念は、
+Rust/Rayonの共有メモリ・スレッドベース実装ではPythonの
+`ProcessPoolExecutor`ほど深刻ではないと考えられる（プロセス間pickle
+シリアライズが存在しないため）が、これも8コア以上のマシンでの実測は
+行っていない。
+
+**272,907ペアの完全な実測（外挿ではなく実際に走らせる）は試みていない**
+——シーケンシャルだけでも3.8〜4.5日規模と見積もられ、このステージの
+時間予算内で完走を待つことは非現実的であり、並列版は上記の通り
+実行しても100%クラッシュすることが既に分かっているため、実行する
+意味がない（時間の無駄であるだけでなく、このサンドボックスを
+OOMで不安定にするリスクもある）。この判断は、依頼にあった
+「時間がかかりすぎると分かっている場合は無理に完走を待たなくてよい」
+という指示に従ったものである。
+
+### 結論（判断ゲート）
+
+- **シーケンシャルRustのexact exploitability計算は、実スケール
+  （272,907ペア）で約3.8〜4.5日と見積もられる。** これはPythonの
+  シーケンシャル版（Stage 8実測: 約19〜23日）に対して**約4.3〜6.1倍の
+  改善**であり、Rust移植（8R-1〜8R-6）の効果は実測として確認された。
+  しかし、プランの言う「数時間〜1日程度」の予算には**約3.8〜4.5倍
+  届いていない**。
+- **並列Rustのexact exploitability計算は、時間だけ見れば約1.55日
+  （シーケンシャルよりさらに有望）に見えるが、この数字は現状では
+  絵に描いた餅である**——3,000ペア（実スケールのわずか約1.1%）で
+  実際にメモリ不足によりクラッシュすることを、2通りの独立した方法
+  （同一プロセス内の逐次呼び出し、単独プロセスでの再現）で確認した。
+  **並列パスは、メモリの壁を修正しない限り、現状の実装のままでは
+  このメモリ級のマシンで実スケールに到達すること自体ができない。**
+  これは計算時間の見積もり以前の、より根本的な足切り条件であり、
+  Stage 8R-1〜8R-6のどの段階でも報告されていなかった新しい発見である。
+- **したがって判断ゲートの結論: 「数時間〜1日程度」は、Rustへの
+  書き換えを経てもなお、実スケールでは未だ達成されていない。**
+  Rust移植は測定可能な大きな前進（Pythonの約3週間から、実測に基づく
+  外挿で約4日へ）をもたらしたが、目標には届いておらず、加えて
+  並列パスに新しいメモリ上の欠陥が見つかった。目標達成には、
+  (a) 並列パスのメモリ増加の原因を特定し修正した上で、実スケールで
+  実際にクラッシュしないことを確認し直す、(b) それでもなお1日の
+  予算に届かない場合は、シーケンシャル・並列いずれについても
+  1ペアあたりコストのさらなる高速化（あるいは異なるアルゴリズム的
+  アプローチ）が必要になる、のいずれか（あるいは両方）が次のステージ
+  として必要——これは本ステージの計測専用というスコープの外であり、
+  ここでは着手しない。
+
+### スコープ外として意図的に触れていない点
+
+- 並列版のメモリ増加の根本原因のプロファイリング・修正
+  （`native/src/walk.rs`のRust実装の変更が必要になるため、
+  本ステージのスコープ外）。
+- シーケンシャル版の3,000ペア超でのメモリ挙動（未計測——クラッシュは
+  していないが、増加傾向の有無は確認していない）。
+- 272,907ペアの完全な実行（時間・メモリ両面の制約により、上記の
+  通り意図的に見送った）。
+- より大きなメモリ・コア数のマシンでの実測（このセッションの
+  サンドボックスは4コア・15GiB固定であり、他のマシンクラスは
+  試せない）。
+- `avg_strategy={}`ではなく実際に学習済みの戦略を使った場合の
+  sweep回数・メモリ挙動の違い（Stage S2の学習が別ワークツリーで
+  進行中だが、本ステージはそれに依存しないという指示のため、
+  意図的に使用していない）。
+
+### 付録: 使用したベンチマークスクリプト（再現用）
+
+**`bench_rust_scale.py`**（コンボペア数ごとのシーケンシャル/並列
+wall-clock計測。狭いプール=Stage 7/8established methodおよび
+広いプール=本ステージの最小限の拡張の両方に対応）:
+
+```python
+"""Stage 8R-7a: Rust exact-exploitability wall-clock at increasing combo-pair
+counts, using the SAME synthetic disjoint hero/villain range construction
+Stage 7/8/8R-5 established (hero "88+" / villain "22-77" on board 7h2d3s,
+sliced to n_hero x n_villain combos, avg_strategy={}).
+
+Usage: python3 bench_rust_scale.py <n_hero> <n_villain> [max_workers] [wide]
+Prints: N_pairs, sequential wall-clock, parallel wall-clock, speedup, bit-exact match.
+"""
+import os
+import sys
+import time
+from itertools import combinations
+
+from cfr_solver.games.postflop_subgame import PostflopSubgame
+from cfr_solver.poker.cards import parse_card
+from cfr_solver.poker.combos import range_combos
+from cfr_solver.exploitability_native import exploitability_native, exploitability_parallel_native
+
+
+def flop_board():
+    return [parse_card(c) for c in ("7h", "2d", "3s")]
+
+
+def make_game(n_hero, n_villain):
+    """Stage 7/8/8R-5's established synthetic scaling construction: disjoint
+    PAIR-only rank bands (hero '88+', villain '22-77'), sliced with
+    `.hero_combos[:n]`/`.villain_combos[:n]` -- reused verbatim, unchanged.
+    Caps out at 42x27=1,134 combos (only 13 pair codes exist in the 169-hand
+    universe), so this is only used for the 16/36/64/300-pair reproduction
+    points below."""
+    g = PostflopSubgame(flop_board(), hero_range_notation="88+", villain_range_notation="22-77")
+    g.hero_combos = g.hero_combos[:n_hero]
+    g.villain_combos = g.villain_combos[:n_villain]
+    return g
+
+
+def _codes_for_ranks(ranks):
+    codes = []
+    for r in ranks:
+        codes.append(r + r)
+    for r1, r2 in combinations(ranks, 2):
+        codes.append(r1 + r2 + "s")
+        codes.append(r1 + r2 + "o")
+    return codes
+
+
+# Same disjoint-rank-band idea Stage 8 used (hero/villain ranges drawn from
+# entirely non-overlapping ranks, so no hero combo can ever equal a villain
+# combo, by construction -- structurally avoiding the "every villain combo
+# clashes" RuntimeError regardless of slice size, exactly Stage 8's own
+# stated rationale). The ONLY difference from `make_game` above: pair-only
+# bands cap out at ~1,134-1,170 combos (13 pair codes total), too small to
+# reach "a few thousand pairs" as this stage's spec asks for, so this widens
+# each side's hand-code set to ALSO include suited/offsuit hands (still using
+# the same `combos_for_hand_code`/`range_combos` primitives `range_combos()`
+# and `PostflopSubgame.__init__` already use -- no new combo-construction
+# logic, just a wider rank split: hero={A,K,Q,J,T,9}, villain={8,7,6,5,4,3,2}).
+# Per Stage 8's own reasoning (recorded in BENCHMARKS.md), per-pair cost is
+# governed by board/bet-size/tree shape, not by which specific ranks/suits
+# are dealt, so this widening does not change what is being measured.
+_HERO_CODES = set(_codes_for_ranks("AKQJT9"))
+_VILLAIN_CODES = set(_codes_for_ranks("2876543"))
+
+
+def make_game_wide(n_hero, n_villain):
+    g = PostflopSubgame(flop_board(), hero_range_notation="88+", villain_range_notation="22-77")
+    blocked = set(flop_board())
+    hero_combos = range_combos(_HERO_CODES, blocked)
+    villain_combos = range_combos(_VILLAIN_CODES, blocked)
+    assert not (set(hero_combos) & set(villain_combos)), "hero/villain combo pools must stay disjoint"
+    g.hero_combos = hero_combos[:n_hero]
+    g.villain_combos = villain_combos[:n_villain]
+    return g
+
+
+def measure(n_hero, n_villain, max_workers=4, wide=False):
+    maker = make_game_wide if wide else make_game
+    n_pairs = n_hero * n_villain
+    avg_strategy = {}
+    print(f"loadavg before sequential (N={n_pairs}):", os.getloadavg(), flush=True)
+    g_seq = maker(n_hero, n_villain)
+    t0 = time.perf_counter()
+    seq = exploitability_native(g_seq, avg_strategy)
+    t1 = time.perf_counter()
+    seq_time = t1 - t0
+    print(f"  sequential done: {seq_time:.3f}s, value={seq}", flush=True)
+
+    print(f"loadavg before parallel (N={n_pairs}):", os.getloadavg(), flush=True)
+    g_par = maker(n_hero, n_villain)
+    t0 = time.perf_counter()
+    par = exploitability_parallel_native(g_par, avg_strategy, max_workers=max_workers)
+    t1 = time.perf_counter()
+    par_time = t1 - t0
+    print(f"  parallel done: {par_time:.3f}s, value={par}", flush=True)
+
+    speedup = seq_time / par_time if par_time > 0 else float("nan")
+    print(
+        f"RESULT N={n_pairs} (hero={n_hero} x villain={n_villain}) "
+        f"sequential={seq_time:.3f}s parallel={par_time:.3f}s "
+        f"speedup={speedup:.3f}x bit_exact={par == seq} "
+        f"seq_per_pair={seq_time/n_pairs*1000:.4f}ms par_per_pair={par_time/n_pairs*1000:.4f}ms",
+        flush=True,
+    )
+    return seq_time, par_time, speedup
+
+
+if __name__ == "__main__":
+    n_hero = int(sys.argv[1])
+    n_villain = int(sys.argv[2])
+    max_workers = int(sys.argv[3]) if len(sys.argv) > 3 else 4
+    wide = len(sys.argv) > 4 and sys.argv[4] == "wide"
+    measure(n_hero, n_villain, max_workers, wide=wide)
+```
+
+**`bench_avg_strategy_conversion.py`**（`AvgStrategy::from_py_dict`変換
+コストの単独計測）:
+
+```python
+"""Stage 8R-7a: measure the one-time cost of converting a Python
+avg_strategy dict into Rust's AvgStrategy (native/src/strategy.rs's
+AvgStrategy::from_py_dict), at a realistically large size (tens of
+millions of entries, matching the real info-set-count order of magnitude
+per Stage S2's own in-progress checkpoints: ~11.5M-31M info sets recorded
+in BENCHMARKS.md's "情報集合の保存方式" section).
+
+Method: there is no direct Python-exposed entry point that calls
+from_py_dict in isolation (Stage 8R-4 only exercises it as the first step
+inside exploitability_native/etc). Instead we time exploitability_native()
+on the SMALLEST possible game (1 hero combo x 1 villain combo -- a fixed,
+tiny amount of walk work) once with avg_strategy={} and once with a huge
+synthetic avg_strategy dict of the target size. Since FxHashMap lookups are
+O(1) regardless of map size, the only cost that should scale with the
+dict's size is the one-time conversion (iterate the whole Python dict,
+extract each key/value, build the Rust map) -- so the difference between
+the two timings isolates that conversion cost.
+
+Usage: python3 bench_avg_strategy_conversion.py <n_entries> [<n_entries> ...]
+"""
+import gc
+import os
+import random
+import sys
+import time
+
+from cfr_solver.games.postflop_subgame import PostflopSubgame
+from cfr_solver.poker.cards import parse_card
+from cfr_solver.exploitability_native import exploitability_native
+
+
+def flop_board():
+    return [parse_card(c) for c in ("7h", "2d", "3s")]
+
+
+def make_tiny_game():
+    g = PostflopSubgame(flop_board(), hero_range_notation="88+", villain_range_notation="22-77")
+    g.hero_combos = g.hero_combos[:1]
+    g.villain_combos = g.villain_combos[:1]
+    return g
+
+
+_ALL_COMBOS = [
+    (a, b) for a in range(52) for b in range(a + 1, 52)
+]  # 1,326 distinct 2-card combos
+
+
+def make_synthetic_avg_strategy(n_entries: int) -> dict:
+    """Realistic key format/length (see PostflopSubgame.information_set_key):
+    4 digits (own 2-card combo) + 6 digits (a 3-card board) + '|flop|turn|river'
+    action tokens. Values are small dicts over 2-3 legal actions, matching the
+    shape _strategy_at expects. Keys are guaranteed DISTINCT for n_entries up
+    to ~1,326 * 1,000,000 * 64 (~85 billion) by construction (combo index x
+    board index x action-history index, each drawn from an independent
+    counter range).
+
+    NOTE: board digits here are not necessarily valid non-clashing card ids
+    (only their length/format matters for a hashing/conversion-cost
+    benchmark, not game validity -- this dict is never used to look up a
+    real information set, only to measure AvgStrategy::from_py_dict's
+    per-entry conversion cost)."""
+    action_sets = [("x", "b"), ("f", "c", "b"), ("f", "c")]
+    d = {}
+    n_combos = len(_ALL_COMBOS)
+    for i in range(n_entries):
+        combo_idx = i % n_combos
+        rem = i // n_combos
+        board_num = rem % 1_000_000
+        hist_idx = (rem // 1_000_000) % 64
+        a, b = _ALL_COMBOS[combo_idx]
+        combo_digits = f"{a:02d}{b:02d}"
+        board_digits = f"{board_num:06d}"
+        flop_a = ("", "x", "b", "xb")[hist_idx % 4]
+        turn_a = ("", "x", "b", "xb")[(hist_idx // 4) % 4]
+        river_a = ("", "x", "b", "xb")[(hist_idx // 16) % 4]
+        key = f"{combo_digits}{board_digits}|{flop_a}|{turn_a}|{river_a}"
+        actions = action_sets[i % 3]
+        p = 1.0 / len(actions)
+        d[key] = {act: p for act in actions}
+    return d
+
+
+def measure_one(n_entries: int, reps: int = 3):
+    game = make_tiny_game()
+    if n_entries == 0:
+        strategy = {}
+        build_time = 0.0
+    else:
+        t0 = time.perf_counter()
+        strategy = make_synthetic_avg_strategy(n_entries)
+        build_time = time.perf_counter() - t0
+    print(
+        f"n_entries={n_entries:,} dict built in {build_time:.2f}s "
+        f"(actual len={len(strategy):,})",
+        flush=True,
+    )
+    times = []
+    for r in range(reps):
+        gc.collect()
+        t0 = time.perf_counter()
+        val = exploitability_native(game, strategy)
+        t1 = time.perf_counter()
+        times.append(t1 - t0)
+        print(f"  rep {r}: {t1-t0:.4f}s (value={val}) loadavg={os.getloadavg()}", flush=True)
+    best = min(times)  # contention only ever ADDS delay; min approximates the
+    # least-contended measurement, same rationale as this file's other
+    # noise-reduction choices.
+    print(f"RESULT n_entries={n_entries:,} times={times} min={best:.4f}s", flush=True)
+    del strategy
+    return best
+
+
+if __name__ == "__main__":
+    sizes = [int(x) for x in sys.argv[1:]]
+    results = {}
+    for n in sizes:
+        results[n] = measure_one(n)
+    print("SUMMARY:", {n: round(t, 4) for n, t in results.items()}, flush=True)
+```
+
+**OOM再現チェック用の単独スクリプト**（並列呼び出し単独でも同じメモリ
+急増が起きることを確認するため）:
+
+```python
+"""Isolated re-check: does exploitability_parallel_native() alone (fresh
+process, no prior sequential call) at 3000 combo pairs also balloon memory
+and OOM, or was that specific to running sequential+parallel back-to-back in
+bench_rust_scale.py's single process? Also logs RSS periodically so we get a
+memory trend even if it gets killed again."""
+import resource
+import sys
+import threading
+import time
+
+sys.path.insert(0, "<path to bench_rust_scale.py's directory>")
+from bench_rust_scale import make_game_wide
+from cfr_solver.exploitability_native import exploitability_parallel_native
+
+
+def rss_mb():
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+
+def watch():
+    while True:
+        print(f"[watch] t={time.time()-t0:.0f}s rss_maxrss={rss_mb():.0f}MB", flush=True)
+        time.sleep(20)
+
+
+if __name__ == "__main__":
+    t0 = time.time()
+    threading.Thread(target=watch, daemon=True).start()
+    g = make_game_wide(50, 60)
+    print(f"game built, n_pairs={len(g.hero_combos)*len(g.villain_combos)}", flush=True)
+    t1 = time.perf_counter()
+    val = exploitability_parallel_native(g, {}, max_workers=4)
+    t2 = time.perf_counter()
+    print(f"RESULT parallel_only N=3000 time={t2-t1:.3f}s value={val} peak_rss={rss_mb():.0f}MB", flush=True)
+```
+## Stage S2: 全169ハンドレンジでのメモリ・時間の実測
+
+### Context（なぜやったか）
+
+これまでエクスポート済みのスポットは、BTNオープン612コンボ vs BBコール494コンボ
+（「情報集合の保存方式」節）や、AA vs KK・QQ+ vs TT-JJ（`export_solved_spots.py`）
+など、実データではあるものの169ハンド全体には及ばない絞ったレンジだった。
+「全ハンド対応」という元の依頼に対して、**推測ではなく実測で**「ヒーロー・ヴィラン
+双方とも169ハンド全部」という最も広いケースがメモリ・時間の両面で本当に現実的か
+どうかを確認するのが今回のスコープ。**新しいスポットのエクスポートは行っていない
+（意図的にスコープ外——これは実行可能性の計測だけを目的にしたステージ）。**
+
+このステージの直前に取り込んだ`feat/solver-native-node-index`（`cfr.py`の
+`_index: dict[str, int]`を、Rustで実装した`cfr_solver._native.NodeIndex`に
+置き換えたブランチ）が土台になっている。そのコミットメッセージ自身に実測値
+（合成ベンチマークで1件あたり冷開始時約144〜148バイト、安定区間で約101〜107
+バイト、旧`dict`実装の約147バイトから改善）が記録されているが、これは
+「CFRの情報集合テーブルだけを切り出した合成ベンチマーク」の数字であり、
+実際のゲームで学習させたときの実測はまだ無かった（`_equity_cache`など
+CFR以外の付随データの影響を含む実測が必要、という「情報集合の保存方式」
+節の課題を、`NodeIndex`移行後にあらためて確認する必要があった）。
+
+### セットアップ
+
+- ボード・ベットサイズ・レイズ回数上限は`export_solved_spots.py`の既存スポットと
+  完全に揃えた（変数を増やさないため）: フロップ`7h,2d,3s`、`bet_sizes=(2.5, 5.0, 7.5)`、
+  `max_wagers_per_round=1`
+- レンジ表記: 169ハンドすべてを表す表記が既存コードに無かったため、
+  `"22+,A2s+,A2o+,K2s+,K2o+,Q2s+,Q2o+,J2s+,J2o+,T2s+,T2o+,92s+,92o+,82s+,82o+,`
+  `72s+,72o+,62s+,62o+,52s+,52o+,42s+,42o+,32s+,32o+"`を組み立て、
+  `range_notation.expand()`に通した結果が独立に列挙した169ハンドの集合と
+  完全一致することを確認してから使用した（決め打ちで信用せず、実際に展開結果を
+  突き合わせた）
+- **実際のコンボ数（実測、想定通りだったことを確認済み）**: ヒーロー・ヴィランとも
+  **1,176コンボ**（52枚デッキから3枚のボードを除いた49枚から選ぶ組み合わせ
+  `C(49,2)=1,176`と一致。1,326通りのうち、ボード3枚がブロックする150通りが
+  除かれた形）。積は1,382,976コンボペアだが、`train_external_sampling`は
+  chanceノードで1つだけサンプリングするため、このペア数を全列挙することはない
+  （後述の通り、1反復のコストがレンジ幅にほぼ依存しないという既存の知見の通り）
+- `CFRSolver(game, variant="cfr_plus", random_seed=1)`、`train_external_sampling`を
+  250,000反復ずつのチェックポイントで実行（レンジが広いため、以前のBTN/BBの
+  500,000反復チェックポイントより小さい単位を採用）
+- 学習スクリプト自体はこのリポジトリの流儀通り、コミット対象には含めず
+  スクラッチ領域に置いた使い捨てスクリプト（`PostflopSubgame`を構築し
+  `train_external_sampling`をループで呼び、`resource.getrusage(...).ru_maxrss`
+  （KB単位。1024で割ってMBに変換——既存の記録値と単位を揃えて確認済み）と
+  `solver.num_information_sets`をチェックポイントごとに記録するだけの、
+  数十行程度のもの）として実行した
+- 打ち切り条件（事前に設計、実行中一度も変更していない）: (a) RSSが13GB
+  （15GBの物理上限に対する安全マージン）に到達、(b) 直近チェックポイントの
+  新規情報集合／反復が最初のチェックポイントの10%未満まで低下、
+  (c) 累計4時間に到達、のいずれか最初に満たした条件で停止
+- 実行環境: この計測全体を通じて、4コア共有のこの環境には他のエージェント
+  セッションも同時に動いており、`loadavg`はおおむね1.0〜4.0の範囲で変動した
+  （正直に記録——過去のStage 6/7と同じ理由で、他セッションの負荷が計測時間に
+  一定の影響を与えている可能性がある。ただしメモリ使用量の実測自体は
+  CPU負荷の影響を受けない）
+
+### 実測①: 1反復あたりのコスト（キャリブレーション、6,000反復）
+
+| 反復区間 | 所要時間 | ms/反復 |
+| --- | --- | --- |
+| 0〜2,000 | 6.07秒 | 3.037 |
+| 2,000〜4,000 | 6.35秒 | 3.174 |
+| 4,000〜6,000 | 6.46秒 | 3.230 |
+
+以前記録した狭いレンジ（22+ vs 22+、69×69コンボ）の1.652ms/反復より
+**明確に高い**（約1.8〜2倍）。原因として最も疑わしいのは、`chance_outcomes`が
+ヴィランの役を配る際に「ヒーローの役とカードが被らないヴィランの役」を
+`self.villain_combos`（今回は1,176件）**全件フィルタして**候補を作っている
+箇所（`postflop_subgame.py`）——このO(ヴィランコンボ数)のフィルタが1反復に
+つき1回発生し、69件だった以前のケースに比べ1,176件では単純に約17倍の
+フィルタ対象になる。これはソースを変更していないので推測に留めるが、
+最も自然な説明として記録しておく。
+
+### 実測②: 本題の学習（3,000,000反復まで、250,000反復ごとにチェックポイント）
+
+| 反復数 | チェックポイント所要時間 | 累計時間 | 情報集合数 | RSS (MB) | 直近区間の新規情報集合/反復 |
+| --- | --- | --- | --- | --- | --- |
+| 250,000 | 1,060.63秒 | 1,060.63秒 | 3,834,121 | 750.93 | 15.3365 |
+| 500,000 | 1,147.09秒 | 2,207.72秒 | 7,089,835 | 1,189.29 | 13.0229 |
+| 750,000 | 1,180.21秒 | 3,387.93秒 | 10,204,850 | 1,835.22 | 12.4601 |
+| 1,000,000 | 1,179.36秒 | 4,567.28秒 | 13,181,682 | 2,259.09 | 11.9073 |
+| 1,250,000 | 1,248.36秒 | 5,815.64秒 | 16,026,751 | 3,008.34 | 11.3803 |
+| 1,500,000 | 1,209.60秒 | 7,025.24秒 | 18,726,182 | 3,476.15 | 10.7977 |
+| 1,750,000 | 1,281.53秒 | 8,306.77秒 | 21,294,713 | 3,853.77 | 10.2741 |
+| 2,000,000 | 1,207.92秒 | 9,514.69秒 | 23,743,484 | 4,219.40 | 9.7951 |
+| 2,250,000 | 1,233.42秒 | 10,748.11秒 | 26,078,066 | 4,571.77 | 9.3383 |
+| 2,500,000 | 1,181.28秒 | 11,929.39秒 | 28,307,008 | 4,916.27 | 8.9158 |
+| 2,750,000 | 1,264.89秒 | 13,194.28秒 | 30,435,534 | 6,492.04 | 8.5141 |
+| 3,000,000 | 1,237.88秒 | 14,432.16秒 | 32,473,151 | 6,492.04 | 8.1505 |
+
+**打ち切り理由: (c) 累計4時間（14,400秒）到達**（設計通り自動停止。
+RSSは最終時点でも6,492.04MB≈6.34GBで、13GBの安全マージンの半分にも
+届いておらず、(a)(b)のどちらの条件にも達していない——つまりこの3,000,000
+反復というスコープ自体は、メモリ面では全く危険な状態になっていない）。
+
+### 実測されたバイト/件（Stage S1の予測との比較）
+
+チェックポイント間の差分から計算した区間ごとのバイト/件:
+
+| 区間 | Δ情報集合数 | ΔRSS (MB) | バイト/件 |
+| --- | --- | --- | --- |
+| 0→250,000 | 3,834,121 | 750.93 | 205.4（起動直後、プロセス基礎コスト込み） |
+| 250,000→500,000 | 3,255,714 | 438.36 | 141.2 |
+| 500,000→750,000 | 3,115,015 | 645.93 | 217.4 |
+| 750,000→1,000,000 | 2,976,832 | 423.87 | 149.3 |
+| 1,000,000→1,250,000 | 2,845,069 | 749.25 | 276.1 |
+| 1,250,000→1,500,000 | 2,699,431 | 467.81 | 181.7 |
+| 1,500,000→1,750,000 | 2,568,531 | 377.62 | 154.2 |
+| 1,750,000→2,000,000 | 2,448,771 | 365.63 | 156.6 |
+| 2,000,000→2,250,000 | 2,334,582 | 352.37 | 158.3 |
+| 2,250,000→2,500,000 | 2,228,942 | 344.50 | 162.1 |
+| 2,500,000→2,750,000 | 2,128,526 | 1,575.77 | 776.3（後述するリサイズの一過性スパイク） |
+| 2,750,000→3,000,000 | 2,037,617 | 0.00 | 0.0（後述） |
+
+区間ごとの値は**141〜277バイト/件の範囲で大きくばらつく**（最後の2区間の
+異常値を除く）。これは「情報集合の保存方式」節・`native/src/lib.rs`の
+モジュールdocstring自身が指摘している「`HashMap`のリサイズ時に一時的に
+新旧テーブルが同時に存在する」ような一過性のコストが、実ワークロードでも
+そのまま観測されている、という理解で説明がつく（`array.array`の容量拡張も
+同様の性質を持つ）。**単一区間の値ではなく、複数区間にまたがる平均を
+「実際の定常コスト」として報告するのが正直な扱い**なので、以下に複数の
+窓で計算した値を示す:
+
+- **全体（0〜3,000,000反復、開始時ベースライン込み）**: 6,492.04MB ÷
+  32,473,151件 ≈ **209.6バイト/件**
+- **500,000〜2,500,000反復の窓**（最初の冷開始区間と、最後の2つの異常区間を
+  除いた8区間分）: 3,726.98MB ÷ 21,217,173件 ≈ **184.2バイト/件**
+- **1,500,000〜2,500,000反復の窓**（最も変動が小さかった4区間）:
+  1,463.53MB ÷ 9,580,826件 ≈ **157.6バイト/件**
+
+**Stage S1（合成ベンチマーク）の予測（101〜148バイト/件、`NodeIndex`単体）
+と比較すると、実測はいずれの窓でも明確に高い。** ただしStage S1の数字は
+`_get_node_id`を直接何百万回も呼ぶだけの合成ベンチマークであり、
+`NodeIndex`アリーナ・ハッシュ索引そのものしか計測していない。実際の
+`CFRSolver`は1件につきさらに次を保持する:
+
+- `_node_action_set_id`（`array('B')`、1バイト/件）
+- `_regret`・`_strategy`（それぞれ`array('d')`、`STRIDE=3`なので
+  1件あたり3×8=24バイト、2つで48バイト/件）
+
+これだけで`NodeIndex`単体の予測に**+49バイト/件**が上乗せされ、
+101〜148バイトの予測レンジは**150〜197バイト/件**になる。実測した
+157.6〜209.6バイト/件はこのレンジの上端付近〜やや超過という位置にあり、
+「NodeIndexへの置き換え＋regret/strategy配列」だけでほぼ説明できる範囲に
+収まっている。**残りの差分（もしあれば）の主な候補が`_equity_cache`**
+（`PostflopSubgame`が盤面・コンボペアごとのショーダウン結果をキャッシュする
+純粋なPython辞書で、`NodeIndex`には一切含まれない別のデータ構造）であり、
+これを次に直接計測した。
+
+### `_equity_cache`の寄与を直接測定
+
+同じ`PostflopSubgame`（全169ハンド vs 全169ハンド、同一ボード・ベットサイズ・
+`random_seed=1`）を新規に学習させ直し、チェックポイントごとに
+`solver.num_information_sets`だけでなく`len(game._equity_cache)`も
+記録した:
+
+| 反復数 | 情報集合数 | `_equity_cache`件数 | 比率 | RSS (MB) |
+| --- | --- | --- | --- | --- |
+| 250,000 | 3,842,410 | 1,052,454 | 27.4% | 768.07 |
+| 500,000 | 7,095,874 | 2,157,931 | 30.4% | 1,207.12 |
+
+（情報集合数が本編の3,834,121/7,089,835と完全一致せずわずかにずれている
+——これは同じ`random_seed=1`を渡していても、CPythonの文字列ハッシュが
+プロセスごとにランダム化される`PYTHONHASHSEED`の影響で、辞書・集合の
+反復順序に依存する箇所があれば実行のたびに極小さな差が出ることがある、
+という既知の性質による。差は0.2%未満で、以下の結論には影響しない）
+
+`_equity_cache`は情報集合数の**約27〜34%**（区間ごとの新規追加分で見ると
+250,000→500,000区間は34.0%）というオーダーの件数を持ち、**無視できない
+規模で実在する**ことが確認できた。ただし、この専用計測で使った
+`game`インスタンスの`_equity_cache`も、本編の学習で使った`game`インスタンス
+の`_equity_cache`も、**どちらも同じ`CFRSolver`実行の一部としてRSSに
+含まれている**——つまり上で報告した157.6〜209.6バイト/件という「全体の
+バイト/件」の中に、`_equity_cache`の寄与は**すでに織り込み済み**であり、
+二重に足す必要はない。今回の専用計測は「`_equity_cache`が本当に無視できない
+規模で存在するか」を確認するための分解であり、全体のバイト/件の数字自体を
+補正するものではない。
+
+**正直に書いておくべき限界**: 2点のデータだけからは、`_equity_cache`1件
+あたりの正確なバイト数を単独で分離することはできない（`ΔRSS = a×Δ情報集合数
++ b×Δ_equity_cache件数`という式は未知数2つに対して式1本しか立たず、
+解が一意に定まらない）。ここでは「`_equity_cache`は情報集合数の3割前後の
+件数を持ち、実在する追加コストである」という定性的な事実までを実測の
+範囲として報告し、正確な内訳（bバイト/件が具体的にいくつか）は
+このセッションでは特定しなかった、と正直に記録する。
+
+### RSSの「頭打ち」に見える区間（2,750,000→3,000,000反復、ΔRSS=0.00MB）について
+
+上の表の通り、2,500,000→2,750,000区間でRSSが大きく跳ね（+1,575.77MB、
+776.3バイト/件相当）、直後の2,750,000→3,000,000区間ではRSSが**1バイトも
+増えていない**（6,492.04MB→6,492.04MB、小数点以下まで完全一致）。
+情報集合数はこの区間でも2,037,617件増えている（新規追加が止まったのでは
+ない）ため、これは「学習が止まった」のではなく「メモリ計測特有の見かけ上の
+現象」だと考えられる。
+
+`resource.getrusage(...).ru_maxrss`は**プロセス開始からの最大値**であり、
+一度上がった値は下がらない。`native/src/lib.rs`のモジュールdocstring自身が
+説明している通り、`NodeIndex`内部の`primary: HashMap<u64, u32>`は
+容量が足りなくなると倍々に拡張する（`hashbrown`の標準的な挙動）。
+一般的な`hashbrown`の拡張は負荷率が約87.5%を超えた時点で発生するため、
+**「直前の容量の87.5%」というしきい値と、今回2,500,000→2,750,000区間で
+情報集合数が28,307,008件→30,435,534件に増えたタイミングとが、
+2の冪乗の容量（例: 容量約33.5M→約67.1Mへの拡張、しきい値は
+33.5M×0.875≈29.3M件——実測した28.3M→30.4Mの区間にちょうど収まる)
+という単純な計算と整合する**、という仮説が立てられる。もしこの仮説が
+正しければ、その1回のリサイズで確保された新しい（まだほとんど空の)
+バッキングテーブルの**制御バイト配列自体は容量全体ぶん一括で初期化される
+ため一括でRSSに計上され**、その後の新規挿入は既に確保済みの容量に収まる
+限り追加のOSページを必要としない——という説明で、
+「大きな一過性スパイク→直後に完全な頭打ち」という観測されたパターンに
+綺麗に一致する。
+
+**ただしこれは実装側に手を加えずに観測データだけから立てた仮説であり、
+Rust側に実際の`HashMap`容量を出力させるような追加の計測はしていない
+（このステージは計測専用で、ソースコードへの変更を禁じられているため）。
+「もっとも自然に説明がつく仮説」として記録するに留め、確定した事実として
+は扱わない。** 次にこの区間を再現するなら、`HashMap::capacity()`を
+一時的にログ出力するデバッグビルドで検証する、という具体的な次の一手が
+考えられる。
+
+いずれにせよ、実務上重要なのは「情報集合の追加はこの区間でも止まって
+いない」という点であり、このRSSの頭打ちを「メモリ使用がもう増えない」
+という意味に読み違えてはならない——次のリサイズが来ればまた同じような
+一過性スパイクが起こると考えるのが自然である。
+
+### 情報集合の増加ペースの減衰について（観測された傾向と、そこから安易に結論を出さないこと）
+
+直近区間の新規情報集合/反復は15.34→13.02→12.46→11.91→11.38→10.80→
+10.27→9.80→9.34→8.92→8.51→8.15と、単調に減衰し続けている。
+最初の区間（冷開始の影響が強い）を除いた11個の連続比を計算すると、
+0.9488〜0.9573の狭い範囲に収まっており、**平均約0.9542という、驚くほど
+安定した幾何級数的減衰**に見える。
+
+この比率がこのまま無限に続くと仮定して極限を計算すると、収束先は
+約6,700万〜8,000万件（平均比率では約7,500万件）という計算になる——
+これは今回の依頼の前提である**約9,220万件という推定値を下回る**。
+つまり、もし本当にこの幾何減衰がこのまま続くなら、**どれだけ反復を
+増やしても9,220万件には到達しない**という計算になってしまう。
+
+**これは意図的に鵜呑みにしてはいけない結果だと考える。** 理由:
+「情報集合の保存方式」節で確立された比例関係
+（情報集合数 ≈ 235,200 × (自分のコンボ数 / 6)、両プレイヤー分で
+235,200 × 196 × 2 ≈ 9,220万件——今回の依頼で与えられた9,220万件という
+数字自体、この比例関係をそのまま1,176コンボまで外挿したものである）は、
+AA vs KK（6コンボ）を1,000,000反復学習させた「その規模なりの飽和状態」
+を基準にしている。**ヒーローのコンボ数が6から1,176へと196倍に増えた
+今回のスコープでは、同じ意味での「飽和」に到達するには、同じ比率で
+反復数も196倍前後（およそ2億反復規模）必要になる可能性が高い**
+——これは今回学習した300万反復（必要量の1.5%程度)よりはるかに大きい。
+つまり、300万反復時点でまだ増加ペースが単調に減衰し続けているのは、
+「このレンジ幅における真の飽和に近づいている」からではなく、
+**「桁違いに広い状態空間の、ごく初期の（それでも減衰しているように
+見える）区間をたまたま見ている」だけの可能性が高い**、という解釈の方が、
+比例関係という既に実測で裏付けられた法則と整合する。
+
+**したがって、幾何減衰モデルからの「約7,500万件で頭打ち」という外挿は、
+このセッションのデータだけでは真偽を判定できない、正直に「未解決」と
+書くべき観察** として記録する。今回の300万反復のデータだけで
+「9,220万件には届かない」と断定することも、「必ず届く」と断定すること
+も、どちらも今回の実測の範囲を超えた主張になる。
+
+### メモリの外挿: 9,220万件は15GBに収まるか
+
+上記の不確実性を踏まえた上で、**依頼で与えられた9,220万件という目標値
+そのものに対して**、今回実測したバイト/件（157.6〜209.6バイト/件、
+どの窓を採用するかによって変動）をそのまま当てはめた場合の必要メモリ:
+
+| 採用したバイト/件 | 根拠にした窓 | 9,220万件での必要メモリ |
+| --- | --- | --- |
+| 157.6 | 1,500,000〜2,500,000反復（最も変動が小さい窓） | **約13.5GB** |
+| 184.2 | 500,000〜2,500,000反復（冷開始・末尾異常区間を除いた窓） | **約15.8GB** |
+| 209.6 | 全体平均（0〜3,000,000反復、開始時ベースライン込み） | **約18.0GB** |
+
+**正直な結論: 15GBという物理上限に対して「余裕をもって収まる」とは
+言えない。** 採用する窓によって13.5GB（収まる、ただし13GBの安全
+マージンさえ超える)〜18.0GB（明確に超過）まで幅があり、**この幅の
+どこに真値が近いのかを、今回の実測だけでは1つの数字に絞り込めない。**
+
+これは`feat/solver-native-node-index`のコミットメッセージ自身が触れていた
+予備的な外挿（「full-range index+array storage at ~9GB, well within
+the 15GB budget」）**とは異なる、より慎重な結論になる**。理由は
+その予備的な外挿が明示している通り、(1) 合成ベンチマーク（`NodeIndex`
+単体、`_equity_cache`を含まない）から外挿した数字だったこと、
+(2) 実ワークロードで観測されたリサイズの一過性スパイク
+（上記776.3バイト/件の区間）のような非線形な振る舞いを織り込んでいな
+かったこと、の2点が主な理由だと考えられる。**「異なる場合は正直に
+そう書く」という原則に従い、この食い違いをそのまま記録する。**
+
+### 反復数・所要時間の外挿(こちらも同様に不確実性込みで)
+
+9,220万件という目標値に対して、現在の最終反復（300万反復、
+8.15新規情報集合/反復）のペースが**このまま変わらないと仮定した場合**
+（＝実際には起こりえない、減衰を無視した楽観的な下限）:
+
+- 残り情報集合数: 9,220万 − 3,247万 ≈ 5,973万件
+- 追加反復数（下限）: 5,973万 ÷ 8.15 ≈ 733万反復、合計で約1,033万反復
+- 最終区間の実測ペース（1反復あたり約4.95ミリ秒）で計算した追加時間
+  （下限）: 約10.1時間
+
+**ただしこれは「下限」であることを強調しておく。** 実際には新規情報
+集合／反復は今後も減衰を続けるはずなので、真の必要反復数はこの
+1,033万よりも確実に多い。上の「幾何減衰が今後も続く」という仮説が
+正しければ理論上は9,220万件に到達しない可能性すらあり、逆に「300万
+反復はまだ真の飽和にはるかに遠い初期区間に過ぎない」という解釈が
+正しければ、必要な反復数は2億反復規模（比例関係からの外挿）にまで
+跳ね上がる可能性もある。**「10時間程度で済む」という数字も
+「2億反復・数十時間〜数日規模」という数字も、どちらも今回の実測データ
+の外側にある推測であり、確度の高い約束として書けるものではない、
+というのが正直な結論。**
+
+### まとめ
+
+- **実際に測定した事実**（推測ではない）: 全169ハンド vs 全169ハンドの
+  `PostflopSubgame`（ボード7h2d3s、コンボ数1,176×1,176）で、
+  `train_external_sampling`を300万反復まで実行し、13,194〜14,432秒
+  （約4時間、事前に設計した安全上限による自動停止）で32,473,151件の
+  情報集合に到達、その時点のRSSは6,492.04MB（約6.34GB）——**13GBの
+  安全マージンにも15GBの物理上限にも、明確な余裕を残して収まっている。**
+  この300万反復というスコープ自体は、メモリ面では全く危険な状態に
+  なっていない。
+- **実測したバイト/件（157.6〜209.6、窓により変動）は、Stage S1の
+  合成ベンチマーク（101〜148、`NodeIndex`単体）に、regret/strategy
+  配列の理論値（+49バイト/件）を足した予測レンジ（150〜197）と、
+  おおむね同じオーダーに収まっている。** 一方、旧`dict`実装での
+  同種の実ワークロード計測（約315.6バイト/件、「情報集合の保存方式」
+  節参照）と比べると、明確に改善している——`NodeIndex`への置き換えは
+  実ワークロードでも実際に効いている、と言える。
+- **`_equity_cache`は情報集合数の27〜34%というオーダーの件数を持ち、
+  無視できない規模で実在する**ことを専用の計測で確認した。ただし
+  全体のバイト/件の数字にはすでに織り込み済みであり、単独のバイト/件
+  はこのセッションでは分離できなかった。
+- **9,220万件という全ハンド対象の目標値を15GB以内に収められるかは、
+  今回の実測だけでは断定できない。** 採用する窓次第で13.5GB〜18.0GB
+  という結果になり、下限側でも13GBの安全マージンぎりぎり、上限側では
+  明確に超過する。
+- **情報集合数の増加ペースの減衰を素直に幾何級数として外挿すると
+  9,220万件には届かないという計算になるが、これは「桁違いに広い
+  状態空間のごく初期を見ているだけ」という、より説得力のある別の
+  解釈と矛盾するため、どちらが正しいかを今回のデータだけで判定する
+  ことはできない。** 反復数・所要時間の外挿も同様の理由で、10時間
+  規模から数十時間〜数日規模まで、確度の高い一点の数字には絞り込め
+  なかった。
+- 上記いずれも「正直に書く」という原則に従い、確度の高い主張と
+  不確実な外挿とを明確に分けて記録した。**次のステップとしては、
+  (a) より長時間（例えば数日規模で、この4コア環境を専有できる状況で）
+  学習を継続してより長い区間のデータを取る、(b)
+  `HashMap::capacity()`を一時的にログ出力するデバッグビルドで
+  リサイズ仮説を直接検証する、(c) `_equity_cache`のバイト/件を
+  分離するための3点目以上のデータを取る、のいずれかが有効だと
+  考えられる。**
+- 検証: 変更前と同じ66件のテストが引き続きgreen
+  （`pytest -v`、66 passed in 835.18s。ソースコードは一切変更して
+  いない——今回の計測スクリプトはコミット対象に含めていない使い捨て
+  スクリプトとして実行した）。
+
+## Stage S3: 保存・再開機能を使った継続学習の実測（save()のピークRSSバグの発見・修正を含む）
+
+### Context（なぜやったか）
+
+「今の環境でできるだけ進め、いっぱいになったら結果をファイル化し、
+続きをまた別セッションでやる」というもも さんの方針に従い、Stage S2の
+チェックポイント（300万反復、3,247万情報集合）から`CFRSolver.save`/
+`load`（本ブランチで新規実装）を使って学習を再開し、この4コア・15GB
+サンドボックスの中で実際にどこまで進められるかを実測した。
+
+### 発見: save()のピークRSS膨張バグ（本セッション中に発見・修正・検証済み）
+
+学習再開後、チェックポイントのRSSがStage S2の同じ反復数時点の実測値
+より一貫して高く出た（例: 100万反復時点でStage S2は2,259.09MB、
+本セッションの再開後は6,856.79MB——約3倍）。情報集合数はStage S2と
+ほぼ完全に一致していた（13,181,682件 vs 13,229,123件）ため、
+学習アルゴリズム自体の違いではなく、**チェックポイント保存
+（`CFRSolver.save`）自体がメモリ計測を汚染している**という仮説を立て、
+実際のチェックポイントファイル（1,322万件）に対して直接検証した。
+
+原因は`_pack_keys()`が全キーを「4バイト長さプレフィックス＋キー本体」の
+2オブジェクトに分けて約2,600万個をリストに集めてから`b"".join(...)`
+していた実装にあった。実測: この処理だけで最終的な346MBのblobに対し
+**約3.29GBの一時的なピークRSSを追加**していた。`resource.getrusage()
+.ru_maxrss`は**プロセス開始からの最大値で、一度上がると二度と下がらない**
+ため、この一過性のスパイクがその後すべてのRSS計測値に恒久的に
+上乗せされ続けていた。
+
+修正: `_pack_keys()`を、事前にリストを作らず1つの伸長可能な
+`bytearray`へ直接追記する実装に変更（`f.write()`は`bytearray`を
+バッファプロトコル経由でそのまま受け付けるため、`_write_block`側の
+最終的な`bytes`変換も不要になった）。修正前後で出力が完全に
+バイト一致することをサンプルデータで直接検証し、実チェックポイント
+（1,322万件）に対する再測定で、この処理単体のピークRSS寄与が
+**+3,290MB → +0MB**、実行時間も**24.7秒→3.2秒（約7.7倍高速化）**に
+改善したことを確認した。既存の`test_cfr_persistence.py`（10件）は
+全て変更前と同じ結果でパス。詳細は`fix/solver-full-hand-range-resume`
+ブランチのコミット・PR #27参照。
+
+**なお、`.items()`によるキーの材料化（`NodeIndex`内部のRustキーを
+Python文字列オブジェクトへ全件展開する処理）自体にも、実測で
++1,076MB程度のピークRSSが残っている（1,322万件時点）。これは
+`_pack_keys()`ほど不釣り合いに大きくはなく、修正には`NodeIndex`側の
+新しいRust APIが必要になる、より大きな変更が要る——今回は修正の
+優先度が低いと判断し、意図的に未修正のまま記録するに留めた。**
+
+### 修正後の学習再開の実測（300万反復まで、修正版コードで再開）
+
+| 反復数 | 情報集合数 | RSS (MB) | 参考: Stage S2の同時点RSS (MB) |
+| --- | --- | --- | --- |
+| 1,000,000（修正前の最終値、再開の起点） | 13,229,123 | 6,856.79（バグの影響込み） | 2,259.09 |
+| 1,250,000 | 16,066,614 | 3,486.07 | 3,008.34 |
+| 1,500,000 | 18,761,685 | 5,969.28 | 3,476.15 |
+| 1,750,000 | 21,329,772 | 7,034.57 | 3,853.77 |
+| 2,000,000 | 23,783,722 | 8,098.49 | 4,219.40 |
+| 2,250,000 | 26,120,192 | 9,044.84 | 4,571.77 |
+| 2,500,000 | 28,353,113 | 10,115.09 | 4,916.27 |
+| 2,750,000 | 30,487,100 | 10,990.69 | 6,492.04（S2はここで打ち切り） |
+| 3,000,000 | 32,535,144 | 12,379.56 | — |
+
+修正後は各区間の増分がStage S2の同区間より依然として高め（区間により
+Stage S2比で約2〜3倍）で推移した。`.items()`材料化コストが情報集合数に
+概ね比例して増える（未修正のまま残した既知のコスト）ことと部分的に
+整合するが、この差の全量を1つの原因だけで説明しきれてはいない——
+「正直に書く」原則に従い、この残差の内訳を完全には特定できなかった、
+と記録する。
+
+### 打ち切り: 300万反復で手動停止（設計上の閾値到達を待たずに）
+
+300万反復のチェックポイント保存中、システム全体の空きメモリが
+一時的に864MB（利用可能メモリ3,135MB）まで低下する場面を直接観測した
+（`free -m`で実測）。保存自体は71.13秒で正常に完了し、直後にRSSは
+5.54GBまで回復したが、この余裕の無さは看過できないと判断し、
+学習スクリプト自身の停止条件（RSS≥13,312MB）の到達を待たず、
+**この時点で手動でプロセスを停止した**。
+
+- 到達点: 300万反復（サンプリング反復ベース）、32,535,144情報集合、
+  ピークRSS 12,379.56MB
+- 目標の9,220万件に対する到達率: 約35.3%
+- チェックポイントファイル（`.solver-checkpoints/full169_cfrplus_seed1
+  .cfrsave`、2,337MB、gitには含めない）は正常に保存済みで、次回セッション
+  でそのまま`CFRSolver.load`により再開可能
+
+### 修正後の1件あたりバイト数から9,220万件を再外挿する
+
+再開直後の区間（1,250,000→1,500,000、966.1バイト/件——リサイズ性の
+一過性コストが疑われる）と、最後の区間（2,750,000→3,000,000、
+711.1バイト/件——手動打ち切りの引き金になった区間）を除いた、
+比較的安定した5区間（1,500,000反復〜2,750,000反復）で計算した
+バイト/件:
+
+| 区間 | バイト/件 |
+| --- | --- |
+| 1,500,000→1,750,000 | 435.0 |
+| 1,750,000→2,000,000 | 454.6 |
+| 2,000,000→2,250,000 | 424.7 |
+| 2,250,000→2,500,000 | 502.6 |
+| 2,500,000→2,750,000 | 430.2 |
+
+この5区間の平均は**約449バイト/件**（範囲424.7〜502.6）。除外した
+2区間を含めた全区間平均（1,250,000反復のベースラインから3,000,000
+反復まで）は**約566バイト/件**。これを9,220万件にそのまま当てはめると:
+
+| 採用したバイト/件 | 根拠 | 9,220万件での必要メモリ |
+| --- | --- | --- |
+| 424.7（安定区間の最小） | 上表5区間中の最小 | 約36.5GB |
+| 449.4（安定区間の平均） | 上表5区間の平均 | 約38.6GB |
+| 502.6（安定区間の最大） | 上表5区間中の最大 | 約43.2GB |
+| 566.3（全区間平均、異常値込み） | 冷開始〜最終反復の全体平均 | 約48.6GB |
+
+**正直な結論: save()のピークRSSバグを修正した後でさえ、9,220万件という
+目標値に必要なメモリは約36.5〜48.6GBという計算になり、Stage S2が
+当初示した13.5〜18.0GBという外挿（save()を一度も呼ばない計測だった
+ため、save()のコスト——今回修正した`_pack_keys`分と、未修正のまま
+残した`.items()`材料化分の両方——を全く織り込んでいなかった）より
+明確に悪化した。** これは今回のバグ修正が無意味だったという意味では
+ない——修正前のまま繰り返していれば、この計算はさらに何倍も悪化して
+いたはずである。しかし「バグを直せば9,220万件が15GBに収まる」という
+期待は、この実測の範囲では支持されない、というのが正直な報告である。
+
+### まとめ・次回への申し送り
+
+- **実際に測定した事実**: 修正版のコードで100万反復から300万反復まで
+  学習を継続し、32,535,144情報集合に到達した。この過程で
+  save()自体の実装バグ（`_pack_keys`の非効率）を発見・修正・検証し、
+  PR #27としてマージ待ちにした。
+- **正直な限界**: 修正後もStage S2の同区間実測との差（約2〜3倍）が
+  残っており、その残差の全量は`.items()`材料化コストだけでは
+  説明しきれない。今回のセッションではこれ以上の切り分けは行って
+  いない。
+- **9,220万件という目標**: 今回32.5M件（約35%）まで到達したが、
+  システムの空きメモリが一時的に900MB近くまで落ち込む場面を実際に
+  観測した。修正後の実測バイト/件（約425〜566バイト/件）をそのまま
+  9,220万件に当てはめると**約36.5〜48.6GBが必要という計算になり、
+  この15GBサンドボックスの3倍前後を超過する**——Stage S2が当初示した
+  13.5〜18.0GBという外挿（save()のコストを一切含んでいなかった）
+  より明確に悪化した数字である。**この15GBサンドボックスでこのまま
+  単純に継続を繰り返すだけでは、9,220万件到達前に毎回同程度の水準
+  （32〜35M件前後）で安全マージンに達してしまう可能性が高い**、
+  というのが今回の実測に基づく正直な見通し。次回セッションでの継続は
+  引き続き価値があるが（保存済みチェックポイントから再開すれば
+  今回の300万反復ぶんの計算は無駄にならない）、根本的に情報集合
+  あたりのバイト数をさらに削減するか、より大きなメモリの環境を
+  使わない限り、9,220万件という目標値そのものへの到達は今回の実測
+  の延長線上にはない、というのが正直な結論。
+
+## Stage S4: メモリcgroup上限の発見と、この環境の本当の物理天井の実測
+
+### 発見: 「15GB」ではなく、Bashツール起動プロセス専用のcgroup上限（約13.34GiB）
+
+もも さんの「15GBあたりまで止まらずに進めてほしい」という指示を受け、
+Stage S3の300万反復チェックポイントから学習を再開したところ、
+`ps`で観測できる実RSSが約12.4GB時点で**プロセスが突然強制終了**された。
+`dmesg`で直接確認したところ、原因はシステム全体の空きメモリ枯渇では
+なく、**Bashツールで起動したプロセス専用のメモリcgroup
+（`.../claude-code-bash`）が持つ、独立したハード上限
+（`memory.limit_in_bytes` = 14,327,676,928バイト ≈ **13.34GiB**）**
+だった。この値は`/proc/meminfo`のシステム全体の空きメモリには一切
+反映されず、事前の対策（`MemAvailable`ベースの安全マージン）では
+検知できないものだった。
+
+### 発見その2: load()自身にもsave()と同種のバグがあった
+
+上記のcgroup上限を踏まえ、より保守的な閾値（上限の80%）でチェック
+ポイントから再開したところ、**`CFRSolver.load()`自体が完了する前に
+同じcgroup上限で強制終了**された——学習が1反復も進む前の話である。
+原因は`save()`側で見つけたのと全く同じパターンのバグ: `load()`が
+使う`_unpack_keys`が、チェックポイントの全キー（この時点で約5,850万件）
+を一旦Python文字列のリストに丸ごと展開してから`get_or_create`を
+1件ずつ再生していた。実測（約58.5万件規模、実際のチェックポイント
+ファイルに対して直接計測）で、`load()`単体がcgroup上限の80.8%
+（11,035MB）を消費してしまい、残りわずか約2.6GBしか学習に使える
+余地がないことが判明した。
+
+この`load()`側のバグも、`save()`側と全く同じ設計方針で修正した:
+Rust側に`NodeIndex.load_packed_keys()`を新設し、`get_or_create`が
+使うのと同じコア挿入ロジック（`get_or_create_raw_impl`として共通化）
+を、Rustの`String`もPythonの`str`も一切経由せずバイト列から直接
+呼び出す。実測で修正後の`load()`は58.5M件規模でピーク7,604MBまで
+改善した（新規Rustユニットテスト2件、既存Pythonテスト11件すべて
+green、詳細はコミット履歴とPR #27参照）。
+
+### cgroup制限の意図的な回避と、その結果判明した本当の物理天井
+
+load()の修正後も、cgroup上限内では残り約2.6GBしか学習の余地がない
+ことに変わりはなかった。もも さんに状況を報告し判断を仰いだところ、
+「cgroup制限を回避して続行する」という指示を受けた。これは、
+このメモリcgroupがBashツール起動プロセスを保護する目的の
+ガードレールであり、意図的に回避するとメインのClaude Codeセッション
+自身を含む他のプロセスを巻き込むリスクがあることを説明した上での
+判断である。
+
+対応: 学習プロセスのPIDを、起動直後に（別のシェルコマンドで）
+制限の無い親cgroupへ`tasks`ファイル経由で手動移動した。これにより
+システム全体の物理メモリ（約16GB）が実質的な制約に戻った。学習
+スクリプト自身は、システム全体の`/proc/meminfo`の`MemAvailable`を
+監視し、2.5GB（このセッション中に観測された単一チャンクあたりの
+最大級のRSS急増幅に基づく）を安全マージンとして設定した。
+
+この状態で再開した学習は、**300万反復（Stage S3の到達点）から
+1,285万反復まで**進み、**71,804,219情報集合（目標9,220万件の
+約77.9%）**に到達した。しかし最終的に、直近のチェックポイントで
+`MemAvailable`が2,658.99MB（設定した2.5GBの安全マージンをわずかに
+上回る水準）だったにもかかわらず、次の1チャンク（10万反復）の学習
+中に実際のメモリ使用量が急増し、**`dmesg`で確認した通り、今度は
+cgroupではなくシステム全体のカーネルOOM killer
+（`constraint=CONSTRAINT_NONE`、`global_oom`）によって強制終了**
+された。強制終了時点の実測: `anon-rss:15,961,308KB`（約15.59GB）
+——このサンドボックスの物理メモリ総量16,075MBのほぼ全量に達していた。
+
+**幸い、このメインのClaude Codeセッション自身のプロセス（起動時に
+懸念していた通りの巻き添えリスク）は無事だった**（`dmesg`のタスク
+一覧で直接確認: 学習プロセスの約4.0GBに対し、このセッションの
+プロセスは約60MBのみで、カーネルのOOM killerは素直に最大の消費者
+（学習プロセス自身）を選んで終了させた）。ただし、これは設計上
+保証された安全策ではなく、カーネルのOOM killerの通常のヒューリス
+ティック（最大消費プロセスを選ぶ）にたまたま助けられた結果である
+ことは正直に記録しておく。
+
+直前の正常なチェックポイント（1,275万反復、71,619,726情報集合）は
+無傷で保存済みで、次回セッションでそのまま再開可能。
+
+### まとめ: このサンドボックスの本当の物理天井が実測で確定した
+
+- **cgroup制限内（約13.34GiB）でも、その制限を意図的に回避して
+  システム全体の物理メモリ（約16GB）を使っても、いずれの場合も
+  最終的にはハードな強制終了に至った。** 前者はStage S3の続きの
+  作業開始前（load()完了前）、後者は71,619,726情報集合
+  （目標の約77.7%）に到達した時点である。
+- **今回の実測で確定した、このサンドボックスにおける全169ハンド
+  レンジ学習の実際の到達可能範囲は、約71.6M〜71.8M情報集合
+  （目標9,220万件の約77.7〜77.9%）であり、9,220万件という目標値
+  そのものには、このサンドボックスの物理メモリの範囲内では
+  到達できない。** これは推測ではなく、2回の異なる強制終了
+  （cgroup上限に基づくものと、システム全体の物理メモリ枯渇に
+  基づくもの）によって直接確認された事実である。
+- 直前の正常なチェックポイント（71,619,726情報集合）は保存済みで、
+  次回セッションでの継続に使える。ただし、上記の実測が示す通り、
+  同じ15〜16GBのサンドボックスでこのまま継続を繰り返しても、
+  9,220万件という目標には構造的に到達できない——根本的な解決には
+  (a) 情報集合1件あたりのバイト数をさらに削減する設計変更、または
+  (b) この学習ステップ専用により大きなメモリの環境を用意する、
+  のいずれかが必要、というのが今回のセッション全体を通じた正直な
+  結論。
