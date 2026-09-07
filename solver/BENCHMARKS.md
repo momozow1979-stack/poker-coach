@@ -2899,3 +2899,55 @@ cgroupではなくシステム全体のカーネルOOM killer
   (b) この学習ステップ専用により大きなメモリの環境を用意する、
   のいずれかが必要、というのが今回のセッション全体を通じた正直な
   結論。
+
+## Stage 8R-8: `export_solved_spots.py`をRust版exact exploitabilityに接続
+
+**なぜ**: `export_solved_spots.py`の`measured_exact_exploitability`は、
+これまで`BENCHMARKS.md`の一回限りの計測結果を手でコピペした定数だった。
+正しい値として記録した時点では正しかったが、後から`SPOTS`（レンジ・
+反復回数・ベットサイズ等）を変更しても、この定数が古いままでも誰も
+気づけない、という構造的なリスクがあった。Stage 8R-4/8R-5のRust化で
+exact exploitability計算が実用的な速さ（AA vs KGでPythonの235.6秒→
+二桁秒）になったので、この定数を廃止し、`export_spot()`が学習した
+`avg_strategy`に対して`exploitability_parallel_native`を毎回その場で
+呼び出し、計算結果をそのままエクスポートするように変更した。
+
+あわせて、Stage 8R-6で発見済みだった「`range_notation.expand()`が
+`set[str]`を返すため、複数ハンドコードにまたがるレンジ（例:
+`"QQ+"`）は`hero_combos`/`villain_combos`の並び順がプロセスごとに
+変わりうる」という問題（Pythonの文字列ハッシュのランダム化に起因、
+`export_solved_spots.py`自身に潜在していた問題）に対して、
+`export_spot()`の冒頭で`sorted()`による正規化を追加した。
+
+### 実行結果（実際に走らせて確認、机上の変更のみで済ませていない）
+
+```
+[aa_vs_kk_7h2d3s] training 1,000,000 iterations...
+[aa_vs_kk_7h2d3s] done in 305.9s, 446,833 info sets
+[aa_vs_kk_7h2d3s] computing exact exploitability...
+[aa_vs_kk_7h2d3s] exact exploitability = 0.03149967136596232 (computed in 13.7s)
+[qq_plus_vs_tt_jj_7h2d3s] training 3,000,000 iterations...
+[qq_plus_vs_tt_jj_7h2d3s] done in 986.1s, 1,114,103 info sets
+[qq_plus_vs_tt_jj_7h2d3s] computing exact exploitability...
+[qq_plus_vs_tt_jj_7h2d3s] exact exploitability = 0.037279985798492676 (computed in 81.4s)
+```
+
+**検証結果（強い一致、偶然の近似ではない）**:
+
+- 学習結果（`entries`、アプリに表示される実際の頻度データ）は、
+  今回の`sorted()`正規化を加えた新しいコードで再学習しても、
+  既存の`assets/solved_spots/solved_spots.json`にバンドル済みの
+  値と**バイト単位で完全一致**した——`sorted()`の追加が学習結果
+  そのものには影響していないことを直接確認できた。
+- AA vs KKの新しく計算した`0.03149967136596232`は、Stage 7・
+  Stage 8R-4・Stage 8R-5でそれぞれ独立に記録済みの値と**ビット単位で
+  完全一致**。
+- QQ+ vs TT-JJの新しく計算した`0.037279985798492676`は、Stage 8R-6の
+  CIフィクスチャ（`qq_plus_vs_tt_jj_expected_exploitability.json`）
+  に記録済みの値と**ビット単位で完全一致**。
+
+以上より、`measured_exact_exploitability`は「一回だけ測って貼り付けた
+定数」から「エクスポートのたびにその場で計算し直す、絶対に古くならない
+実測値」に置き換わった。`flutter analyze`はクリーン、`flutter test`は
+314件全て通過（アプリ側のテストで実際のバンドル済みJSONを直接読んで
+いるものは無く、影響なし）。
