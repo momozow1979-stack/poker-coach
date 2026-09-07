@@ -24,6 +24,18 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Googleログイン（Supabase OAuth）が、ブラウザでの認証を終えた後に
+                 このアプリへ戻ってくるためのカスタムスキーム。
+                 supabase_auth_gateway.dart の _mobileRedirectUrl と揃えること。
+                 Supabase ダッシュボード側にも Authentication → URL Configuration →
+                 Redirect URLs に "io.pokercoach.app://login-callback" を追加する
+                 必要がある。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="io.pokercoach.app" android:host="login-callback"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
