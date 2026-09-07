@@ -25,8 +25,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from cfr_solver import _native
 from cfr_solver.games.game import Action, Game, History
-from cfr_solver.poker.cards import DECK, evaluate_best_hand
+from cfr_solver.poker.cards import DECK
 from cfr_solver.poker.combos import Combo, range_combos
 from cfr_solver.poker.range_notation import expand as expand_range
 
@@ -157,7 +158,7 @@ class PostflopSubgame(Game):
         self.preflop_contrib = preflop_contrib
         self.bet_sizes = bet_sizes  # (flop, turn, river)
         self.max_wagers_per_round = max_wagers_per_round
-        self._equity_cache: dict[tuple[Combo, Combo, tuple[int, ...]], float] = {}
+        self._equity_cache = _native.EquityCache()
 
     @property
     def num_players(self) -> int:
@@ -278,20 +279,7 @@ class PostflopSubgame(Game):
         return [equity * pot - total[0], (1 - equity) * pot - total[1]]
 
     def _equity(self, hero_combo: Combo, villain_combo: Combo, board: tuple[int, ...]) -> float:
-        key = (hero_combo, villain_combo, board)
-        cached = self._equity_cache.get(key)
-        if cached is not None:
-            return cached
-        hero_rank = evaluate_best_hand(list(hero_combo) + list(board))
-        villain_rank = evaluate_best_hand(list(villain_combo) + list(board))
-        if hero_rank > villain_rank:
-            equity = 1.0
-        elif hero_rank < villain_rank:
-            equity = 0.0
-        else:
-            equity = 0.5
-        self._equity_cache[key] = equity
-        return equity
+        return self._equity_cache.equity(hero_combo, villain_combo, board)
 
     def information_set_key(self, history: History, player: int) -> str:
         """A compact, injective encoding — 2 zero-padded decimal digits per
