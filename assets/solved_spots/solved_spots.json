@@ -5,7 +5,7 @@
     "c": "call",
     "f": "fold"
   },
-  "note": "hero's first flop decision only (board = the 3-card flop, before any action this street). Every number here is a direct readout of CFRSolver.average_strategy() for a spot whose exploitability was measured (see solver/BENCHMARKS.md) — not a new estimate.",
+  "note": "hero's first flop decision only (board = the 3-card flop, before any action this street). Every number here is a direct readout of CFRSolver.average_strategy() for a spot; measured_exact_exploitability is computed fresh, in the same run, against that exact strategy via the Rust-accelerated exact exploitability walk (see solver/BENCHMARKS.md) — not a separately-measured or pasted-in value.",
   "spots": [
     {
       "id": "aa_vs_kk_7h2d3s",
@@ -23,7 +23,7 @@
       ],
       "max_wagers_per_round": 1,
       "iterations_trained": 1000000,
-      "measured_exact_exploitability": 0.033,
+      "measured_exact_exploitability": 0.03149967136596232,
       "entries": [
         {
           "hero_combo": [
@@ -103,7 +103,7 @@
       ],
       "max_wagers_per_round": 1,
       "iterations_trained": 3000000,
-      "measured_exact_exploitability": 0.03729,
+      "measured_exact_exploitability": 0.037279985798492676,
       "entries": [
         {
           "hero_combo": [
