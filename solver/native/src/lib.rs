@@ -13,12 +13,14 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
 mod cards;
+mod equity_cache;
 mod history;
 mod node_index;
 mod rules;
 mod strategy;
 mod walk;
 
+use equity_cache::EquityCache;
 use history::{BoardBuf, History, TokenBuf};
 use node_index::NodeIndex;
 use strategy::AvgStrategy;
@@ -416,6 +418,7 @@ fn exploitability_parallel(
 fn native_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ping, m)?)?;
     m.add_class::<NodeIndex>()?;
+    m.add_class::<EquityCache>()?;
     m.add_function(wrap_pyfunction!(evaluate_5card_native, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_best_hand_native, m)?)?;
     m.add_function(wrap_pyfunction!(_debug_round_done, m)?)?;

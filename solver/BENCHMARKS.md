@@ -2951,3 +2951,104 @@ exact exploitability計算が実用的な速さ（AA vs KGでPythonの235.6秒�
 実測値」に置き換わった。`flutter analyze`はクリーン、`flutter test`は
 314件全て通過（アプリ側のテストで実際のバンドル済みJSONを直接読んで
 いるものは無く、影響なし）。
+
+## 全ハンド対応 Stage S5: `_equity_cache`のRust化
+
+**なぜ**: Stage S4で全169ハンドレンジ学習が物理メモリの天井
+（約71.6〜71.8M情報集合、目標9,220万件の約77.7〜77.9%）に構造的に
+届かないことが実測で確定した後、「先に全169ハンド対応の方を解決する」
+という指示のもと、さらなる圧縮余地を探した。Stage S2は`_equity_cache`
+（`PostflopSubgame._equity`のメモ化キャッシュ）について「情報集合数の
+27〜34%程度のエントリ数を持ち、既にRSS実測値に含まれている無視できない
+要因」と記録していたが、この**キャッシュ自体の1エントリあたりのコスト**
+は単独で計測されたことがなかった。
+
+### 実測（`_index`の時と同じ手法: 2,000,000件挿入前後の`ru_maxrss`差分）
+
+このキャッシュのキーは`(hero_combo, villain_combo, board)`という
+「タプルのタプル」——Pythonの`dict`は1エントリあたり4個の別々にヒープ
+確保されたタプルオブジェクト（外側の3-tupleと、2個のコンボ2-tuple、
+board tuple）のオーバーヘッドを払うことになる:
+
+```
+baseline RSS: 8.2 MB
+after 2,000,000 entries RSS: 670.5 MB
+delta: 662.3 MB, 347.2 bytes/entry
+```
+
+**347.2 B/entry——`NodeIndex`が置き換える前の`_index: dict[str, int]`
+（約192 B/entry）よりも悪い。** Stage S1と同じ病気が、より極端な形で
+再発していた。
+
+### 設計（`NodeIndex`と同じ実証済みパターンの再利用、ただし2点で有利）
+
+1. **キーが常に固定サイズ・固定形状**: `PostflopSubgame.returns()`を
+   読むと、`_equity()`が呼ばれる経路は必ずリバーまでフォールドが
+   起きなかった場合のみで、その時点で`board`は必ず5枚——文字列ベースの
+   情報集合キーのように任意長を心配する必要がない（念のため
+   `NodeIndex::KEY_CAPACITY`と同じ防御的な余裕を持たせ、`BOARD_CAPACITY`
+   を7に設定、超過時は黙って壊れず明確なエラーにした）。
+2. **値が任意のfloatではない**: `_equity`が返すのは`0.0`/`0.5`/`1.0`の
+   3値だけ——8バイトの`f64`ではなく1バイトのタグで十分。
+
+`node_index.rs`のチャンク化アリーナ設計（`HashMap<RawKey, _>`は
+リサイズのたびに全エントリの完全なキーをコピーするため`NodeIndex`より
+悪化した、という同じ教訓）をそのまま再利用した。Python側の
+`_equity()`はキャッシュ照合・計算・書き込みを全部Rust内で完結させる
+（`cards::evaluate_best_hand`——Stage 8R-2で既に全数検証済み——を
+直接呼ぶ）ため、キャッシュヒット後もFFI境界を一切またがない。
+
+### 重要な副作用の発見と対処: pickle化が壊れていた
+
+`exploitability.py`のStage 7 `ProcessPoolExecutor`による並列パスは、
+`game`（`PostflopSubgame`インスタンス）を`initargs`経由でワーカー
+プロセスにpickleで送る。旧`dict`ベースの`_equity_cache`はこれが
+無料で通っていたが、`#[pyclass]`はデフォルトでpickle化できない
+——実際に試して`TypeError: cannot pickle 'builtins.EquityCache' object`
+で失敗することを確認した。`__getstate__`/`__setstate__`を実装し
+（キャッシュの中身を固定長レコードの列としてバイト列に詰める、
+`NodeIndex::packed_keys`と同じ発想）、さらに`#[pyclass(module = ...)]`
+の指定が無いとpickleがクラスを`builtins`から探そうとして失敗する
+という2つ目の落とし穴も実際に踏んで直した。`PostflopSubgame`全体を
+pickleして復元できることを直接確認済み。
+
+### 実測した圧縮率
+
+```
+baseline RSS: 9.0 MB
+after 2,000,000 entries RSS: 134.3 MB (cache len=2000000)
+delta: 125.3 MB, 65.7 bytes/entry
+```
+
+**347.2 B/entry → 65.7 B/entry、約5.3倍の圧縮。** Stage S2の
+「情報集合数の27〜34%程度のエントリ数」という実測を踏まえると、
+全169ハンド規模（9,220万件）で旧設計は約9.7GB、新設計は約1.8GB
+——**約7.8GBの削減**になる見込み（あくまで見込みであり、実際の
+全規模学習での確認はまだ行っていない——下記「今回やっていないこと」
+参照）。
+
+### 検証
+
+- Rust: 新規`equity_cache`モジュールの単体テスト7件（衝突安全性・
+  チャンク境界・容量超過エラー・pickle往復を含む）——全て green。
+  既存32件と合わせてRust側は39/39。
+- Python: `tests/test_native_equity_cache.py`新規6件——2万件の
+  ランダムショーダウンで旧ロジック（`evaluate_best_hand`を直接呼ぶ
+  リファレンス実装）と完全一致、pickle往復でキャッシュの中身が
+  完全一致、`PostflopSubgame`全体のpickle往復が壊れていないことを
+  直接確認。
+- ソルバーの全pytestスイート: **110/110件パス**（既存104件+新規6件、
+  1338.87秒）——既存のexploitability・postflop_subgame関連のテストも
+  含めて回帰なし。
+
+### 今回やっていないこと（正直に明記）
+
+- **全169ハンド規模（9,220万件目標）での実際の再学習は行っていない。**
+  上記の「約7.8GB削減」はStage S2の27〜34%という比率を使った外挿であり、
+  実際にこの変更を適用した状態でStage S4と同じ規模まで学習を再実行して
+  天井が本当に9,220万件を超えられるかどうかは、まだ実測していない。
+  これは別途、長時間（Stage S4では数時間規模）かかる検証として
+  取り組む必要がある。
+- `flop_subgame.py`（`PostflopSubgame`とは別の、より単純な単一ラウンド
+  ゲーム）が持つ独自の`_equity_cache`は今回のスコープ外——全ハンド対応の
+  規模問題に直接関係しないため触れていない。
