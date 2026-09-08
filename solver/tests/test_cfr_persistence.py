@@ -272,3 +272,56 @@ def test_postflop_subgame_resume_is_bit_exact_and_timing_is_reported(tmp_path) -
         f"file={file_bytes / 1024:.1f}KiB "
         f"({(save_s + load_s) / max(n_nodes, 1) * 1e6:.3f}us/node combined)"
     )
+
+
+def test_a_crash_during_save_does_not_corrupt_the_previous_checkpoint(tmp_path, monkeypatch) -> None:
+    """Regression test for a real, not hypothetical, failure: `save()` used
+    to `open(path, "wb")` directly, which truncates `path` the instant it's
+    opened. A process killed anywhere during the write that follows (an
+    actual full-hand-range training run was killed by the cgroup OOM killer
+    mid-`save()`) destroyed the previous, perfectly good checkpoint along
+    with it -- losing days of training progress with no way to resume,
+    since the file on disk was left truncated and unloadable.
+
+    `save()` now writes to `path + ".tmp"` and only replaces `path` (via
+    `os.replace`, POSIX-atomic on the same filesystem) once the write fully
+    succeeds. This simulates the crash by making the write itself raise
+    partway through, and asserts the ORIGINAL checkpoint at `path` is still
+    intact and loadable afterward -- not just that the exception propagates.
+    """
+    solver = CFRSolver(KuhnPoker(), variant="cfr_plus", random_seed=5)
+    solver.train_external_sampling(500)
+    reference = solver.average_strategy()
+
+    path = tmp_path / "checkpoint.cfrsave"
+    solver.save(str(path))
+    good_bytes = path.read_bytes()
+
+    # Train further so the next save() would write different (larger)
+    # content -- if the crash below somehow let any of it reach `path`,
+    # the byte-for-byte comparison after would catch it.
+    solver.train_external_sampling(500)
+
+    import cfr_solver.cfr as cfr_module
+
+    def _boom(*_args, **_kwargs):
+        raise OSError("simulated crash mid-write (e.g. OOM kill)")
+
+    monkeypatch.setattr(cfr_module.os, "fsync", _boom)
+
+    try:
+        solver.save(str(path))
+    except OSError:
+        pass
+    else:
+        raise AssertionError("expected the simulated crash to propagate")
+
+    assert path.read_bytes() == good_bytes, (
+        "the previous checkpoint must survive a crash during a later save() "
+        "byte-for-byte -- it must never be truncated or partially overwritten"
+    )
+    reloaded = CFRSolver.load(str(path), KuhnPoker())
+    assert reloaded.average_strategy() == reference
+
+    tmp_leftover = tmp_path / "checkpoint.cfrsave.tmp"
+    assert tmp_leftover.exists(), "the failed write's temp file should be left for inspection, not silently vanish"
