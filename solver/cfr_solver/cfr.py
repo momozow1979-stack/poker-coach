@@ -197,12 +197,28 @@ def _naive_sum(values: list[float]) -> float:
     return total
 
 
-def _write_block(f, data: bytes | bytearray) -> None:
+def _write_block(f, data) -> None:
     """Length-prefixed (8-byte little-endian unsigned) block, so `_read_block`
     knows exactly how many bytes to read back without needing a delimiter
-    that might collide with real data."""
-    f.write(struct.pack("<Q", len(data)))
-    f.write(data)
+    that might collide with real data.
+
+    `data` may be `bytes`/`bytearray` or any other object supporting the
+    buffer protocol (in particular `array.array`, which `save()` passes
+    directly below). Wrapping it in `memoryview` here — rather than
+    requiring the caller to pass `bytes` — means `_regret`/`_strategy`
+    (each `array('d')`, ~24 bytes/information-set) are written straight
+    from their own backing buffer, with no `.tobytes()` copy in between.
+    That copy was a real, measured contributor to an actual OOM kill
+    during `save()` itself at tens of millions of information sets (see
+    `BENCHMARKS.md`'s Stage S6 entry): the transient extra ~1.87GB
+    `.tobytes()` allocated for `_regret` alone, on top of an
+    already-near-the-limit resident set, pushed the process over a hard
+    cgroup memory limit mid-write. `memoryview(data).nbytes` also gives
+    the exact byte length directly — unlike `len(data)`, which for an
+    `array.array` is the *element* count, not the byte count."""
+    view = memoryview(data)
+    f.write(struct.pack("<Q", view.nbytes))
+    f.write(view)
 
 
 def _read_block(f) -> bytes:
@@ -289,9 +305,9 @@ class CFRSolver:
         with open(tmp_path, "wb") as f:
             f.write(_SAVE_FORMAT_MAGIC)
             _write_block(f, header_bytes)
-            _write_block(f, self._node_action_set_id.tobytes())
-            _write_block(f, self._regret.tobytes())
-            _write_block(f, self._strategy.tobytes())
+            _write_block(f, self._node_action_set_id)
+            _write_block(f, self._regret)
+            _write_block(f, self._strategy)
             _write_block(f, packed_keys)
             f.flush()
             os.fsync(f.fileno())
