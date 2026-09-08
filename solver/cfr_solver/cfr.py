@@ -168,6 +168,7 @@ insufficient).
 
 from __future__ import annotations
 
+import os
 import pickle
 import random
 import struct
@@ -271,13 +272,30 @@ class CFRSolver:
         }
         header_bytes = pickle.dumps(header, protocol=pickle.HIGHEST_PROTOCOL)
 
-        with open(path, "wb") as f:
+        # Write to a temporary file in the same directory, then atomically
+        # replace `path` with it -- NOT `open(path, "wb")` directly. A plain
+        # `open(path, "wb")` truncates the existing (valid) checkpoint the
+        # instant it's opened; if the process is killed anywhere during the
+        # write that follows (a real failure mode, not hypothetical -- an
+        # actual multi-day full-hand-range training run was killed by the
+        # cgroup OOM killer mid-`save()` and this destroyed its last-known-
+        # good checkpoint, losing days of training progress with no way to
+        # resume). Writing to `path + ".tmp"` first and using `os.replace`
+        # (POSIX-atomic on the same filesystem, which the same directory
+        # guarantees) means a crash during the write leaves the temp file
+        # broken but `path` itself always points at either the old,
+        # complete checkpoint or the new one -- never a half-written one.
+        tmp_path = path + ".tmp"
+        with open(tmp_path, "wb") as f:
             f.write(_SAVE_FORMAT_MAGIC)
             _write_block(f, header_bytes)
             _write_block(f, self._node_action_set_id.tobytes())
             _write_block(f, self._regret.tobytes())
             _write_block(f, self._strategy.tobytes())
             _write_block(f, packed_keys)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
 
     @classmethod
     def load(cls, path: str, game: Game) -> "CFRSolver":
