@@ -36,8 +36,9 @@ from __future__ import annotations
 
 import argparse
 import os
-import resource
 import time
+
+import psutil
 
 from cfr_solver.cfr import CFRSolver
 from cfr_solver.games.postflop_subgame import PostflopSubgame
@@ -60,7 +61,14 @@ DEFAULT_CHUNK_ITERS = 100_000
 
 
 def rss_mb() -> float:
-    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    # Cross-platform peak/current resident set size for this process, in MB.
+    # (Was `resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024` --
+    # that stdlib module is POSIX-only and this script now also runs on
+    # Windows. psutil's `memory_info().rss` is the current RSS, not the
+    # all-time peak like ru_maxrss was; since this is polled every chunk
+    # and only ever used to compare against --rss-limit-mb, that's fine --
+    # the checkpoint/stop logic only cares about "is RSS high right now".
+    return psutil.Process().memory_info().rss / (1024 * 1024)
 
 
 def log(log_path: str, msg: str) -> None:
