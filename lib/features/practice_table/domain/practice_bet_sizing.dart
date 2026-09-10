@@ -56,6 +56,5 @@ abstract final class PracticeBetSizing {
   /// 0.33 のようなポット割合を掛けた浮動小数点の誤差（例:
   /// `0.8250000000000001`）が画面にそのまま出ないよう、0.25BB 刻みに
   /// 丸める。実戦のベットサイズとしても、この粒度で十分細かい。
-  static double _roundToQuarter(double value) =>
-      (value * 4).round() / 4;
+  static double _roundToQuarter(double value) => (value * 4).round() / 4;
 }

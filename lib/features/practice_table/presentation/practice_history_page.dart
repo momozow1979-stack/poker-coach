@@ -44,12 +44,12 @@ class _HistoryTile extends StatelessWidget {
     return Card(
       child: ListTile(
         title: Text(record.title),
-        subtitle: Text('ポット ${record.finalPotBb}BB・${_formatDate(record.createdAt)}'),
+        subtitle: Text(
+          'ポット ${record.finalPotBb}BB・${_formatDate(record.createdAt)}',
+        ),
         trailing: const Icon(Icons.chevron_right_rounded),
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => PracticeReplayPage(record: record),
-          ),
+          MaterialPageRoute(builder: (_) => PracticeReplayPage(record: record)),
         ),
       ),
     );

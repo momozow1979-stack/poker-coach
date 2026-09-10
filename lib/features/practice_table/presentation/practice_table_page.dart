@@ -218,9 +218,7 @@ class _ResultBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final won = hand.winner == Actor.hero;
-    final label = hand.winner == null
-        ? '引き分け'
-        : (won ? 'あなたの勝ち' : 'あなたの負け');
+    final label = hand.winner == null ? '引き分け' : (won ? 'あなたの勝ち' : 'あなたの負け');
     final reason = hand.endedByFold
         ? '（相手のフォールド）'
         : (hand.winner == null ? '（ショーダウンで分け）' : '（ショーダウン）');
@@ -281,10 +279,8 @@ class _ActionBar extends ConsumerWidget {
                   for (final size in choices.presetSizesBb)
                     _ActionButton(
                       action: action,
-                      label:
-                          '${action.description} ${_formatBb(size)}',
-                      onPressed: () =>
-                          controller.heroAct(action, sizeBb: size),
+                      label: '${action.description} ${_formatBb(size)}',
+                      onPressed: () => controller.heroAct(action, sizeBb: size),
                     )
                 else
                   _ActionButton(

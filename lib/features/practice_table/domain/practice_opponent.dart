@@ -33,9 +33,7 @@ class SimplePracticeOpponent implements PracticeOpponent {
   const SimplePracticeOpponent();
 
   /// プリフロップでヒーローのオープンに対して 3bet するレンジ。
-  static final Set<String> _threeBetRange = RangeNotation.expand(
-    'QQ+,AKs,AKo',
-  );
+  static final Set<String> _threeBetRange = RangeNotation.expand('QQ+,AKs,AKo');
 
   /// プリフロップでコール（フラット）するレンジ。
   static final Set<String> _callRange = RangeNotation.expand(
@@ -84,10 +82,7 @@ class SimplePracticeOpponent implements PracticeOpponent {
     PracticeHandState state,
     PracticeActionChoices choices,
   ) {
-    final strength = HandStrength.best([
-      ...state.villainCards,
-      ...state.board,
-    ]);
+    final strength = HandStrength.best([...state.villainCards, ...state.board]);
     final power = strength.category.power;
 
     // 強い役（スリーカード以上）: 自分から賭ける／レイズする。

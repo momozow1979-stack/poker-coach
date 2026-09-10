@@ -4,7 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../shared/models/poker_action.dart';
 import '../../hand_review/domain/hand_flow.dart' show Actor;
-import '../../profile/application/learning_providers.dart' show keyValueStoreProvider;
+import '../../profile/application/learning_providers.dart'
+    show keyValueStoreProvider;
 import '../domain/practice_hand_engine.dart';
 import '../domain/practice_hand_record.dart';
 import '../domain/practice_hand_repository.dart';
@@ -82,7 +83,10 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
     if (hand.isOver) await _persist(engine, hand);
   }
 
-  Future<void> _persist(PracticeHandEngine engine, PracticeHandState hand) async {
+  Future<void> _persist(
+    PracticeHandEngine engine,
+    PracticeHandState hand,
+  ) async {
     final repository = ref.read(practiceHandRepositoryProvider);
     await repository.save(
       PracticeHandRecord(

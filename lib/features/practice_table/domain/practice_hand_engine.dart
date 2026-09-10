@@ -96,7 +96,9 @@ class PracticeHandEngine {
       _finishAtShowdown(after);
       return;
     }
-    _events.add(BoardDealt(street: next, cards: _deck.draw(_boardCountFor(next))));
+    _events.add(
+      BoardDealt(street: next, cards: _deck.draw(_boardCountFor(next))),
+    );
   }
 
   void _finishAtShowdown(PracticeHandState atRiver) {
@@ -113,9 +115,7 @@ class PracticeHandEngine {
       HandFinished(
         endedByFold: false,
         potBb: atRiver.pot,
-        winner: result == 0
-            ? null
-            : (result > 0 ? Actor.hero : Actor.villain),
+        winner: result == 0 ? null : (result > 0 ? Actor.hero : Actor.villain),
       ),
     );
   }

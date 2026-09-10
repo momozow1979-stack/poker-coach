@@ -241,7 +241,8 @@ class _ReplayEngine {
     pot += clamped;
   }
 
-  double _stackOf(Actor actor) => actor == Actor.hero ? heroStack : villainStack;
+  double _stackOf(Actor actor) =>
+      actor == Actor.hero ? heroStack : villainStack;
 
   void applyFinish(HandFinished event) {
     isOver = true;

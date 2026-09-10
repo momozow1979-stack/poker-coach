@@ -122,11 +122,12 @@ class _PracticeReplayPageState extends State<PracticeReplayPage> {
       ActionOccurred(:final actor, :final action, :final sizeBb) =>
         '${actor == Actor.hero ? 'あなた' : '相手'} ${action.description}'
             '${sizeBb == null ? '' : ' ${sizeBb}BB'}',
-      HandFinished(:final endedByFold, :final winner) => endedByFold
-          ? '${winner == Actor.hero ? '相手' : 'あなた'}がフォールド'
-          : (winner == null
-                ? 'ショーダウン: 分け'
-                : 'ショーダウン: ${winner == Actor.hero ? 'あなた' : '相手'}の勝ち'),
+      HandFinished(:final endedByFold, :final winner) =>
+        endedByFold
+            ? '${winner == Actor.hero ? '相手' : 'あなた'}がフォールド'
+            : (winner == null
+                  ? 'ショーダウン: 分け'
+                  : 'ショーダウン: ${winner == Actor.hero ? 'あなた' : '相手'}の勝ち'),
     };
   }
 }
