@@ -75,6 +75,7 @@ class QuizPage extends ConsumerWidget {
             ? QuizSummaryView(
                 session: session,
                 onRestart: controller.restart,
+                onNewSet: controller.newSet,
                 onGoHome: () => context.go(AppRoutes.home),
                 onOpenTrainer: () => context.go(AppRoutes.trainer),
               )

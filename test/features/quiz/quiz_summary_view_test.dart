@@ -19,6 +19,7 @@ void main() {
         QuizSummaryView(
           session: session,
           onRestart: () {},
+          onNewSet: () {},
           onGoHome: () {},
           onOpenTrainer: () => tapped = true,
         ),
@@ -39,7 +40,12 @@ void main() {
 
     await tester.pumpWidget(
       wrap(
-        QuizSummaryView(session: session, onRestart: () {}, onGoHome: () {}),
+        QuizSummaryView(
+          session: session,
+          onRestart: () {},
+          onNewSet: () {},
+          onGoHome: () {},
+        ),
       ),
     );
 

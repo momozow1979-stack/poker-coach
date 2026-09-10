@@ -35,8 +35,11 @@ class MockQuizRepository implements QuizRepository {
     List<QuizCategory> weakCategories = const [],
     Map<String, DateTime> lastAnsweredAt = const {},
     int cooldownDays = 14,
+    Set<String> excludeIds = const {},
   }) {
-    final pool = QuizBank.all;
+    final pool = excludeIds.isEmpty
+        ? QuizBank.all
+        : QuizBank.all.where((quiz) => !excludeIds.contains(quiz.id)).toList();
     if (pool.isEmpty || count <= 0) return const [];
 
     final target = min(count, pool.length);

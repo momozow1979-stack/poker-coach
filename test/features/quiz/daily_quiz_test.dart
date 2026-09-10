@@ -57,6 +57,22 @@ void main() {
       );
     });
 
+    test('excludeIds を渡すとその問題は出題されない', () {
+      final base = repository.dailyQuizzes(DateTime(2026, 8, 29));
+      final excluded = base.map((quiz) => quiz.id).toSet();
+
+      final withExclusion = repository.dailyQuizzes(
+        DateTime(2026, 8, 29),
+        excludeIds: excluded,
+      );
+
+      expect(
+        withExclusion.map((quiz) => quiz.id).toSet().intersection(excluded),
+        isEmpty,
+      );
+      expect(withExclusion, hasLength(10));
+    });
+
     test('苦手カテゴリは10問中4問までに制限される', () {
       final quizzes = repository.dailyQuizzes(
         DateTime(2026, 8, 29),
@@ -144,6 +160,49 @@ void main() {
       final session = container.read(dailyQuizSessionProvider);
       expect(session.answeredCount, 0);
       expect(session.currentIndex, 0);
+    });
+
+    test('新しい10問は、今日すでに出した問題と重複しない', () {
+      final controller = container.read(dailyQuizSessionProvider.notifier);
+      final firstIds = container
+          .read(dailyQuizSessionProvider)
+          .quizzes
+          .map((quiz) => quiz.id)
+          .toSet();
+
+      controller.newSet();
+
+      final session = container.read(dailyQuizSessionProvider);
+      expect(session.answeredCount, 0);
+      expect(session.currentIndex, 0);
+      final secondIds = session.quizzes.map((quiz) => quiz.id).toSet();
+      expect(secondIds.intersection(firstIds), isEmpty);
+    });
+
+    test('新しい10問を2回続けて選んでも、それぞれ前回までと重複しない', () {
+      final controller = container.read(dailyQuizSessionProvider.notifier);
+      final firstIds = container
+          .read(dailyQuizSessionProvider)
+          .quizzes
+          .map((quiz) => quiz.id)
+          .toSet();
+
+      controller.newSet();
+      final secondIds = container
+          .read(dailyQuizSessionProvider)
+          .quizzes
+          .map((quiz) => quiz.id)
+          .toSet();
+
+      controller.newSet();
+      final thirdIds = container
+          .read(dailyQuizSessionProvider)
+          .quizzes
+          .map((quiz) => quiz.id)
+          .toSet();
+
+      expect(thirdIds.intersection(firstIds), isEmpty);
+      expect(thirdIds.intersection(secondIds), isEmpty);
     });
   });
 }
