@@ -57,6 +57,7 @@ solver/solved_spots.json
 # belong on disk (this repo's persistent-enough filesystem), never in git.
 # See BENCHMARKS.md's full-hand-range resume section for what's stored here.
 /.solver-checkpoints/
+solver/*.cfrsave
 
 # Rust native extension build output (solver/native/) — Cargo build
 # artifacts, never committed.

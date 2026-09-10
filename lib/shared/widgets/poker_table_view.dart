@@ -14,12 +14,21 @@ import '../models/table_type.dart';
 /// どの席が・どんな種類のアクションをしたか、だけを持つ軽量な値オブジェクト。
 /// サイズ（BB 額）はこのアニメーションには不要なので持たない。
 class TableLastAction {
-  const TableLastAction({required this.position, required this.actionType});
+  const TableLastAction({
+    required this.position,
+    required this.actionType,
+    this.sequence = 0,
+  });
 
   /// アクションをした席。[PokerTableView.heroPosition] や
   /// [PokerTableView.villainPosition] と同じ [Position] を使う。
   final Position position;
   final PokerActionType actionType;
+
+  /// 同じ席が同じ種類のアクションを連続でしたときにも毎回アニメーションを
+  /// 再生させるための通し番号。[_ChipTravel] の [ValueKey] にだけ使う。
+  /// 呼び出し側は「今何件目のアクションか」のような単調増加する値を渡せばよい。
+  final int sequence;
 }
 
 /// テーブルの席を俯瞰で描く図。
@@ -140,7 +149,7 @@ class PokerTableView extends StatelessWidget {
                       seats.contains(lastAction!.position))
                     _ChipTravel(
                       key: ValueKey(
-                        '${lastAction!.position.name}-${lastAction!.actionType.name}',
+                        '${lastAction!.position.name}-${lastAction!.actionType.name}-${lastAction!.sequence}',
                       ),
                       start: seatCenter(
                         size,
