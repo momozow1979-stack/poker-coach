@@ -25,6 +25,11 @@ class QuizPage extends ConsumerWidget {
         title: const Text('今日の10問'),
         actions: [
           IconButton(
+            tooltip: 'AI相手に練習',
+            onPressed: () => context.go(AppRoutes.practiceTable),
+            icon: const Icon(Icons.smart_toy_outlined),
+          ),
+          IconButton(
             tooltip: 'ハンドトレーナー',
             onPressed: () => context.go(AppRoutes.trainer),
             icon: const Icon(Icons.sports_esports_outlined),

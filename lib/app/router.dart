@@ -10,6 +10,7 @@ import '../features/hand_trainer/presentation/trainer_play_page.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/onboarding/application/onboarding_providers.dart';
 import '../features/onboarding/presentation/onboarding_flow_page.dart';
+import '../features/practice_table/presentation/practice_table_page.dart';
 import '../features/profile/presentation/profile_page.dart';
 import '../features/quiz/presentation/category_quiz_page.dart';
 import '../features/quiz/presentation/quiz_page.dart';
@@ -31,6 +32,9 @@ abstract final class AppRoutes {
 
   /// ハンドトレーナーのプレイ画面。
   static String trainerPlay(String scenarioId) => '/quiz/trainer/$scenarioId';
+
+  /// AI 相手のリアルタイム練習（学習タブの下）。
+  static const practiceTable = '/quiz/practice';
 
   /// カテゴリを指定した復習クイズ。
   static String categoryQuiz(String categoryId) => '/quiz/category/$categoryId';
@@ -109,6 +113,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                     builder: (context, state) => CategoryQuizPage(
                       categoryId: state.pathParameters['categoryId'] ?? '',
                     ),
+                  ),
+                  GoRoute(
+                    path: 'practice',
+                    builder: (context, state) => const PracticeTablePage(),
                   ),
                 ],
               ),
