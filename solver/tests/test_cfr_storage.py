@@ -8,8 +8,8 @@ the storage internals directly (id assignment, action-set sharing, the
 from __future__ import annotations
 
 import gc
-import resource
 
+import psutil
 import pytest
 
 from cfr_solver.cfr import STRIDE, CFRSolver
@@ -80,15 +80,18 @@ def test_memory_per_information_set_stays_well_below_the_pre_refactor_design() -
     solver = _solver()
     n = 500_000
 
+    # Cross-platform RSS (was `resource.getrusage(...).ru_maxrss`, which is
+    # POSIX-only); see train_full169.py's `rss_mb()` for the same swap.
+    process = psutil.Process()
     gc.collect()
-    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    before = process.memory_info().rss
     for i in range(n):
         key = f"{i:014d}|xb|cc|f"
         solver._get_node_id(key, ["f", "c", "b"])
     gc.collect()
-    after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    after = process.memory_info().rss
 
-    bytes_per_node = (after - before) * 1024 / n
+    bytes_per_node = (after - before) / n
     assert bytes_per_node < 350, (
         f"measured {bytes_per_node:.1f} bytes/information-set, expected well under 350 "
         "(pre-refactor design measured ~720) — see BENCHMARKS.md"
