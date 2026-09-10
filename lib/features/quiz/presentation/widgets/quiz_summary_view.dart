@@ -13,12 +13,16 @@ class QuizSummaryView extends StatelessWidget {
     super.key,
     required this.session,
     required this.onRestart,
+    required this.onNewSet,
     required this.onGoHome,
     this.onOpenTrainer,
   });
 
   final DailyQuizSession session;
   final VoidCallback onRestart;
+
+  /// 今日まだ出していない、新しい10問に挑戦する。
+  final VoidCallback onNewSet;
   final VoidCallback onGoHome;
 
   /// 「他の練習」としてハンドトレーナーへ導く。null なら表示しない。
@@ -161,6 +165,8 @@ class QuizSummaryView extends StatelessWidget {
         ],
         const SizedBox(height: AppSpacing.xl),
         FilledButton(onPressed: onGoHome, child: const Text('ホームに戻る')),
+        const SizedBox(height: AppSpacing.md),
+        OutlinedButton(onPressed: onNewSet, child: const Text('新しい10問に挑戦')),
         const SizedBox(height: AppSpacing.md),
         OutlinedButton(onPressed: onRestart, child: const Text('もう一度解く')),
       ],

@@ -30,9 +30,13 @@ class _RecordingQuizRepository implements QuizRepository {
     List<QuizCategory> weakCategories = const [],
     Map<String, DateTime> lastAnsweredAt = const {},
     int cooldownDays = 14,
+    Set<String> excludeIds = const {},
   }) {
     capturedWeakCategories = weakCategories;
-    return QuizBank.all.take(count).toList();
+    return QuizBank.all
+        .where((quiz) => !excludeIds.contains(quiz.id))
+        .take(count)
+        .toList();
   }
 }
 
