@@ -5,7 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/models/playing_card.dart';
 import '../../../shared/models/poker_action.dart';
-import '../../../shared/widgets/playing_card_view.dart';
+import '../../../shared/widgets/flip_card_view.dart';
 import '../../../shared/widgets/poker_table_view.dart';
 import '../../hand_review/domain/hand_flow.dart' show Actor;
 import '../application/practice_providers.dart';
@@ -80,6 +80,7 @@ class _PracticeBody extends ConsumerWidget {
                   heroPosition: hand.heroPosition,
                   villainPosition: hand.villainPosition,
                   potLabel: 'Pot ${_formatBb(hand.pot)}BB',
+                  lastAction: _lastChipAction(hand),
                 ),
                 const SizedBox(height: AppSpacing.lg),
                 _HandCards(hand: hand),
@@ -109,6 +110,25 @@ class _PracticeBody extends ConsumerWidget {
 
   static String _formatBb(double value) =>
       value == value.roundToDouble() ? value.toInt().toString() : '$value';
+
+  /// チップがポットへ動くアニメーションを [PokerTableView] に演出させる
+  /// もと。チェック / フォールドはチップが動かないので対象外にする。
+  /// [TableLastAction.sequence] にここまでのアクション数を渡すことで、
+  /// 同じ人が同じ種類の行動を連続でしても毎回アニメーションが再生される。
+  static TableLastAction? _lastChipAction(PracticeHandState hand) {
+    if (hand.actions.isEmpty) return null;
+    final last = hand.actions.last;
+    final movesChips =
+        last.action == PokerActionType.call || last.action.isAggressive;
+    if (!movesChips) return null;
+    return TableLastAction(
+      position: last.actor == Actor.hero
+          ? hand.heroPosition
+          : hand.villainPosition,
+      actionType: last.action,
+      sequence: hand.actions.length,
+    );
+  }
 }
 
 class _HandCards extends StatelessWidget {
@@ -122,14 +142,22 @@ class _HandCards extends StatelessWidget {
     // （練習として実戦に近づけるため。フォールドで終わったときは
     // 最後まで見せない — 実戦でも降りた側の手札は分からない）。
     final revealVillain = hand.sawShowdown;
+    final villainKey =
+        '${hand.villainCards[0].code}${hand.villainCards[1].code}';
 
     return Column(
       children: [
         _PlayerRow(
           label: '相手（${hand.villainPosition.label}）',
-          cards: revealVillain
-              ? <PlayingCard?>[...hand.villainCards]
-              : const <PlayingCard?>[null, null],
+          cardWidgets: [
+            for (var i = 0; i < hand.villainCards.length; i++)
+              FlipCardView(
+                key: ValueKey('villain-$villainKey-$i'),
+                card: hand.villainCards[i],
+                faceUp: revealVillain,
+                width: 44,
+              ),
+          ],
         ),
         const SizedBox(height: AppSpacing.md),
         if (hand.board.isNotEmpty)
@@ -139,14 +167,28 @@ class _HandCards extends StatelessWidget {
               for (final card in hand.board)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: PlayingCardView(card: card, width: 36),
+                  child: _DealtCard(
+                    key: ValueKey('board-${card.code}-${hand.street.id}'),
+                    card: card,
+                    width: 36,
+                  ),
                 ),
             ],
           ),
         const SizedBox(height: AppSpacing.md),
         _PlayerRow(
           label: 'あなた（${hand.heroPosition.label}）',
-          cards: <PlayingCard?>[...hand.heroCards],
+          cardWidgets: [
+            for (var i = 0; i < hand.heroCards.length; i++)
+              _DealtCard(
+                key: ValueKey(
+                  'hero-${hand.heroCards[0].code}${hand.heroCards[1].code}-$i',
+                ),
+                card: hand.heroCards[i],
+                width: 44,
+                delay: Duration(milliseconds: 220 + i * 140),
+              ),
+          ],
         ),
       ],
     );
@@ -154,10 +196,10 @@ class _HandCards extends StatelessWidget {
 }
 
 class _PlayerRow extends StatelessWidget {
-  const _PlayerRow({required this.label, required this.cards});
+  const _PlayerRow({required this.label, required this.cardWidgets});
 
   final String label;
-  final List<PlayingCard?> cards;
+  final List<Widget> cardWidgets;
 
   @override
   Widget build(BuildContext context) {
@@ -175,14 +217,57 @@ class _PlayerRow extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            for (final card in cards)
+            for (final widget in cardWidgets)
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 3),
-                child: PlayingCardView(card: card, width: 44),
+                child: widget,
               ),
           ],
         ),
       ],
+    );
+  }
+}
+
+/// 配られた直後、一呼吸おいてから裏→表に自動でめくれるカード。
+///
+/// ヒーロー自身の手札（配られてすぐ確認する動作）と、新しいストリートで
+/// 開くボードカードに使う。[key] に「そのカードが配られたこと」を表す
+/// 値を渡すことで、同じ内容のまま再描画されても再生され直さないように
+/// している（[State] が使い回されるので [_faceUp] は保持されたまま）。
+class _DealtCard extends StatefulWidget {
+  const _DealtCard({
+    super.key,
+    required this.card,
+    this.width = 40,
+    this.delay = const Duration(milliseconds: 260),
+  });
+
+  final PlayingCard card;
+  final double width;
+  final Duration delay;
+
+  @override
+  State<_DealtCard> createState() => _DealtCardState();
+}
+
+class _DealtCardState extends State<_DealtCard> {
+  bool _faceUp = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(widget.delay, () {
+      if (mounted) setState(() => _faceUp = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FlipCardView(
+      card: widget.card,
+      faceUp: _faceUp,
+      width: widget.width,
     );
   }
 }
