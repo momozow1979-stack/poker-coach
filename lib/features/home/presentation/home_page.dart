@@ -12,13 +12,17 @@ import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/tag_chip.dart';
 import '../../coach/application/coach_providers.dart';
 import '../../coach/domain/coach_message.dart';
+import '../../hand_trainer/application/trainer_providers.dart';
 import '../../onboarding/application/onboarding_providers.dart';
 import '../../profile/application/learning_providers.dart';
 import '../../quiz/application/quiz_providers.dart';
 import '../../quiz/domain/quiz_category.dart';
 import 'widgets/coach_message_card.dart';
 import 'widgets/daily_quiz_card.dart';
+import 'widgets/growth_score_card.dart';
 import 'widgets/home_header.dart';
+import 'widgets/learning_roadmap_card.dart';
+import 'widgets/trainer_spotlight_card.dart';
 import 'widgets/weekly_reflection_card.dart';
 
 /// ホーム画面。
@@ -33,6 +37,7 @@ class HomePage extends ConsumerWidget {
     final briefing = ref.watch(coachBriefingProvider);
     final reviews = ref.watch(handReviewHistoryProvider);
     final onboarding = ref.watch(onboardingAnswersProvider);
+    final todayScenario = ref.watch(todayScenarioProvider);
 
     final weakCategories = stats.weakCategories();
     // 苦手分野がまだ検出できていない間は、オンボーディングで選んだ
@@ -55,9 +60,34 @@ class HomePage extends ConsumerWidget {
             FadeSlideIn(
               child: HomeHeader(profile: profile, stats: stats),
             ),
-            const SizedBox(height: AppSpacing.xl),
+            if (todayScenario != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              FadeSlideIn(
+                delay: const Duration(milliseconds: 60),
+                child: TrainerSpotlightCard(
+                  scenario: todayScenario,
+                  onTap: () {
+                    ref
+                        .read(trainerSessionProvider.notifier)
+                        .start(todayScenario.id);
+                    context.go(AppRoutes.trainerPlay(todayScenario.id));
+                  },
+                ),
+              ),
+            ],
+            const SizedBox(height: AppSpacing.lg),
             FadeSlideIn(
-              delay: const Duration(milliseconds: 80),
+              delay: const Duration(milliseconds: 100),
+              child: AppCard(child: GrowthScoreCard(stats: stats)),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 120),
+              child: AppCard(child: LearningRoadmapCard(stats: stats)),
+            ),
+            const SizedBox(height: AppSpacing.lg),
+            FadeSlideIn(
+              delay: const Duration(milliseconds: 140),
               child: DailyQuizCard(
                 session: session,
                 onStart: () => context.go(AppRoutes.quiz),
