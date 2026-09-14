@@ -52,7 +52,7 @@ class DailyQuizCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.lg),
           LabeledProgressBar(
             label: isFinished
-                ? '正解 ${session.correctCount} 問（正答率 ${(session.accuracy * 100).round()}%）'
+                ? '正解 ${session.correctCount} 問 ・ 正答率 ${(session.accuracy * 100).round()}%'
                 : '毎日10分で強くなる',
             value: session.progress,
           ),

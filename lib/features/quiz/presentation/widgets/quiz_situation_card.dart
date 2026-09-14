@@ -49,7 +49,7 @@ class QuizSituationCard extends StatelessWidget {
           ),
           if (situation.board.isNotEmpty) ...[
             const SizedBox(height: AppSpacing.lg),
-            _FieldLabel('ボード（${situation.street.label}）'),
+            _FieldLabel('${situation.street.label}のボード'),
             const SizedBox(height: AppSpacing.sm),
             PlayingCardRow(
               cards: situation.board,

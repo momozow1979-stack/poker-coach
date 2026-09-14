@@ -163,7 +163,7 @@ class RangePage extends ConsumerWidget {
               ),
               const SizedBox(height: AppSpacing.md),
               const Text(
-                'オープンレイズと vs Open（直前のポジションのオープンへの対応）は '
+                'オープンレイズと、直前のポジションのオープンに対応する vs Open は '
                 '切り替えられるようになりました。vs 3Bet / vs 4Bet は今後のアップデートで対応します。',
                 style: TextStyle(fontSize: 12, color: AppColors.textMuted),
               ),

@@ -99,7 +99,7 @@ class TrainerStageCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _FieldLabel('ボード（${spot.street.label}）'),
+                      _FieldLabel('${spot.street.label}のボード'),
                       const SizedBox(height: AppSpacing.sm),
                       PlayingCardRow(
                         cards: board,

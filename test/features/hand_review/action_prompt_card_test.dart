@@ -43,7 +43,7 @@ void main() {
   testWidgets('誰の番かを選ばせず、ポジションつきで示す', (tester) async {
     await _pump(tester, _promptFrom(_base()), (_, _) {});
 
-    expect(find.textContaining('BTN（あなた）の番です'), findsOneWidget);
+    expect(find.textContaining('BTN・あなたの番です'), findsOneWidget);
     // 相手かどうかを選ぶ切り替えは無い。
     expect(find.byType(SegmentedButton<bool>), findsNothing);
   });

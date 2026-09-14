@@ -133,7 +133,7 @@ class HandReviewPage extends ConsumerWidget {
               ),
             ),
             FormSection(
-              title: '相手のハンド（任意）',
+              title: '相手のハンド',
               subtitle: 'ショーダウンで見えたときだけ。入れると勝率まで出せます',
               child: CardSlotRow(
                 cards: input.villainHand,
@@ -149,7 +149,7 @@ class HandReviewPage extends ConsumerWidget {
               ),
             ),
             FormSection(
-              title: '相手の特徴（任意）',
+              title: '相手の特徴',
               subtitle: '実戦調整のコメントが変わります',
               child: ChoiceChipGroup<VillainProfile>(
                 values: VillainProfile.values,
@@ -191,7 +191,7 @@ class HandReviewPage extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             FormSection(
-              title: '迷ったポイント（任意）',
+              title: '迷ったポイント',
               subtitle: '入力しなくてもレビューできます',
               child: TextField(
                 maxLines: 3,

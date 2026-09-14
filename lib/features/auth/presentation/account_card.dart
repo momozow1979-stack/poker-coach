@@ -194,7 +194,7 @@ class _SyncStatusLine extends StatelessWidget {
       ),
       SyncPhase.syncing => ('同期中…', AppColors.info),
       SyncPhase.synced || SyncPhase.failed || SyncPhase.offline => (
-        '未同期 ${status.pendingCount} 件（この端末には保存済み）',
+        '未同期 ${status.pendingCount} 件 ・ この端末には保存済み',
         AppColors.warning,
       ),
       SyncPhase.idle => ('この端末に保存中', AppColors.textMuted),
