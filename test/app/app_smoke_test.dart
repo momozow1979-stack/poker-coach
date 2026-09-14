@@ -48,17 +48,19 @@ void main() {
   testWidgets('ホームが表示され、5つのタブが並ぶ', (tester) async {
     await _pumpApp(tester);
 
-    expect(find.text('今日の10問'), findsWidgets);
+    await _scrollTo(tester, find.textContaining('今日の10問'));
+    expect(find.textContaining('今日の10問'), findsWidgets);
     expect(find.text('AIコーチ'), findsOneWidget);
     for (final label in ['ホーム', '学習', 'レンジ', 'レビュー', 'マイページ']) {
       expect(find.text(label), findsWidgets, reason: label);
     }
   });
 
-  testWidgets('ホームの「今日の10問を始める」からクイズへ遷移する', (tester) async {
+  testWidgets('ホームの「今日の10問」カードからクイズへ遷移する', (tester) async {
     await _pumpApp(tester);
 
-    await tester.tap(find.text('今日の10問を始める'));
+    await _scrollTo(tester, find.textContaining('今日の10問'));
+    await tester.tap(find.textContaining('今日の10問').first);
     await tester.pumpAndSettle();
 
     expect(find.text('1 / 10'), findsOneWidget);

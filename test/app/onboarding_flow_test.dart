@@ -22,6 +22,20 @@ Future<void> _pumpApp(WidgetTester tester, KeyValueStore store) async {
   await tester.pumpAndSettle();
 }
 
+/// 画面外にある要素が見つかるまでリストをスクロールする。
+Future<void> _scrollTo(WidgetTester tester, Finder finder) async {
+  for (var attempt = 0; attempt < 30; attempt++) {
+    if (finder.evaluate().isNotEmpty) {
+      await tester.ensureVisible(finder.first);
+      await tester.pumpAndSettle();
+      return;
+    }
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -260));
+    await tester.pumpAndSettle();
+  }
+  fail('要素が見つかりませんでした: $finder');
+}
+
 void main() {
   testWidgets('初回起動はオンボーディングへリダイレクトされ、タブは出ない', (tester) async {
     await _pumpApp(tester, InMemoryKeyValueStore());
@@ -55,7 +69,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // ホームへ遷移し、タブが出る。
-    expect(find.text('今日の10問'), findsWidgets);
+    await _scrollTo(tester, find.textContaining('今日の10問'));
+    expect(find.textContaining('今日の10問'), findsWidgets);
     for (final label in ['ホーム', '学習', 'レンジ', 'レビュー', 'マイページ']) {
       expect(find.text(label), findsWidgets, reason: label);
     }
@@ -74,6 +89,7 @@ void main() {
     await _pumpApp(tester, store);
 
     expect(find.text('今のポーカーの実力を教えてください'), findsNothing);
-    expect(find.text('今日の10問'), findsWidgets);
+    await _scrollTo(tester, find.textContaining('今日の10問'));
+    expect(find.textContaining('今日の10問'), findsWidgets);
   });
 }
