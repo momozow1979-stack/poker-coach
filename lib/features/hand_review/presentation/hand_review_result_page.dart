@@ -172,7 +172,7 @@ class _ResultBody extends StatelessWidget {
         ),
         CollapsibleSection(
           icon: Icons.sports_esports_rounded,
-          title: '実戦調整（相手: ${input.villainProfile.label}）',
+          title: '実戦調整 ・ 相手: ${input.villainProfile.label}',
           body: result.practicalAdjustment,
           accent: AppColors.warning,
         ),

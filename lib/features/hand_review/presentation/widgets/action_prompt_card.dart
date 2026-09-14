@@ -127,7 +127,7 @@ class _ActionPromptCardState extends State<ActionPromptCard> {
               Expanded(
                 child: Text(
                   '${prompt.street.label}：'
-                  '${prompt.position.label}（${prompt.actorLabel}）の番です',
+                  '${prompt.position.label}・${prompt.actorLabel}の番です',
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w800,
@@ -197,7 +197,7 @@ class _Situation extends StatelessWidget {
     final parts = <String>[
       if (pot != null) 'ポット ${HandAction.formatBb(pot)}BB',
       if (toCall != null) 'コールに ${HandAction.formatBb(toCall)}BB',
-      if (pot == null) 'ポットは不明（額を入れると計算されます）',
+      if (pot == null) ...['ポットは不明', '額を入れると計算されます'],
     ];
 
     // ブラインドを埋めるだけの場面では、ポットオッズの話をしない。

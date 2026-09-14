@@ -251,7 +251,7 @@ class _RangeFrequencyCard extends StatelessWidget {
               const SizedBox(width: AppSpacing.sm),
               Expanded(
                 child: Text(
-                  'レンジ表での ${data.hand.code}（${data.spotTitle}）',
+                  'レンジ表での ${data.hand.code} ・ ${data.spotTitle}',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,

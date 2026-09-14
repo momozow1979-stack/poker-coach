@@ -123,27 +123,37 @@ class SupabaseAuthGateway implements AuthGateway {
 
   @override
   Future<void> signInWithGoogle() async {
+    // 匿名セッション中は「サインイン」ではなく「リンク」にする。
+    //
+    // signInWithOAuth は常に新規／既存の別アカウントへの切り替えとして扱われ、
+    // この端末のまだ登録していない学習履歴が失われる（[registerEmail] が
+    // user_id を維持して昇格するのとは対照的）。匿名のまま Google を
+    // linkIdentity で足すことで、registerEmail と同じ「昇格」にする。
+    //
+    // Supabase 側で Authentication → Settings → 「Allow manual linking」
+    // を有効にしていないと、linkIdentity は manual_linking_disabled で失敗する。
+    final isAnonymous = _client.auth.currentUser?.isAnonymous ?? false;
+
     try {
-      // Web はデフォルト（現在のページに戻る）に任せ、モバイルだけカスタム
-      // スキームで戻す。ブラウザ／外部アプリを開くだけで、この呼び出し自体は
-      // 成功か失敗（起動できたか）しか分からない——実際のサインインは
-      // ユーザーがGoogle側の操作を終えてこのアプリに戻ってきたときに
-      // [changes]（`onAuthStateChange` 経由）で分かる。
-      await _client.auth.signInWithOAuth(
-        OAuthProvider.google,
-        redirectTo: kIsWeb ? null : _mobileRedirectUrl,
-      );
+      if (isAnonymous) {
+        await _client.auth.linkIdentity(
+          OAuthProvider.google,
+          redirectTo: kIsWeb ? null : _mobileRedirectUrl,
+        );
+      } else {
+        // Web はデフォルト（現在のページに戻る）に任せ、モバイルだけカスタム
+        // スキームで戻す。ブラウザ／外部アプリを開くだけで、この呼び出し自体は
+        // 成功か失敗（起動できたか）しか分からない——実際のサインインは
+        // ユーザーがGoogle側の操作を終えてこのアプリに戻ってきたときに
+        // [changes]（`onAuthStateChange` 経由）で分かる。
+        await _client.auth.signInWithOAuth(
+          OAuthProvider.google,
+          redirectTo: kIsWeb ? null : _mobileRedirectUrl,
+        );
+      }
       _lastFailure = null;
     } on AuthException catch (error) {
-      final failure = AuthFailure(
-        friendlyErrorMessage(
-          error.message,
-          offline:
-              'いまネットワークに接続できていません。'
-              '通信できる場所で、もう一度お試しください。',
-          fallback: 'Googleログインを開始できませんでした（${error.message}）。',
-        ),
-      );
+      final failure = AuthFailure(_linkOrSignInMessage(error));
       _lastFailure = failure;
       throw failure;
     } catch (error) {
@@ -159,6 +169,26 @@ class SupabaseAuthGateway implements AuthGateway {
       _lastFailure = failure;
       throw failure;
     }
+  }
+
+  String _linkOrSignInMessage(AuthException error) {
+    return switch (error.code) {
+      'manual_linking_disabled' =>
+        'Supabase側で「Googleアカウントを今のデータに追加する」設定'
+            '（Authentication → Settings → Allow manual linking）が'
+            '有効になっていません。有効にしてから、もう一度お試しください。',
+      'identity_already_exists' =>
+        'このGoogleアカウントは既に別のデータと紐づいています。'
+            'この端末の記録とは別のアカウントとして扱われるため、'
+            'いったんログアウトしてから、そのGoogleアカウントでログインし直してください。',
+      _ => friendlyErrorMessage(
+        error.message,
+        offline:
+            'いまネットワークに接続できていません。'
+            '通信できる場所で、もう一度お試しください。',
+        fallback: 'Googleログインを開始できませんでした（${error.message}）。',
+      ),
+    };
   }
 
   @override

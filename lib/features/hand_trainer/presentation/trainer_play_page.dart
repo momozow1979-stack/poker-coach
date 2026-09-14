@@ -301,7 +301,7 @@ class _SpotViewState extends State<_SpotView> {
           const SizedBox(height: AppSpacing.md),
           CollapsibleSection(
             icon: Icons.tips_and_updates_outlined,
-            title: 'ヒントを見る（答えは書いていません）',
+            title: 'ヒントを見る',
             body: spot.hint!,
             accent: AppColors.warning,
           ),

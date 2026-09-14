@@ -148,7 +148,7 @@ class _HandCards extends StatelessWidget {
     return Column(
       children: [
         _PlayerRow(
-          label: '相手（${hand.villainPosition.label}）',
+          label: '相手 ${hand.villainPosition.label}',
           cardWidgets: [
             for (var i = 0; i < hand.villainCards.length; i++)
               FlipCardView(
@@ -177,7 +177,7 @@ class _HandCards extends StatelessWidget {
           ),
         const SizedBox(height: AppSpacing.md),
         _PlayerRow(
-          label: 'あなた（${hand.heroPosition.label}）',
+          label: 'あなた ${hand.heroPosition.label}',
           cardWidgets: [
             for (var i = 0; i < hand.heroCards.length; i++)
               _DealtCard(
@@ -305,8 +305,8 @@ class _ResultBanner extends StatelessWidget {
     final won = hand.winner == Actor.hero;
     final label = hand.winner == null ? '引き分け' : (won ? 'あなたの勝ち' : 'あなたの負け');
     final reason = hand.endedByFold
-        ? '（相手のフォールド）'
-        : (hand.winner == null ? '（ショーダウンで分け）' : '（ショーダウン）');
+        ? '相手のフォールド'
+        : (hand.winner == null ? 'ショーダウンで分け' : 'ショーダウン');
 
     return Container(
       margin: const EdgeInsets.only(top: AppSpacing.md),
@@ -318,7 +318,7 @@ class _ResultBanner extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            '$label $reason',
+            '$label ・ $reason',
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: AppSpacing.xs),

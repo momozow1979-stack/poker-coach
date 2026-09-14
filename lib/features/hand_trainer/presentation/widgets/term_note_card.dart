@@ -47,7 +47,7 @@ class _TermNoteCardState extends State<TermNoteCard> {
               ),
               const SizedBox(width: AppSpacing.sm),
               const Text(
-                '言葉の意味（タップ）',
+                '言葉の意味',
                 style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
