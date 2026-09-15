@@ -9,6 +9,7 @@ import '../../../shared/models/position.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/choice_chip_group.dart';
 import '../../../shared/widgets/fade_slide_in.dart';
+import '../../../shared/widgets/learning_mode_bar.dart';
 import '../../../shared/widgets/playing_card_view.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/tag_chip.dart';
@@ -29,6 +30,27 @@ class _TrainerListPageState extends ConsumerState<TrainerListPage> {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('ハンドトレーナー'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded),
+          onPressed: () => context.go(AppRoutes.quiz),
+        ),
+      ),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            const LearningModeBar(current: LearningMode.trainer),
+            Expanded(child: _buildList()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildList() {
     final scenarios = ref.watch(trainerScenariosProvider);
 
     // 実際にシナリオがあるポジションだけをフィルタの選択肢にする。
@@ -43,84 +65,67 @@ class _TrainerListPageState extends ConsumerState<TrainerListPage> {
               .where((scenario) => scenario.heroPosition == _positionFilter)
               .toList();
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('ハンドトレーナー'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          onPressed: () => context.go(AppRoutes.quiz),
-        ),
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(
+        AppSpacing.lg,
+        AppSpacing.md,
+        AppSpacing.lg,
+        AppSpacing.xxl,
       ),
-      body: SafeArea(
-        top: false,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(
-            AppSpacing.lg,
-            AppSpacing.md,
-            AppSpacing.lg,
-            AppSpacing.xxl,
-          ),
-          children: [
-            AppCard(
-              color: AppColors.surfaceHigh,
-              child: const Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.info_outline_rounded,
-                    size: 18,
-                    color: AppColors.info,
-                  ),
-                  SizedBox(width: AppSpacing.md),
-                  Expanded(
-                    child: Text(
-                      '1本のハンドを、プリフロップからリバーまで順に進みます。'
-                      '各ストリートで「あなたならどうするか」を選ぶと、その場で解説が出ます。',
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.7,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            const SectionHeader(title: 'ポジションで絞り込む'),
-            const SizedBox(height: AppSpacing.md),
-            ChoiceChipGroup<Position?>(
-              values: [null, ...availablePositions],
-              selected: _positionFilter,
-              labelBuilder: (position) => position?.label ?? 'すべて',
-              onSelected: (position) =>
-                  setState(() => _positionFilter = position),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            // 難易度ごとにまとめる。10本を1列に並べるだけだと、
-            // 初心者が「どれから始めればいいか」で止まってしまう。
-            for (final difficulty in TrainerDifficulty.values)
-              ..._section(
-                context,
-                ref,
-                difficulty: difficulty,
-                scenarios: filtered
-                    .where((scenario) => scenario.difficulty == difficulty)
-                    .toList(),
-              ),
-            if (filtered.isEmpty)
-              AppCard(
+      children: [
+        AppCard(
+          color: AppColors.surfaceHigh,
+          child: const Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.info_outline_rounded, size: 18, color: AppColors.info),
+              SizedBox(width: AppSpacing.md),
+              Expanded(
                 child: Text(
-                  'このポジションのハンドはまだありません。',
-                  style: const TextStyle(
+                  '1本のハンドを、プリフロップからリバーまで順に進みます。'
+                  '各ストリートで「あなたならどうするか」を選ぶと、その場で解説が出ます。',
+                  style: TextStyle(
                     fontSize: 13,
+                    height: 1.7,
                     color: AppColors.textSecondary,
                   ),
                 ),
               ),
-          ],
+            ],
+          ),
         ),
-      ),
+        const SizedBox(height: AppSpacing.lg),
+        const SectionHeader(title: 'ポジションで絞り込む'),
+        const SizedBox(height: AppSpacing.md),
+        ChoiceChipGroup<Position?>(
+          values: [null, ...availablePositions],
+          selected: _positionFilter,
+          labelBuilder: (position) => position?.label ?? 'すべて',
+          onSelected: (position) => setState(() => _positionFilter = position),
+        ),
+        const SizedBox(height: AppSpacing.lg),
+        // 難易度ごとにまとめる。10本を1列に並べるだけだと、
+        // 初心者が「どれから始めればいいか」で止まってしまう。
+        for (final difficulty in TrainerDifficulty.values)
+          ..._section(
+            context,
+            ref,
+            difficulty: difficulty,
+            scenarios: filtered
+                .where((scenario) => scenario.difficulty == difficulty)
+                .toList(),
+          ),
+        if (filtered.isEmpty)
+          AppCard(
+            child: Text(
+              'このポジションのハンドはまだありません。',
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }

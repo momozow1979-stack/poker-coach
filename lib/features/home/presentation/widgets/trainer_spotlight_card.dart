@@ -14,10 +14,14 @@ class TrainerSpotlightCard extends StatelessWidget {
     super.key,
     required this.scenario,
     required this.onTap,
+    required this.onBrowseAll,
   });
 
   final TrainerScenario scenario;
   final VoidCallback onTap;
+
+  /// 「他のハンドを選ぶ」で一覧（ポジション絞り込み含む）へ。
+  final VoidCallback onBrowseAll;
 
   @override
   Widget build(BuildContext context) {
@@ -115,6 +119,14 @@ class TrainerSpotlightCard extends StatelessWidget {
                     ),
                     icon: const Icon(Icons.play_arrow_rounded),
                     label: const Text('このハンドを進める'),
+                  ),
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                Center(
+                  child: TextButton(
+                    onPressed: onBrowseAll,
+                    style: TextButton.styleFrom(foregroundColor: Colors.white),
+                    child: const Text('他のハンドを選ぶ'),
                   ),
                 ),
               ],
