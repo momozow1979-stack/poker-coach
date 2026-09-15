@@ -281,7 +281,7 @@ void main() {
     await tester.tap(find.text('学習'));
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('ハンドトレーナー'));
+    await tester.tap(find.text('ハンドトレーナー'));
     await tester.pumpAndSettle();
     expect(find.text('ハンドトレーナー'), findsWidgets);
 
@@ -308,7 +308,7 @@ void main() {
 
     await tester.tap(find.text('学習'));
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('ハンドトレーナー'));
+    await tester.tap(find.text('ハンドトレーナー'));
     await tester.pumpAndSettle();
 
     final scenario = const BundledTrainerRepository().all().first;

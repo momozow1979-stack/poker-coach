@@ -6,6 +6,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../shared/models/playing_card.dart';
 import '../../../shared/models/poker_action.dart';
 import '../../../shared/widgets/flip_card_view.dart';
+import '../../../shared/widgets/learning_mode_bar.dart';
 import '../../../shared/widgets/poker_table_view.dart';
 import '../../hand_review/domain/hand_flow.dart' show Actor;
 import '../application/practice_providers.dart';
@@ -52,9 +53,18 @@ class _PracticeTablePageState extends ConsumerState<PracticeTablePage> {
           ),
         ],
       ),
-      body: snapshot == null
-          ? const Center(child: CircularProgressIndicator())
-          : SafeArea(child: _PracticeBody(snapshot: snapshot)),
+      body: SafeArea(
+        child: Column(
+          children: [
+            const LearningModeBar(current: LearningMode.practice),
+            Expanded(
+              child: snapshot == null
+                  ? const Center(child: CircularProgressIndicator())
+                  : _PracticeBody(snapshot: snapshot),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

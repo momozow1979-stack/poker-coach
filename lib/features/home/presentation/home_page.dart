@@ -72,6 +72,7 @@ class HomePage extends ConsumerWidget {
                         .start(todayScenario.id);
                     context.go(AppRoutes.trainerPlay(todayScenario.id));
                   },
+                  onBrowseAll: () => context.go(AppRoutes.trainer),
                 ),
               ),
             ],

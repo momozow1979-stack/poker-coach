@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../shared/widgets/learning_mode_bar.dart';
 import '../../range_chart/application/range_providers.dart';
 import '../application/quiz_providers.dart';
 import 'widgets/quiz_session_view.dart';
@@ -23,18 +24,6 @@ class QuizPage extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('今日の10問'),
-        actions: [
-          IconButton(
-            tooltip: 'AI相手に練習',
-            onPressed: () => context.go(AppRoutes.practiceTable),
-            icon: const Icon(Icons.smart_toy_outlined),
-          ),
-          IconButton(
-            tooltip: 'ハンドトレーナー',
-            onPressed: () => context.go(AppRoutes.trainer),
-            icon: const Icon(Icons.sports_esports_outlined),
-          ),
-        ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(28),
           child: Padding(
@@ -71,21 +60,28 @@ class QuizPage extends ConsumerWidget {
       ),
       body: SafeArea(
         top: false,
-        child: quiz == null
-            ? QuizSummaryView(
-                session: session,
-                onRestart: controller.restart,
-                onNewSet: controller.newSet,
-                onGoHome: () => context.go(AppRoutes.home),
-                onOpenTrainer: () => context.go(AppRoutes.trainer),
-              )
-            : QuizSessionView(
-                quiz: quiz,
-                selectedChoiceId: session.revealedChoiceId,
-                onAnswer: controller.answer,
-                onNext: controller.next,
-                onOpenRange: (spotId) => _openRange(context, ref, spotId),
-              ),
+        child: Column(
+          children: [
+            const LearningModeBar(current: LearningMode.quiz),
+            Expanded(
+              child: quiz == null
+                  ? QuizSummaryView(
+                      session: session,
+                      onRestart: controller.restart,
+                      onNewSet: controller.newSet,
+                      onGoHome: () => context.go(AppRoutes.home),
+                      onOpenTrainer: () => context.go(AppRoutes.trainer),
+                    )
+                  : QuizSessionView(
+                      quiz: quiz,
+                      selectedChoiceId: session.revealedChoiceId,
+                      onAnswer: controller.answer,
+                      onNext: controller.next,
+                      onOpenRange: (spotId) => _openRange(context, ref, spotId),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
