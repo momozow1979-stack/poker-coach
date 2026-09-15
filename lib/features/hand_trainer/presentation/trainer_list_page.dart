@@ -5,7 +5,9 @@ import 'package:go_router/go_router.dart';
 import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../shared/models/position.dart';
 import '../../../shared/widgets/app_card.dart';
+import '../../../shared/widgets/choice_chip_group.dart';
 import '../../../shared/widgets/fade_slide_in.dart';
 import '../../../shared/widgets/playing_card_view.dart';
 import '../../../shared/widgets/section_header.dart';
@@ -14,12 +16,32 @@ import '../application/trainer_providers.dart';
 import '../domain/trainer_scenario.dart';
 
 /// トレーニングできるハンドの一覧。
-class TrainerListPage extends ConsumerWidget {
+class TrainerListPage extends ConsumerStatefulWidget {
   const TrainerListPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TrainerListPage> createState() => _TrainerListPageState();
+}
+
+class _TrainerListPageState extends ConsumerState<TrainerListPage> {
+  /// null は「すべてのポジション」。
+  Position? _positionFilter;
+
+  @override
+  Widget build(BuildContext context) {
     final scenarios = ref.watch(trainerScenariosProvider);
+
+    // 実際にシナリオがあるポジションだけをフィルタの選択肢にする。
+    final availablePositions = [
+      for (final position in Position.values)
+        if (scenarios.any((scenario) => scenario.heroPosition == position))
+          position,
+    ];
+    final filtered = _positionFilter == null
+        ? scenarios
+        : scenarios
+              .where((scenario) => scenario.heroPosition == _positionFilter)
+              .toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -65,6 +87,16 @@ class TrainerListPage extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
+            const SectionHeader(title: 'ポジションで絞り込む'),
+            const SizedBox(height: AppSpacing.md),
+            ChoiceChipGroup<Position?>(
+              values: [null, ...availablePositions],
+              selected: _positionFilter,
+              labelBuilder: (position) => position?.label ?? 'すべて',
+              onSelected: (position) =>
+                  setState(() => _positionFilter = position),
+            ),
+            const SizedBox(height: AppSpacing.lg),
             // 難易度ごとにまとめる。10本を1列に並べるだけだと、
             // 初心者が「どれから始めればいいか」で止まってしまう。
             for (final difficulty in TrainerDifficulty.values)
@@ -72,9 +104,19 @@ class TrainerListPage extends ConsumerWidget {
                 context,
                 ref,
                 difficulty: difficulty,
-                scenarios: scenarios
+                scenarios: filtered
                     .where((scenario) => scenario.difficulty == difficulty)
                     .toList(),
+              ),
+            if (filtered.isEmpty)
+              AppCard(
+                child: Text(
+                  'このポジションのハンドはまだありません。',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
               ),
           ],
         ),
