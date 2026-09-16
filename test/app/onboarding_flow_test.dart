@@ -69,8 +69,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // ホームへ遷移し、タブが出る。
-    await _scrollTo(tester, find.textContaining('今日の10問'));
-    expect(find.textContaining('今日の10問'), findsWidgets);
+    await _scrollTo(tester, find.textContaining('今日の重点問題'));
+    expect(find.textContaining('今日の重点問題'), findsWidgets);
     for (final label in ['ホーム', '学習', 'レンジ', 'レビュー', 'マイページ']) {
       expect(find.text(label), findsWidgets, reason: label);
     }
@@ -89,7 +89,7 @@ void main() {
     await _pumpApp(tester, store);
 
     expect(find.text('今のポーカーの実力を教えてください'), findsNothing);
-    await _scrollTo(tester, find.textContaining('今日の10問'));
-    expect(find.textContaining('今日の10問'), findsWidgets);
+    await _scrollTo(tester, find.textContaining('今日の重点問題'));
+    expect(find.textContaining('今日の重点問題'), findsWidgets);
   });
 }

@@ -1,24 +1,23 @@
 import '../../profile/domain/learning_stats.dart';
 import 'quiz_category.dart';
 
-/// 学習ロードマップの 3 ステージ。
+/// 学習プランの5ステージ。
 ///
-/// 既存の 11 カテゴリを「基礎／ポストフロップ／応用」に束ねて、
-/// 「今どこにいて、次に何を学ぶか」を地図として見せる。
+/// 既存の11カテゴリを「覚えるべき分野」で束ねて、
+/// 「今どこにいて、次に何を学ぶか」を見せる。
+/// 以前は3ステージで、街の進行（フロップ/ターン/リバー）と
+/// 計算系の話（ポットオッズ/ベットサイズ）を1段階に混ぜていたが、
+/// 性質の違う分野が混在してわかりにくかったため5段階に分け直した。
 enum LearningStage {
-  foundations('基礎', [
-    QuizCategory.preflop,
-    QuizCategory.position,
-    QuizCategory.terminology,
-  ]),
-  postflop('ポストフロップ', [
+  basics('基礎知識', [QuizCategory.position, QuizCategory.terminology]),
+  preflop('プリフロップ', [QuizCategory.preflop]),
+  boardReading('ボードの見極め', [
     QuizCategory.flop,
     QuizCategory.turn,
     QuizCategory.river,
-    QuizCategory.potOdds,
-    QuizCategory.betSizing,
   ]),
-  advanced('応用', [
+  math('数字で考える', [QuizCategory.potOdds, QuizCategory.betSizing]),
+  advanced('応用・駆け引き', [
     QuizCategory.valueBluff,
     QuizCategory.gto,
     QuizCategory.exploit,
@@ -42,4 +41,8 @@ enum LearningStage {
     }
     return (correct: correct, total: total);
   }
+
+  /// [category] が属するステージ。
+  static LearningStage forCategory(QuizCategory category) =>
+      values.firstWhere((stage) => stage.categories.contains(category));
 }
