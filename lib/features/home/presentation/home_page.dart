@@ -9,21 +9,18 @@ import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/fade_slide_in.dart';
 import '../../../shared/widgets/section_header.dart';
-import '../../../shared/widgets/tag_chip.dart';
 import '../../coach/application/coach_providers.dart';
 import '../../coach/domain/coach_message.dart';
 import '../../hand_trainer/application/trainer_providers.dart';
 import '../../onboarding/application/onboarding_providers.dart';
 import '../../profile/application/learning_providers.dart';
 import '../../quiz/application/quiz_providers.dart';
-import '../../quiz/domain/quiz_category.dart';
 import 'widgets/coach_message_card.dart';
 import 'widgets/daily_quiz_card.dart';
-import 'widgets/growth_score_card.dart';
 import 'widgets/home_header.dart';
 import 'widgets/learning_roadmap_card.dart';
 import 'widgets/trainer_spotlight_card.dart';
-import 'widgets/weekly_reflection_card.dart';
+import 'widgets/weak_areas_block.dart';
 
 /// ホーム画面。
 class HomePage extends ConsumerWidget {
@@ -44,7 +41,7 @@ class HomePage extends ConsumerWidget {
     // 「学びたい分野」を代わりに見せる。どちらも同じカテゴリ別クイズへ導く。
     final usingFocusFallback = weakCategories.isEmpty;
     final focusCategories = usingFocusFallback
-        ? (onboarding?.focusCategories ?? const <QuizCategory>[])
+        ? (onboarding?.focusCategories ?? const [])
         : weakCategories;
 
     return Scaffold(
@@ -60,103 +57,69 @@ class HomePage extends ConsumerWidget {
             FadeSlideIn(
               child: HomeHeader(profile: profile, stats: stats),
             ),
-            if (todayScenario != null) ...[
+            if (briefing.of(CoachMessageType.focus) case final focus?) ...[
               const SizedBox(height: AppSpacing.lg),
               FadeSlideIn(
                 delay: const Duration(milliseconds: 60),
-                child: TrainerSpotlightCard(
-                  scenario: todayScenario,
-                  onTap: () {
-                    ref
-                        .read(trainerSessionProvider.notifier)
-                        .start(todayScenario.id);
-                    context.go(AppRoutes.trainerPlay(todayScenario.id));
-                  },
-                  onBrowseAll: () => context.go(AppRoutes.trainer),
+                child: CoachMessageCard(
+                  message: focus,
+                  icon: Icons.center_focus_strong_rounded,
+                  accent: AppColors.info,
                 ),
               ),
             ],
             const SizedBox(height: AppSpacing.lg),
             FadeSlideIn(
               delay: const Duration(milliseconds: 100),
-              child: AppCard(child: GrowthScoreCard(stats: stats)),
-            ),
-            const SizedBox(height: AppSpacing.lg),
-            FadeSlideIn(
-              delay: const Duration(milliseconds: 120),
-              child: AppCard(child: LearningRoadmapCard(stats: stats)),
+              child: IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: DailyQuizCard(
+                        session: session,
+                        onStart: () => context.go(AppRoutes.quiz),
+                      ),
+                    ),
+                    if (todayScenario != null) ...[
+                      const SizedBox(width: AppSpacing.md),
+                      Expanded(
+                        child: TrainerSpotlightCard(
+                          scenario: todayScenario,
+                          onTap: () {
+                            ref
+                                .read(trainerSessionProvider.notifier)
+                                .start(todayScenario.id);
+                            context.go(AppRoutes.trainerPlay(todayScenario.id));
+                          },
+                          onBrowseAll: () => context.go(AppRoutes.trainer),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: AppSpacing.lg),
             FadeSlideIn(
               delay: const Duration(milliseconds: 140),
-              child: DailyQuizCard(
-                session: session,
-                onStart: () => context.go(AppRoutes.quiz),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.xl),
-            const SectionHeader(
-              title: 'AIコーチ',
-              subtitle: '学習履歴から今日のテーマを選んでいます',
-            ),
-            const SizedBox(height: AppSpacing.md),
-            if (briefing.of(CoachMessageType.daily) case final daily?)
-              CoachMessageCard(message: daily),
-            const SizedBox(height: AppSpacing.md),
-            if (briefing.of(CoachMessageType.focus) case final focus?)
-              CoachMessageCard(
-                message: focus,
-                icon: Icons.center_focus_strong_rounded,
-                accent: AppColors.info,
-              ),
-            const SizedBox(height: AppSpacing.xl),
-            const SectionHeader(title: '今週の振り返り'),
-            const SizedBox(height: AppSpacing.md),
-            WeeklyReflectionCard(stats: stats),
-            const SizedBox(height: AppSpacing.xl),
-            SectionHeader(
-              title: usingFocusFallback && focusCategories.isNotEmpty
-                  ? '学びたい分野'
-                  : '苦手分野',
-              subtitle: focusCategories.isEmpty
-                  ? '各カテゴリ3問以上で判定されます'
-                  : usingFocusFallback
-                  ? 'オンボーディングで選んだ分野です。タップすると復習できます'
-                  : 'ここを直すと全体が伸びます。タップすると復習できます',
-              action: TextButton(
-                onPressed: () => context.go(AppRoutes.profile),
-                child: const Text('詳しく'),
-              ),
-            ),
-            const SizedBox(height: AppSpacing.md),
-            AppCard(
-              child: focusCategories.isEmpty
-                  ? const Text(
-                      'まだ苦手分野は検出されていません。今日の10問を解き進めると自動で見つかります。',
-                      style: TextStyle(
-                        fontSize: 13,
-                        height: 1.6,
-                        color: AppColors.textSecondary,
-                      ),
-                    )
-                  : Wrap(
-                      spacing: AppSpacing.sm,
-                      runSpacing: AppSpacing.sm,
-                      children: [
-                        for (final category in focusCategories)
-                          TagChip(
-                            label: category.label,
-                            color: usingFocusFallback
-                                ? AppColors.info
-                                : AppColors.danger,
-                            icon: usingFocusFallback
-                                ? Icons.school_rounded
-                                : Icons.priority_high_rounded,
-                            onTap: () =>
-                                context.go(AppRoutes.categoryQuiz(category.id)),
-                          ),
-                      ],
+              child: AppCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    WeakAreasBlock(
+                      categories: focusCategories,
+                      usingFallback: usingFocusFallback,
+                      onCategoryTap: (category) =>
+                          context.go(AppRoutes.categoryQuiz(category.id)),
                     ),
+                    const SizedBox(height: AppSpacing.lg),
+                    const Divider(height: 1, color: AppColors.border),
+                    const SizedBox(height: AppSpacing.lg),
+                    LearningRoadmapCard(stats: stats),
+                  ],
+                ),
+              ),
             ),
             const SizedBox(height: AppSpacing.xl),
             SectionHeader(

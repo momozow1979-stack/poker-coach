@@ -1,4 +1,5 @@
 import 'package:ai_poker_coach/app/app.dart';
+import 'package:ai_poker_coach/features/home/presentation/widgets/weak_areas_block.dart';
 import 'package:ai_poker_coach/features/profile/application/learning_providers.dart';
 import 'package:ai_poker_coach/features/quiz/domain/quiz_category.dart';
 import 'package:ai_poker_coach/features/quiz/presentation/widgets/quiz_choice_button.dart';
@@ -48,8 +49,14 @@ void main() {
     expect(find.text('学びたい分野'), findsOneWidget);
     expect(find.text('プリフロップ'), findsWidgets);
 
-    await _scrollTo(tester, find.text('プリフロップ').last);
-    await tester.tap(find.text('プリフロップ').last);
+    // 学習プランのステージ名にも同じ「プリフロップ」という文言が出るため、
+    // WeakAreasBlock（苦手分野のチップ）の中だけに絞って探す。
+    final chip = find.descendant(
+      of: find.byType(WeakAreasBlock),
+      matching: find.text('プリフロップ'),
+    );
+    await _scrollTo(tester, chip);
+    await tester.tap(chip);
     await tester.pumpAndSettle();
 
     expect(find.text('プリフロップを復習'), findsOneWidget);

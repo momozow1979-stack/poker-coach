@@ -6,12 +6,14 @@ import '../../../profile/domain/learning_stats.dart';
 import '../../../quiz/domain/learning_stage.dart';
 
 const _stageColors = {
-  LearningStage.foundations: AppColors.accent,
-  LearningStage.postflop: AppColors.info,
+  LearningStage.basics: AppColors.accent,
+  LearningStage.preflop: AppColors.reward,
+  LearningStage.boardReading: AppColors.info,
+  LearningStage.math: AppColors.rangeCall,
   LearningStage.advanced: AppColors.rangeThreeBet,
 };
 
-/// 全11カテゴリを3ステージに束ねた学習ロードマップ。
+/// 全11カテゴリを5ステージに束ねた学習プラン。
 ///
 /// 表示するのは「そのステージで今まで答えた分の正答率」で、
 /// カテゴリの出題プール全体をどれだけ消化したかではない
@@ -33,22 +35,9 @@ class LearningRoadmapCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text(
-              '学習ロードマップ',
-              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-            ),
-            const Text(
-              '全11カテゴリ',
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: AppColors.textMuted,
-              ),
-            ),
-          ],
+        const Text(
+          '学習プラン',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
         ),
         for (var i = 0; i < LearningStage.values.length; i++)
           _StageRow(
@@ -169,14 +158,18 @@ class _StageRow extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  stage.categoryLabels,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textMuted,
+                // ステージ名がカテゴリ内訳と同じ文言になる場合（1カテゴリだけの
+                // ステージ）は、同じ言葉を2回出さないよう内訳を省く。
+                if (stage.categoryLabels != stage.label) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    stage.categoryLabels,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textMuted,
+                    ),
                   ),
-                ),
+                ],
                 const SizedBox(height: 7),
                 ClipRRect(
                   borderRadius: BorderRadius.circular(999),

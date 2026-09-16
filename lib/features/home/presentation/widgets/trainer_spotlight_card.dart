@@ -4,11 +4,13 @@ import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../hand_trainer/domain/trainer_scenario.dart';
 
-/// ホーム画面の看板。ハンドトレーナー（ウォークスルー）への入り口。
+/// ホームの「今日の重点問題」と横並びになる、ウォークスルーへの入り口。
 ///
-/// 「プレイして、あとで振り返る」のではなく、各ストリートでその場で
-/// 考え方を支えるウォークスルーこそがこのアプリの本体、という方針に
-/// 合わせて、今日の10問より上・より大きく置く。
+/// 「ウォークスルーピックアップ」という名前で、日付だけを基準に
+/// 全シナリオを順番に回している選び方であることを見せる
+/// （苦手分野には未対応 — [todayScenarioProvider] 参照）。
+/// [scenario.goal] を添えることで、このハンドで何を判断させたいのかを
+/// タイトルだけでは伝わらない部分まで一言で示す。
 class TrainerSpotlightCard extends StatelessWidget {
   const TrainerSpotlightCard({
     super.key,
@@ -40,75 +42,43 @@ class TrainerSpotlightCard extends StatelessWidget {
             ),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.lg),
+            padding: const EdgeInsets.all(AppSpacing.md),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 7,
-                      height: 7,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF7CE8A0),
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF7CE8A0)
-                                .withValues(alpha: 0.35),
-                            blurRadius: 6,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: AppSpacing.sm),
-                    const Text(
-                      '今日のウォークスルー',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.6,
-                        color: Color(0xFFD9F2E1),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                Text(
-                  scenario.title,
-                  style: const TextStyle(
-                    fontSize: 19,
+                const Text(
+                  'ウォークスルーピックアップ',
+                  style: TextStyle(
+                    fontSize: 10.5,
                     fontWeight: FontWeight.w800,
-                    height: 1.4,
-                    color: Colors.white,
+                    letterSpacing: 0.4,
+                    color: Color(0xFFD9F2E1),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.xs),
                 Text(
+                  scenario.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    height: 1.35,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
                   scenario.goal,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontSize: 12.5,
-                    height: 1.8,
+                    fontSize: 11,
+                    height: 1.5,
                     color: Colors.white.withValues(alpha: 0.88),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.md),
-                Wrap(
-                  spacing: AppSpacing.sm,
-                  runSpacing: AppSpacing.sm,
-                  children: [
-                    _Tag(
-                      scenario.difficulty.label,
-                      background: AppColors.reward,
-                      foreground: const Color(0xFF3A1E00),
-                    ),
-                    _Tag(scenario.positionLabel),
-                    _Tag(scenario.boardStyle.label),
-                    _Tag('🎴 ${scenario.spotCount}つの判断'),
-                  ],
-                ),
-                const SizedBox(height: AppSpacing.lg),
+                const SizedBox(height: AppSpacing.sm),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
@@ -116,49 +86,33 @@ class TrainerSpotlightCard extends StatelessWidget {
                     style: FilledButton.styleFrom(
                       backgroundColor: Colors.white,
                       foregroundColor: AppColors.accentDark,
+                      padding: const EdgeInsets.symmetric(
+                        vertical: AppSpacing.sm,
+                      ),
                     ),
-                    icon: const Icon(Icons.play_arrow_rounded),
-                    label: const Text('このハンドを進める'),
+                    icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                    label: const Text('進める', style: TextStyle(fontSize: 12)),
                   ),
                 ),
-                const SizedBox(height: AppSpacing.sm),
+                const SizedBox(height: 4),
                 Center(
                   child: TextButton(
                     onPressed: onBrowseAll,
-                    style: TextButton.styleFrom(foregroundColor: Colors.white),
-                    child: const Text('他のハンドを選ぶ'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: const Text(
+                      '他のハンドを選ぶ',
+                      style: TextStyle(fontSize: 11),
+                    ),
                   ),
                 ),
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag(this.label, {this.background, this.foreground});
-
-  final String label;
-  final Color? background;
-  final Color? foreground;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: background ?? Colors.white.withValues(alpha: 0.16),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10.5,
-          fontWeight: FontWeight.w700,
-          color: foreground ?? Colors.white,
         ),
       ),
     );
