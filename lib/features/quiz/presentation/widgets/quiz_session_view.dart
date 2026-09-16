@@ -50,9 +50,22 @@ class _QuizSessionViewState extends State<QuizSessionView> {
   bool _showConfetti = false;
   Timer? _confettiHideTimer;
 
+  // 正解がいつも同じ位置（特に先頭）に来ないよう、表示順は問題ごとに
+  // シャッフルする。回答後に選び直すわけではないので、この問題を表示
+  // している間はビルドのたびに並び替わらないよう state に固定する。
+  late String _shuffledQuizId = widget.quiz.id;
+  late List<QuizChoice> _displayChoices = _shuffled(widget.quiz.choices);
+
+  static List<QuizChoice> _shuffled(List<QuizChoice> choices) =>
+      List<QuizChoice>.of(choices)..shuffle();
+
   @override
   void didUpdateWidget(covariant QuizSessionView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.quiz.id != _shuffledQuizId) {
+      _shuffledQuizId = widget.quiz.id;
+      _displayChoices = _shuffled(widget.quiz.choices);
+    }
     // 「未回答 → 正解」に変わった瞬間だけ祝う。誤答や、既に表示済みの
     // 問題を再ビルドしただけのときには鳴らさない。
     final justAnsweredCorrectly =
@@ -116,18 +129,19 @@ class _QuizSessionViewState extends State<QuizSessionView> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            for (var i = 0; i < quiz.choices.length; i++)
+            for (var i = 0; i < _displayChoices.length; i++)
               FadeSlideIn(
                 // 問題が変わるたびに選択肢が順に立ち上がる。
-                key: ValueKey('${quiz.id}-${quiz.choices[i].id}'),
+                key: ValueKey('${quiz.id}-${_displayChoices[i].id}'),
                 delay: Duration(milliseconds: 60 * i),
                 child: QuizChoiceButton(
-                  label: quiz.choices[i].label,
-                  actionType: quiz.choices[i].actionType,
+                  label: _displayChoices[i].label,
+                  actionType: _displayChoices[i].actionType,
                   isRevealed: isRevealed,
-                  isCorrectChoice: quiz.choices[i].id == quiz.correctChoiceId,
-                  isSelected: quiz.choices[i].id == selectedChoiceId,
-                  onTap: () => widget.onAnswer(quiz.choices[i].id),
+                  isCorrectChoice:
+                      _displayChoices[i].id == quiz.correctChoiceId,
+                  isSelected: _displayChoices[i].id == selectedChoiceId,
+                  onTap: () => widget.onAnswer(_displayChoices[i].id),
                 ),
               ),
             if (isRevealed) ...[

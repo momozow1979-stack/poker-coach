@@ -16,6 +16,7 @@ import 'package:ai_poker_coach/shared/models/starting_hand.dart';
 import 'package:ai_poker_coach/shared/models/street.dart';
 import 'package:ai_poker_coach/shared/models/table_type.dart';
 import 'package:ai_poker_coach/shared/widgets/action_frequency_bar.dart';
+import 'package:ai_poker_coach/shared/widgets/collapsible_section.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -97,6 +98,7 @@ Future<void> _pump(
   WidgetTester tester,
   Quiz quiz, {
   RangeRepository? repositoryOverride,
+  bool isCorrect = true,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -108,7 +110,7 @@ Future<void> _pump(
         theme: AppTheme.light(),
         home: Scaffold(
           body: SingleChildScrollView(
-            child: QuizExplanationView(quiz: quiz, isCorrect: true),
+            child: QuizExplanationView(quiz: quiz, isCorrect: isCorrect),
           ),
         ),
       ),
@@ -298,6 +300,51 @@ void main() {
             '食い違う決断にまで無理に頻度バーを出してしまっています'
             '（force-fit しない方針に反します）',
       );
+    });
+  });
+
+  group('QuizExplanationView の「つまずきやすいポイント」', () {
+    // CollapsibleSection の中身は AnimatedCrossFade で常にツリーに
+    // マウントされ続ける（畳んでいる間も find.text では見つかる）ため、
+    // 「開いているか」は crossFadeState で確認する。
+    CrossFadeState mistakeSectionState(WidgetTester tester) {
+      final section = find.byWidgetPredicate(
+        (w) => w is CollapsibleSection && w.title == 'つまずきやすいポイント',
+      );
+      final crossFade = tester.widget<AnimatedCrossFade>(
+        find.descendant(of: section, matching: find.byType(AnimatedCrossFade)),
+      );
+      return crossFade.crossFadeState;
+    }
+
+    testWidgets('見出しは「よくある初心者のミス」ではなく「つまずきやすいポイント」', (tester) async {
+      final quiz = _quizWith(correctActionType: PokerActionType.raise);
+
+      await _pump(tester, quiz);
+
+      expect(find.text('つまずきやすいポイント'), findsOneWidget);
+      expect(find.text('よくある初心者のミス'), findsNothing);
+    });
+
+    testWidgets('不正解のときは、開かなくても本文が最初から見えている', (tester) async {
+      final quiz = _quizWith(correctActionType: PokerActionType.raise);
+
+      await _pump(tester, quiz, isCorrect: false);
+
+      expect(mistakeSectionState(tester), CrossFadeState.showSecond);
+    });
+
+    testWidgets('正解のときは、タップするまで畳まれたまま', (tester) async {
+      final quiz = _quizWith(correctActionType: PokerActionType.raise);
+
+      await _pump(tester, quiz, isCorrect: true);
+
+      expect(mistakeSectionState(tester), CrossFadeState.showFirst);
+
+      await tester.tap(find.text('つまずきやすいポイント'));
+      await tester.pumpAndSettle();
+
+      expect(mistakeSectionState(tester), CrossFadeState.showSecond);
     });
   });
 }

@@ -17,7 +17,9 @@ import '../../domain/quiz_category.dart';
 /// 回答後の解説。
 ///
 /// 最初に見せるのは「正解かどうか」と「短い理由」だけにして、
-/// GTO / 実戦 / よくあるミスは畳んでおく。
+/// GTO / 実戦は畳んでおく。ただし不正解だったときは、「つまずきやすい
+/// ポイント」だけは開かなくても最初から読めるようにする
+/// （どこで間違えたのかにすぐ気づけるように）。
 class QuizExplanationView extends ConsumerWidget {
   const QuizExplanationView({
     super.key,
@@ -65,9 +67,11 @@ class QuizExplanationView extends ConsumerWidget {
         ),
         CollapsibleSection(
           icon: Icons.error_outline_rounded,
-          title: isTerm ? 'よくある勘違い' : 'よくある初心者のミス',
+          title: isTerm ? 'よくある勘違い' : 'つまずきやすいポイント',
           body: explanation.commonMistake,
           accent: AppColors.danger,
+          // 不正解だったときは、開かなくても最初から見える状態にする。
+          initiallyExpanded: !isCorrect,
         ),
         if (onOpenRange != null) ...[
           const SizedBox(height: AppSpacing.sm),
