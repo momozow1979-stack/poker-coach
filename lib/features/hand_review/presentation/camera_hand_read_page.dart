@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../app/router.dart';
 import '../application/hand_review_providers.dart';
 import '../domain/camera_hand_assignment.dart';
+import 'camera_capture_screen.dart';
 
 /// テーブル写真からカードを読み取り、役割を確認・修正してレビュー入力に反映する画面。
 ///
@@ -26,19 +28,38 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
   List<String> _warnings = [];
   String _error = '';
 
-  Future<void> _capture(ImageSource source) async {
+  /// アプリ内カメラ（撮影ガイド付き）で撮る。Web は未対応なので
+  /// image_picker のカメラにフォールバックする。
+  Future<void> _openInAppCamera() async {
+    if (kIsWeb) {
+      await _pick(ImageSource.camera);
+      return;
+    }
+    final navigator = Navigator.of(context);
+    final bytes = await navigator.push<Uint8List>(
+      MaterialPageRoute(builder: (_) => const CameraCaptureScreen()),
+    );
+    if (bytes == null || !mounted) return;
+    await _process(bytes, 'image/jpeg');
+  }
+
+  /// ギャラリー等から写真を選ぶ。
+  Future<void> _pick(ImageSource source) async {
+    final picker = ImagePicker();
+    final file = await picker.pickImage(source: source, imageQuality: 85);
+    if (file == null || !mounted) return;
+    final bytes = await file.readAsBytes();
+    if (!mounted) return;
+    final mediaType = file.name.toLowerCase().endsWith('.png')
+        ? 'image/png'
+        : 'image/jpeg';
+    await _process(bytes, mediaType);
+  }
+
+  /// 画像を Edge Function にかけて確認画面へ。
+  Future<void> _process(Uint8List bytes, String mediaType) async {
     setState(() => _phase = _Phase.loading);
     try {
-      final picker = ImagePicker();
-      final file = await picker.pickImage(source: source, imageQuality: 85);
-      if (file == null) {
-        setState(() => _phase = _Phase.intro);
-        return;
-      }
-      final bytes = await file.readAsBytes();
-      final mediaType = file.name.toLowerCase().endsWith('.png')
-          ? 'image/png'
-          : 'image/jpeg';
       final result = await ref
           .read(cameraHandReadRepositoryProvider)
           .read(imageBytes: bytes, mediaType: mediaType);
@@ -101,13 +122,13 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: () => _capture(ImageSource.camera),
+            onPressed: _openInAppCamera,
             icon: const Icon(Icons.photo_camera_outlined),
             label: const Text('カメラで撮影'),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: () => _capture(ImageSource.gallery),
+            onPressed: () => _pick(ImageSource.gallery),
             icon: const Icon(Icons.image_outlined),
             label: const Text('写真を選ぶ'),
           ),

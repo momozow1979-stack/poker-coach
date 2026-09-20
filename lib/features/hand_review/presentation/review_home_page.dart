@@ -44,10 +44,55 @@ class ReviewHomePage extends ConsumerWidget {
             ),
             const SizedBox(height: AppSpacing.md),
             FadeSlideIn(
-              child: OutlinedButton.icon(
-                onPressed: () => context.go(AppRoutes.reviewCamera),
-                icon: const Icon(Icons.photo_camera_outlined),
-                label: const Text('写真から読み取る'),
+              child: AppCard(
+                onTap: () => context.go(AppRoutes.reviewCamera),
+                borderColor: AppColors.accent.withValues(alpha: 0.4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.accent.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(
+                          AppSpacing.radiusSm + 2,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.photo_camera_rounded,
+                        size: 24,
+                        color: AppColors.accent,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.md),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '写真から読み取る',
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          SizedBox(height: 2),
+                          Text(
+                            'テーブルを1枚撮るだけでカードを自動入力',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AppColors.textSecondary,
+                    ),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: AppSpacing.xl),
