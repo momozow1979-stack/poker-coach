@@ -1,4 +1,5 @@
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -28,13 +29,9 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
   List<String> _warnings = [];
   String _error = '';
 
-  /// アプリ内カメラ（撮影ガイド付き）で撮る。Web は未対応なので
-  /// image_picker のカメラにフォールバックする。
+  /// アプリ内カメラ（撮影ガイド付き）で撮る。モバイルもWeb(スマホのブラウザ)も
+  /// camera パッケージのライブプレビューを使い、ガイドの枠を重ねる。
   Future<void> _openInAppCamera() async {
-    if (kIsWeb) {
-      await _pick(ImageSource.camera);
-      return;
-    }
     final navigator = Navigator.of(context);
     final bytes = await navigator.push<Uint8List>(
       MaterialPageRoute(builder: (_) => const CameraCaptureScreen()),
