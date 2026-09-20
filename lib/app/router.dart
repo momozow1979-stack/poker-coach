@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/hand_review/presentation/camera_hand_read_page.dart';
 import '../features/hand_review/presentation/hand_review_page.dart';
 import '../features/hand_review/presentation/hand_review_result_page.dart';
 import '../features/hand_review/presentation/review_home_page.dart';
@@ -42,6 +43,9 @@ abstract final class AppRoutes {
   /// 自分のハンドを入力してレビューする画面。
   static const reviewInput = '/review/input';
   static const reviewResult = '/review/input/result';
+
+  /// カメラでテーブル写真を撮ってハンドを読み取る画面。
+  static const reviewCamera = '/review/camera';
 
   /// 過去のレビュー結果を、履歴から開いたときの画面。
   static String reviewHistoryDetail(String recordId) =>
@@ -146,6 +150,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                             const HandReviewResultPage(),
                       ),
                     ],
+                  ),
+                  GoRoute(
+                    path: 'camera',
+                    builder: (context, state) => const CameraHandReadPage(),
                   ),
                   GoRoute(
                     path: 'history/:recordId',

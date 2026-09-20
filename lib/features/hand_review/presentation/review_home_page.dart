@@ -42,6 +42,14 @@ class ReviewHomePage extends ConsumerWidget {
                 onTap: () => context.go(AppRoutes.reviewInput),
               ),
             ),
+            const SizedBox(height: AppSpacing.md),
+            FadeSlideIn(
+              child: OutlinedButton.icon(
+                onPressed: () => context.go(AppRoutes.reviewCamera),
+                icon: const Icon(Icons.photo_camera_outlined),
+                label: const Text('写真から読み取る'),
+              ),
+            ),
             const SizedBox(height: AppSpacing.xl),
             SectionHeader(
               title: 'レビュー履歴',
