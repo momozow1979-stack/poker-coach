@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../shared/models/playing_card.dart';
 import '../../../shared/models/poker_action.dart';
@@ -7,12 +8,14 @@ import '../../../shared/models/street.dart';
 import '../../../shared/models/table_type.dart';
 import '../../profile/application/learning_providers.dart';
 import '../../range_chart/application/range_providers.dart';
+import '../domain/camera_hand_read_repository.dart';
 import '../domain/hand_flow.dart';
 import '../domain/hand_review_input.dart';
 import '../domain/hand_review_record.dart';
 import '../domain/hand_review_repository.dart';
 import '../domain/solved_spot_repository.dart';
 import '../infrastructure/asset_solved_spot_repository.dart';
+import '../infrastructure/edge_function_camera_hand_read_repository.dart';
 import '../infrastructure/mock_hand_review_repository.dart';
 
 final solvedSpotRepositoryProvider = Provider<SolvedSpotRepository>(
@@ -24,6 +27,11 @@ final handReviewRepositoryProvider = Provider<HandReviewRepository>(
     ref.watch(rangeRepositoryProvider),
     ref.watch(solvedSpotRepositoryProvider),
   ),
+);
+
+/// カメラでテーブル写真からカードを読む口。Edge Function `/read-hand` 経由。
+final cameraHandReadRepositoryProvider = Provider<CameraHandReadRepository>(
+  (ref) => EdgeFunctionCameraHandReadRepository(Supabase.instance.client),
 );
 
 /// ハンドレビューの入力フォーム。すべてタップ操作で更新できるようにする。

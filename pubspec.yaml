@@ -43,6 +43,8 @@ dependencies:
   shared_preferences: ^2.5.5
   flutter_animate: ^4.5.2
   confetti: ^0.8.0
+  # テーブル写真の撮影（カメラ）に使う。読み取りは Edge Function /read-hand。
+  image_picker: ^1.1.2
 
 dev_dependencies:
   flutter_test:
