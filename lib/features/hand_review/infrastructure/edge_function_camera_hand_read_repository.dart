@@ -22,10 +22,7 @@ class EdgeFunctionCameraHandReadRepository implements CameraHandReadRepository {
   }) async {
     final res = await _client.functions.invoke(
       'read-hand',
-      body: {
-        'image_base64': base64Encode(imageBytes),
-        'media_type': mediaType,
-      },
+      body: {'image_base64': base64Encode(imageBytes), 'media_type': mediaType},
     );
     final data = res.data;
     if (data is Map) {

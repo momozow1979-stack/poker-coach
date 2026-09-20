@@ -16,14 +16,19 @@ class MockCameraHandReadRepository implements CameraHandReadRepository {
     required String mediaType,
   }) async {
     await Future<void>.delayed(const Duration(milliseconds: 600));
-    ReadHandCard c(String code, ReadCardRole role, {int? order, int? cluster, double conf = 0.95}) =>
-        ReadHandCard(
-          card: PlayingCard.parse(code),
-          confidence: conf,
-          suggested: role,
-          boardOrder: order,
-          cluster: cluster,
-        );
+    ReadHandCard c(
+      String code,
+      ReadCardRole role, {
+      int? order,
+      int? cluster,
+      double conf = 0.95,
+    }) => ReadHandCard(
+      card: PlayingCard.parse(code),
+      confidence: conf,
+      suggested: role,
+      boardOrder: order,
+      cluster: cluster,
+    );
     return ReadHandResult(
       cards: [
         c('Ah', ReadCardRole.me, conf: 0.98),

@@ -42,30 +42,46 @@ class AssignedCard {
 List<AssignedCard> initialAssignments(ReadHandResult result) {
   final assigned = <AssignedCard>[];
 
-  final board = result.cards
-      .where((c) => c.suggested == ReadCardRole.board)
-      .toList()
-    ..sort((a, b) => (a.boardOrder ?? 1 << 30).compareTo(b.boardOrder ?? 1 << 30));
-  const boardSlots = [HandSlot.flop, HandSlot.flop, HandSlot.flop, HandSlot.turn, HandSlot.river];
+  final board =
+      result.cards.where((c) => c.suggested == ReadCardRole.board).toList()
+        ..sort(
+          (a, b) =>
+              (a.boardOrder ?? 1 << 30).compareTo(b.boardOrder ?? 1 << 30),
+        );
+  const boardSlots = [
+    HandSlot.flop,
+    HandSlot.flop,
+    HandSlot.flop,
+    HandSlot.turn,
+    HandSlot.river,
+  ];
   for (var i = 0; i < board.length; i++) {
-    assigned.add(AssignedCard(
-      card: board[i].card,
-      confidence: board[i].confidence,
-      slot: i < boardSlots.length ? boardSlots[i] : HandSlot.exclude,
-    ));
+    assigned.add(
+      AssignedCard(
+        card: board[i].card,
+        confidence: board[i].confidence,
+        slot: i < boardSlots.length ? boardSlots[i] : HandSlot.exclude,
+      ),
+    );
   }
 
   for (final c in result.cards.where((c) => c.suggested == ReadCardRole.me)) {
-    assigned.add(AssignedCard(card: c.card, confidence: c.confidence, slot: HandSlot.hero));
+    assigned.add(
+      AssignedCard(card: c.card, confidence: c.confidence, slot: HandSlot.hero),
+    );
   }
 
-  for (final c in result.cards.where((c) => c.suggested == ReadCardRole.villain)) {
-    assigned.add(AssignedCard(
-      card: c.card,
-      confidence: c.confidence,
-      slot: HandSlot.villain,
-      villainIndex: c.cluster ?? 1,
-    ));
+  for (final c in result.cards.where(
+    (c) => c.suggested == ReadCardRole.villain,
+  )) {
+    assigned.add(
+      AssignedCard(
+        card: c.card,
+        confidence: c.confidence,
+        slot: HandSlot.villain,
+        villainIndex: c.cluster ?? 1,
+      ),
+    );
   }
 
   return assigned;
@@ -85,10 +101,13 @@ HandReviewInput applyAssignments(
       cards.where((c) => c.slot == slot).map((c) => c.card).take(take).toList();
 
   final villains = cards.where((c) => c.slot == HandSlot.villain).toList();
-  final targetIndex = reviewVillainIndex ??
+  final targetIndex =
+      reviewVillainIndex ??
       (villains.isEmpty
           ? 1
-          : villains.map((c) => c.villainIndex).reduce((a, b) => a < b ? a : b));
+          : villains
+                .map((c) => c.villainIndex)
+                .reduce((a, b) => a < b ? a : b));
   final villainHand = villains
       .where((c) => c.villainIndex == targetIndex)
       .map((c) => c.card)

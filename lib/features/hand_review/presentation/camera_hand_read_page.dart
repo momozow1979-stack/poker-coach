@@ -36,8 +36,9 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
         return;
       }
       final bytes = await file.readAsBytes();
-      final mediaType =
-          file.name.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg';
+      final mediaType = file.name.toLowerCase().endsWith('.png')
+          ? 'image/png'
+          : 'image/jpeg';
       final result = await ref
           .read(cameraHandReadRepositoryProvider)
           .read(imageBytes: bytes, mediaType: mediaType);
@@ -70,12 +71,14 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('写真からハンドを読み取る')),
-      body: SafeArea(child: switch (_phase) {
-        _Phase.intro => _buildIntro(),
-        _Phase.loading => const Center(child: CircularProgressIndicator()),
-        _Phase.error => _buildError(),
-        _Phase.review => _buildReview(),
-      }),
+      body: SafeArea(
+        child: switch (_phase) {
+          _Phase.intro => _buildIntro(),
+          _Phase.loading => const Center(child: CircularProgressIndicator()),
+          _Phase.error => _buildError(),
+          _Phase.review => _buildReview(),
+        },
+      ),
     );
   }
 
@@ -151,7 +154,12 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
                     children: [
                       const Icon(Icons.info_outline, size: 16),
                       const SizedBox(width: 6),
-                      Expanded(child: Text(w, style: Theme.of(context).textTheme.bodySmall)),
+                      Expanded(
+                        child: Text(
+                          w,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
                     ],
                   ),
               ],
@@ -193,34 +201,45 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
     final warn = hasSlotWarning(_assignments);
     final hero = _assignments.where((c) => c.slot == HandSlot.hero).toList();
     final board = _assignments
-        .where((c) =>
-            c.slot == HandSlot.flop ||
-            c.slot == HandSlot.turn ||
-            c.slot == HandSlot.river)
+        .where(
+          (c) =>
+              c.slot == HandSlot.flop ||
+              c.slot == HandSlot.turn ||
+              c.slot == HandSlot.river,
+        )
         .toList();
-    final villainIndexes = _assignments
-        .where((c) => c.slot == HandSlot.villain)
-        .map((c) => c.villainIndex)
-        .toSet()
-        .toList()
-      ..sort();
-    final excluded = _assignments.where((c) => c.slot == HandSlot.exclude).toList();
+    final villainIndexes =
+        _assignments
+            .where((c) => c.slot == HandSlot.villain)
+            .map((c) => c.villainIndex)
+            .toSet()
+            .toList()
+          ..sort();
+    final excluded = _assignments
+        .where((c) => c.slot == HandSlot.exclude)
+        .toList();
 
     return [
       if (warn)
         const Padding(
           padding: EdgeInsets.only(bottom: 8),
-          child: Row(children: [
-            Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
-            SizedBox(width: 6),
-            Expanded(child: Text('枚数が想定と違う行があります。役割を確認してください。')),
-          ]),
+          child: Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 18, color: Colors.orange),
+              SizedBox(width: 6),
+              Expanded(child: Text('枚数が想定と違う行があります。役割を確認してください。')),
+            ],
+          ),
         ),
       _group('自分のハンド', hero),
       _group('場（フロップ→ターン→リバー）', board),
       for (final idx in villainIndexes)
-        _group('相手$idx',
-            _assignments.where((c) => c.slot == HandSlot.villain && c.villainIndex == idx).toList()),
+        _group(
+          '相手$idx',
+          _assignments
+              .where((c) => c.slot == HandSlot.villain && c.villainIndex == idx)
+              .toList(),
+        ),
       if (excluded.isNotEmpty) _group('除外', excluded),
     ];
   }
@@ -265,7 +284,9 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w500,
-              color: isRed ? Colors.red.shade600 : Theme.of(context).colorScheme.onSurface,
+              color: isRed
+                  ? Colors.red.shade600
+                  : Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ),
