@@ -104,5 +104,6 @@
 | POST | `/quiz/answer` | `LearningStore.recordAttempt` |
 | GET | `/range` | `RangeRepository.spotsFor` / `chartFor` |
 | POST | `/review` | `HandReviewRepository.review` |
+| POST | `/read-hand` | カメラ写真からカードを読む（Vision）。詳細は `docs/camera-hand-read.md` |
 | GET | `/review/history` | `handReviewHistoryProvider` |
 | GET | `/coach/today` | `CoachRepository.briefing` |
