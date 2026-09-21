@@ -118,8 +118,7 @@ class VsOpenCell {
   /// 全席が3ベット（＝共通の黒で塗る）。
   final bool commonThreeBet;
 
-  bool get isFold =>
-      callPos == null && threeBetPos == null && !commonThreeBet;
+  bool get isFold => callPos == null && threeBetPos == null && !commonThreeBet;
 
   /// コールする席と3ベットする席が両方ある（ツートン）。
   bool get isSplit => callPos != null && threeBetPos != null;
@@ -135,7 +134,11 @@ VsOpenCell vsOpenCellFor(
   final callers = <Position>[];
   final threeBetters = <Position>[];
   for (final p in positions) {
-    final chart = repo.chartFor(tableType, p, situation: RangeSituation.vsOpen)!;
+    final chart = repo.chartFor(
+      tableType,
+      p,
+      situation: RangeSituation.vsOpen,
+    )!;
     switch (_effective(chart.entryFor(hand))) {
       case RangeAction.call:
         callers.add(p);
@@ -148,11 +151,14 @@ VsOpenCell vsOpenCellFor(
   if (callers.isEmpty && threeBetters.isEmpty) return const VsOpenCell();
 
   // 全席が3ベット（誰もコールしない）＝共通の黒。
-  final common =
-      callers.isEmpty && threeBetters.length == positions.length;
+  final common = callers.isEmpty && threeBetters.length == positions.length;
 
-  final byCallWidth =
-      positionsByWidth(repo, tableType, RangeSituation.vsOpen, RangeAction.call);
+  final byCallWidth = positionsByWidth(
+    repo,
+    tableType,
+    RangeSituation.vsOpen,
+    RangeAction.call,
+  );
   final byThreeWidth = positionsByWidth(
     repo,
     tableType,

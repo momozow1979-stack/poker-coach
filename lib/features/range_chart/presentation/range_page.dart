@@ -117,7 +117,11 @@ class _RangePageState extends ConsumerState<RangePage> {
               children: [
                 for (var col = 0; col < 13; col++)
                   Expanded(
-                    child: _cell(StartingHand.fromGrid(row, col), heatmap, vsMap),
+                    child: _cell(
+                      StartingHand.fromGrid(row, col),
+                      heatmap,
+                      vsMap,
+                    ),
                   ),
               ],
             ),
@@ -234,9 +238,7 @@ class _RangePageState extends ConsumerState<RangePage> {
         SizedBox(
           width: 16,
           height: 16,
-          child: CustomPaint(
-            painter: _LegendSplitPainter(),
-          ),
+          child: CustomPaint(painter: _LegendSplitPainter()),
         ),
         const SizedBox(width: AppSpacing.xs),
         const Text(

@@ -44,7 +44,10 @@ class RangeCell extends StatelessWidget {
         child: CustomPaint(
           painter: solid
               ? null
-              : _DiagonalSplitPainter(topRight: topColor, bottomLeft: bottomColor),
+              : _DiagonalSplitPainter(
+                  topRight: topColor,
+                  bottomLeft: bottomColor,
+                ),
           child: Center(
             child: FittedBox(
               fit: BoxFit.scaleDown,
@@ -78,7 +81,10 @@ class RangeCell extends StatelessWidget {
 
 /// 左上→右下の対角線で 2 色に塗り分ける。右上が [topRight]、左下が [bottomLeft]。
 class _DiagonalSplitPainter extends CustomPainter {
-  const _DiagonalSplitPainter({required this.topRight, required this.bottomLeft});
+  const _DiagonalSplitPainter({
+    required this.topRight,
+    required this.bottomLeft,
+  });
 
   final Color topRight;
   final Color bottomLeft;

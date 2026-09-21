@@ -106,10 +106,7 @@ class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 child: Center(
-                  child: AspectRatio(
-                    aspectRatio: 1,
-                    child: _grid(repo),
-                  ),
+                  child: AspectRatio(aspectRatio: 1, child: _grid(repo)),
                 ),
               ),
             ),
@@ -409,7 +406,9 @@ class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
             : SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _hasPaint ? () => setState(() => _graded = true) : null,
+                  onPressed: _hasPaint
+                      ? () => setState(() => _graded = true)
+                      : null,
                   child: const Text('回答する'),
                 ),
               ),
