@@ -60,6 +60,11 @@ class HandReviewPage extends ConsumerWidget {
           onPressed: () => context.go(AppRoutes.review),
         ),
         actions: [
+          IconButton(
+            tooltip: '写真から読み取る',
+            onPressed: () => context.go(AppRoutes.reviewCamera),
+            icon: const Icon(Icons.photo_camera_outlined),
+          ),
           if (history.isNotEmpty)
             IconButton(
               tooltip: '履歴',
