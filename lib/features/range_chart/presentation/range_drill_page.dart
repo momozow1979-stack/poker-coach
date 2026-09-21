@@ -3,17 +3,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
+import '../../../shared/models/position.dart';
 import '../../../shared/models/starting_hand.dart';
-import '../../../shared/widgets/app_card.dart';
+import '../../../shared/models/table_type.dart';
 import '../application/range_providers.dart';
 import '../domain/range_action.dart';
 import '../domain/range_entry.dart';
+import '../domain/range_spot.dart';
 
-/// レンジ表暗記ドリル（目隠し）。
+/// レンジ表暗記ドリル（塗って採点）。
 ///
-/// 表を隠した状態でハンドを1つずつ出し、正しいアクションを当てる。
-/// 正解は現在選択中のレンジ表（[selectedRangeChartProvider]）から引く。
-/// Mixed（複数アクションを混ぜる手）は正解が一つに定まらないので当面は出題しない。
+/// 「シチュエーション（オープン / vsオープン）× ポジション × アクション」を選び、
+/// 13×13 のマスをポチポチ塗って、最後に「回答する」で正誤を採点する。
+/// Mixed は廃止し、境界のハンドは主アクション（blend.primary）に畳んで単一正解にする。
 class RangeDrillPage extends ConsumerStatefulWidget {
   const RangeDrillPage({super.key});
 
@@ -22,290 +24,319 @@ class RangeDrillPage extends ConsumerStatefulWidget {
 }
 
 class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
-  static const _order = [
-    RangeAction.raise,
-    RangeAction.threeBet,
-    RangeAction.fourBet,
-    RangeAction.call,
-    RangeAction.fold,
-  ];
+  TableType _table = TableType.sixMax;
+  RangeSituation _situation = RangeSituation.openRaise;
+  Position? _position;
+  RangeAction _vsAction = RangeAction.call; // vsオープンのとき call / threeBet
+  final Set<StartingHand> _selected = {};
+  bool _graded = false;
 
-  String? _builtForSpotId;
-  List<StartingHand> _queue = [];
-  List<RangeAction> _choices = [];
-  int _index = 0;
-  int _correct = 0;
-  RangeAction? _answer;
+  /// Mixed を廃止し、主アクションに畳む。
+  RangeAction _effective(RangeEntry e) => e.action == RangeAction.mixed
+      ? (e.blend?.primary ?? RangeAction.fold)
+      : e.action;
 
-  bool get _finished => _queue.isNotEmpty && _index >= _queue.length;
+  RangeAction get _target =>
+      _situation == RangeSituation.openRaise ? RangeAction.raise : _vsAction;
 
-  void _build(RangeChart chart) {
-    final nonMixed = StartingHand.all
-        .where((h) => chart.entryFor(h).action != RangeAction.mixed)
-        .toList();
-    final inRange =
-        nonMixed
-            .where((h) => chart.entryFor(h).action != RangeAction.fold)
-            .toList()
-          ..shuffle();
-    final folds =
-        nonMixed
-            .where((h) => chart.entryFor(h).action == RangeAction.fold)
-            .toList()
-          ..shuffle();
-    // レンジ（プレイするハンド）を中心に、境目を学べるようフォールドも少し混ぜる。
-    _queue = <StartingHand>[...inRange.take(16), ...folds.take(8)]..shuffle();
-
-    final present = <RangeAction>{
-      for (final h in inRange) chart.entryFor(h).action,
-    };
-    _choices = [
-      for (final a in _order)
-        if (a == RangeAction.fold || present.contains(a)) a,
+  List<Position> _availablePositions() {
+    final repo = ref.read(rangeRepositoryProvider);
+    return [
+      for (final p in Position.orderFor(_table))
+        if (repo.chartFor(_table, p, situation: _situation) != null) p,
     ];
-
-    _index = 0;
-    _correct = 0;
-    _answer = null;
-    _builtForSpotId = chart.spot.id;
   }
 
-  void _select(RangeAction action, RangeChart chart) {
-    if (_answer != null) return;
-    setState(() {
-      _answer = action;
-      if (action == chart.entryFor(_queue[_index]).action) _correct++;
-    });
+  void _reset() {
+    _selected.clear();
+    _graded = false;
   }
-
-  void _next() => setState(() {
-    _index++;
-    _answer = null;
-  });
 
   @override
   Widget build(BuildContext context) {
-    final chart = ref.watch(selectedRangeChartProvider);
+    final repo = ref.read(rangeRepositoryProvider);
+    final positions = _availablePositions();
+    if (_position == null || !positions.contains(_position)) {
+      _position = positions.isEmpty ? null : positions.first;
+    }
+    final chart = _position == null
+        ? null
+        : repo.chartFor(_table, _position!, situation: _situation);
 
     return Scaffold(
       appBar: AppBar(title: const Text('レンジ表暗記')),
       body: SafeArea(
         child: chart == null
-            ? const Center(child: Text('レンジ表を選んでください。'))
-            : _buildBody(chart),
+            ? const Center(child: Text('出題できるレンジ表がありません。'))
+            : _buildBody(chart, positions),
       ),
     );
   }
 
-  Widget _buildBody(RangeChart chart) {
-    if (_builtForSpotId != chart.spot.id) _build(chart);
-    if (_queue.isEmpty) {
-      return const Center(child: Text('このスポットには出題できるハンドがありません。'));
-    }
-    if (_finished) return _buildSummary(chart);
+  Widget _buildBody(RangeChart chart, List<Position> positions) {
+    final correct = <StartingHand>{
+      for (final h in StartingHand.all)
+        if (_effective(chart.entryFor(h)) == _target) h,
+    };
+    final actionLabel = _target == RangeAction.raise
+        ? 'レイズ'
+        : _target == RangeAction.threeBet
+        ? '3ベット'
+        : 'コール';
 
-    final hand = _queue[_index];
-    final correctAction = chart.entryFor(hand).action;
-
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  chart.spot.title,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${_index + 1} / ${_queue.length}・正解 $_correct',
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textMuted,
-                ),
-              ),
-            ],
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.lg,
+            AppSpacing.md,
+            AppSpacing.lg,
+            0,
           ),
-          const SizedBox(height: AppSpacing.lg),
-          AppCard(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-              child: Column(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _toggleRow<RangeSituation>(
+                values: const [RangeSituation.openRaise, RangeSituation.vsOpen],
+                selected: _situation,
+                labels: const {
+                  RangeSituation.openRaise: 'オープン',
+                  RangeSituation.vsOpen: 'vsオープン',
+                },
+                onSelected: (v) => setState(() {
+                  _situation = v;
+                  _vsAction = RangeAction.call;
+                  _position = null;
+                  _reset();
+                }),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              _toggleRow<TableType>(
+                values: TableType.values,
+                selected: _table,
+                labels: {for (final t in TableType.values) t: t.label},
+                onSelected: (v) => setState(() {
+                  _table = v;
+                  _position = null;
+                  _reset();
+                }),
+              ),
+              const SizedBox(height: AppSpacing.sm),
+              Wrap(
+                spacing: AppSpacing.sm,
+                runSpacing: AppSpacing.xs,
                 children: [
-                  Text(
-                    hand.code,
-                    style: const TextStyle(
-                      fontSize: 44,
-                      fontWeight: FontWeight.w900,
+                  for (final p in positions)
+                    _chip(
+                      p.label,
+                      selected: p == _position,
+                      onTap: () => setState(() {
+                        _position = p;
+                        _reset();
+                      }),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    hand.description,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: AppSpacing.lg),
-          const Text(
-            'このハンドのアクションは？',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: AppSpacing.sm),
-          for (final action in _choices) ...[
-            _ChoiceButton(
-              action: action,
-              answered: _answer != null,
-              isCorrect: action == correctAction,
-              isSelected: action == _answer,
-              onTap: () => _select(action, chart),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-          ],
-          const Spacer(),
-          if (_answer != null)
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: _next,
-                child: Text(_index + 1 >= _queue.length ? '結果を見る' : '次のハンド'),
+              if (_situation == RangeSituation.vsOpen) ...[
+                const SizedBox(height: AppSpacing.sm),
+                _toggleRow<RangeAction>(
+                  values: const [RangeAction.call, RangeAction.threeBet],
+                  selected: _vsAction,
+                  labels: const {
+                    RangeAction.call: 'コール',
+                    RangeAction.threeBet: '3ベット',
+                  },
+                  onSelected: (v) => setState(() {
+                    _vsAction = v;
+                    _reset();
+                  }),
+                ),
+              ],
+              const SizedBox(height: AppSpacing.sm),
+              Text(
+                _graded
+                    ? '正解: 緑 / 塗りすぎ: 赤 / 塗り漏れ: オレンジ'
+                    : '「${_position?.label} の $actionLabelレンジ」だと思うマスを塗って、回答するを押す',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                ),
               ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
+            child: Center(
+              child: AspectRatio(aspectRatio: 1, child: _grid(chart, correct)),
             ),
-        ],
-      ),
+          ),
+        ),
+        _bottomBar(correct),
+      ],
     );
   }
 
-  Widget _buildSummary(RangeChart chart) {
-    final total = _queue.length;
-    final pct = total == 0 ? 0 : (_correct / total * 100).round();
-    return Padding(
-      padding: const EdgeInsets.all(AppSpacing.lg),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            '$total問中 $_correct問正解',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            '正答率 $pct%',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 14,
-              color: AppColors.textSecondary,
+  Widget _grid(RangeChart chart, Set<StartingHand> correct) {
+    return Column(
+      children: [
+        for (var row = 0; row < 13; row++)
+          Expanded(
+            child: Row(
+              children: [
+                for (var col = 0; col < 13; col++)
+                  Expanded(
+                    child: _cell(StartingHand.fromGrid(row, col), correct),
+                  ),
+              ],
             ),
           ),
-          const SizedBox(height: AppSpacing.xl),
-          FilledButton(
-            onPressed: () => setState(() => _build(chart)),
-            child: const Text('もう一度'),
-          ),
-        ],
-      ),
+      ],
     );
   }
-}
 
-class _ChoiceButton extends StatelessWidget {
-  const _ChoiceButton({
-    required this.action,
-    required this.answered,
-    required this.isCorrect,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  final RangeAction action;
-  final bool answered;
-  final bool isCorrect;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    // 未回答は淡い枠、回答後は正解を強調・誤選択を赤枠で示す。
-    Color border = AppColors.border;
-    Color bg = AppColors.surface;
-    if (answered) {
-      if (isCorrect) {
-        border = action.color;
-        bg = action.color.withValues(alpha: 0.14);
-      } else if (isSelected) {
-        border = AppColors.danger;
-        bg = AppColors.danger.withValues(alpha: 0.10);
+  Widget _cell(StartingHand hand, Set<StartingHand> correct) {
+    final isSelected = _selected.contains(hand);
+    Color bg;
+    Color fg = AppColors.textPrimary;
+    if (_graded) {
+      final shouldBe = correct.contains(hand);
+      if (isSelected && shouldBe) {
+        bg = AppColors.rangeCall; // 正解
+        fg = Colors.white;
+      } else if (isSelected && !shouldBe) {
+        bg = AppColors.danger; // 塗りすぎ
+        fg = Colors.white;
+      } else if (!isSelected && shouldBe) {
+        bg = AppColors.reward; // 塗り漏れ
+        fg = Colors.white;
+      } else {
+        bg = AppColors.surface;
+        fg = AppColors.textMuted;
       }
+    } else {
+      bg = isSelected
+          ? _target.color.withValues(alpha: 0.85)
+          : AppColors.surface;
+      if (isSelected) fg = Colors.white;
     }
 
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-      child: InkWell(
-        onTap: answered ? null : onTap,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        child: Container(
-          padding: const EdgeInsets.symmetric(
-            vertical: 14,
-            horizontal: AppSpacing.md,
+    return GestureDetector(
+      onTap: _graded
+          ? null
+          : () => setState(() {
+              if (!_selected.add(hand)) _selected.remove(hand);
+            }),
+      child: Container(
+        margin: const EdgeInsets.all(0.5),
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border.all(color: AppColors.border, width: 0.5),
+        ),
+        alignment: Alignment.center,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.all(2),
+            child: Text(
+              hand.code,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
           ),
-          decoration: BoxDecoration(
-            border: Border.all(color: border, width: answered ? 2 : 1),
-            borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 22,
-                height: 22,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: action == RangeAction.fold
-                      ? AppColors.rangeFold
-                      : action.color.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(
-                  action.symbol,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    color: action == RangeAction.fold
-                        ? AppColors.textMuted
-                        : Colors.white,
-                  ),
+        ),
+      ),
+    );
+  }
+
+  Widget _bottomBar(Set<StartingHand> correct) {
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: _graded
+            ? _result(correct)
+            : SizedBox(
+                width: double.infinity,
+                child: FilledButton(
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () => setState(() => _graded = true),
+                  child: const Text('回答する'),
                 ),
               ),
-              const SizedBox(width: AppSpacing.md),
-              Text(
-                action.label,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              if (answered && isCorrect)
-                Icon(Icons.check_circle, color: action.color, size: 20),
-              if (answered && isSelected && !isCorrect)
-                const Icon(Icons.cancel, color: AppColors.danger, size: 20),
-            ],
+      ),
+    );
+  }
+
+  Widget _result(Set<StartingHand> correct) {
+    final hit = _selected.where(correct.contains).length;
+    final extra = _selected.length - hit;
+    final missed = correct.length - hit;
+    return Column(
+      children: [
+        Text(
+          '正解 $hit / ${correct.length}・塗りすぎ $extra・塗り漏れ $missed',
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: AppSpacing.sm),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton(
+            onPressed: () => setState(_reset),
+            child: const Text('もう一度'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _toggleRow<T>({
+    required List<T> values,
+    required T selected,
+    required Map<T, String> labels,
+    required ValueChanged<T> onSelected,
+  }) {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      children: [
+        for (final v in values)
+          _chip(
+            labels[v] ?? '$v',
+            selected: v == selected,
+            onTap: () => onSelected(v),
+          ),
+      ],
+    );
+  }
+
+  Widget _chip(
+    String label, {
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.accent : AppColors.surface,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: selected ? AppColors.accent : AppColors.border,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: selected ? AppColors.onAccent : AppColors.textSecondary,
           ),
         ),
       ),
