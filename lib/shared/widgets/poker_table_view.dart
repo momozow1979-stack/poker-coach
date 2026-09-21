@@ -299,6 +299,7 @@ class _PokerTablePainter extends CustomPainter {
         canvas,
         PokerTableView.seatCenter(size, i, seats.length, progress),
         seats[i],
+        center,
       );
     }
 
@@ -335,7 +336,12 @@ class _PokerTablePainter extends CustomPainter {
     );
   }
 
-  void _paintSeat(Canvas canvas, Offset seatCenter, Position position) {
+  void _paintSeat(
+    Canvas canvas,
+    Offset seatCenter,
+    Position position,
+    Offset tableCenter,
+  ) {
     final isHero = position == heroPosition;
     final isVillain = position == villainPosition;
 
@@ -378,6 +384,25 @@ class _PokerTablePainter extends CustomPainter {
       fontSize: position.label.length > 3 ? 8.5 : 10,
       weight: FontWeight.w800,
     );
+
+    // 「自分 / 相手」をポジションマークの中央寄り側に添える（注釈ではなく席の直近に）。
+    // 画面端で切れないよう、卓の中心に向く側に置く。
+    if (isHero || isVillain) {
+      final labelAbove = seatCenter.dy > tableCenter.dy;
+      var dy = labelAbove
+          ? -(PokerTableView.seatRadius + 9)
+          : (PokerTableView.seatRadius + 9);
+      // BTN のディーラーボタンは席の上に出るので、上に置くときは重ならないよう更に上へ。
+      if (labelAbove && position == Position.btn) dy -= 12;
+      _paintText(
+        canvas,
+        isHero ? '自分' : '相手',
+        seatCenter + Offset(0, dy),
+        color: isHero ? AppColors.accent : AppColors.info,
+        fontSize: 9,
+        weight: FontWeight.w800,
+      );
+    }
 
     // BTN にはディーラーボタンを添える。
     if (position == Position.btn) {

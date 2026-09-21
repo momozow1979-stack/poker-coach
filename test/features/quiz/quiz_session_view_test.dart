@@ -6,9 +6,9 @@ import 'package:ai_poker_coach/features/quiz/presentation/widgets/quiz_session_v
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-Quiz _quizWithChoices() {
+Quiz _quizWithChoices({String id = 'shuffle-test'}) {
   return Quiz(
-    id: 'shuffle-test',
+    id: id,
     category: QuizCategory.preflop,
     difficulty: QuizDifficulty.beginner,
     question: 'テスト問題',
@@ -66,8 +66,10 @@ void main() {
     testWidgets('正解の選択肢が毎回同じ位置（先頭）には固定されない', (tester) async {
       var sawNonFirst = false;
 
+      // 本体は「同じ問題IDなら並びを固定」する仕様なので、毎回異なるIDで
+      // 出題して、実際に再シャッフルが起きる状況で検証する。
       for (var i = 0; i < 30; i++) {
-        await _pump(tester, _quizWithChoices());
+        await _pump(tester, _quizWithChoices(id: 'shuffle-$i'));
         final buttons = tester
             .widgetList<QuizChoiceButton>(find.byType(QuizChoiceButton))
             .toList();
