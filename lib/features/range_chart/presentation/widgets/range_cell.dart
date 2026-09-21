@@ -44,10 +44,7 @@ class RangeCell extends StatelessWidget {
         child: CustomPaint(
           painter: solid
               ? null
-              : _DiagonalSplitPainter(
-                  topRight: topColor,
-                  bottomLeft: bottomColor,
-                ),
+              : _DiagonalSplitPainter(top: topColor, bottom: bottomColor),
           child: Center(
             child: FittedBox(
               fit: BoxFit.scaleDown,
@@ -79,15 +76,13 @@ class RangeCell extends StatelessWidget {
   }
 }
 
-/// 左上→右下の対角線で 2 色に塗り分ける。右上が [topRight]、左下が [bottomLeft]。
+/// 左下がり（/）の対角線で 2 色に塗り分ける。
+/// 分割線は右上(w,0)→左下(0,h)。上側（左上の三角）が [top]、下側（右下の三角）が [bottom]。
 class _DiagonalSplitPainter extends CustomPainter {
-  const _DiagonalSplitPainter({
-    required this.topRight,
-    required this.bottomLeft,
-  });
+  const _DiagonalSplitPainter({required this.top, required this.bottom});
 
-  final Color topRight;
-  final Color bottomLeft;
+  final Color top;
+  final Color bottom;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -95,23 +90,23 @@ class _DiagonalSplitPainter extends CustomPainter {
     final w = size.width;
     final h = size.height;
 
-    // 右上の三角形: (0,0)-(w,0)-(w,h)
-    paint.color = topRight;
+    // 上側（左上）の三角形: (0,0)-(w,0)-(0,h)
+    paint.color = top;
     canvas.drawPath(
       Path()
         ..moveTo(0, 0)
         ..lineTo(w, 0)
-        ..lineTo(w, h)
+        ..lineTo(0, h)
         ..close(),
       paint,
     );
-    // 左下の三角形: (0,0)-(0,h)-(w,h)
-    paint.color = bottomLeft;
+    // 下側（右下）の三角形: (w,0)-(w,h)-(0,h)
+    paint.color = bottom;
     canvas.drawPath(
       Path()
-        ..moveTo(0, 0)
-        ..lineTo(0, h)
+        ..moveTo(w, 0)
         ..lineTo(w, h)
+        ..lineTo(0, h)
         ..close(),
       paint,
     );
@@ -119,5 +114,5 @@ class _DiagonalSplitPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_DiagonalSplitPainter old) =>
-      old.topRight != topRight || old.bottomLeft != bottomLeft;
+      old.top != top || old.bottom != bottom;
 }
