@@ -93,6 +93,7 @@ flutter:
   # 捏造ではない実測値だけが入っている（solver/BENCHMARKS.md 参照）。
   assets:
     - assets/solved_spots/solved_spots.json
+    - assets/gto/solved_srp_btn_bb.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
