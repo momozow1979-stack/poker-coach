@@ -29,6 +29,23 @@ abstract final class PreflopRangeQuizzes {
   static const RangeRepository _repo = MockRangeRepository();
   static const _table = TableType.sixMax;
 
+  /// 全ハンドタイプ（ペア / スーテッドエース / ブロードウェイ / コネクター /
+  /// オフスート）を強弱まんべんなく含む「教材ハンド」。どのスポットにも共通で
+  /// 出題して、レンジの全体像（開ける端・降りる端）を体で覚えられるようにする。
+  /// 各スポットの境界（mixed）ハンドと合わせて出題する。
+  static const List<String> _canonical = [
+    // ペア
+    'AA', 'QQ', 'TT', '88', '66', '44', '22',
+    // スーテッドエース
+    'AKs', 'AQs', 'ATs', 'A5s', 'A2s',
+    // ブロードウェイ
+    'KQs', 'KJs', 'QJs', 'JTs', 'KQo', 'AJo', 'KJo', 'QTo',
+    // スーテッドコネクター / ギャッパー
+    'T9s', '98s', '87s', '65s',
+    // オフスート（開ける端〜降りる端）
+    'A9o', 'KTo', 'J9o', '98o', '72o', 'J4o',
+  ];
+
   static final List<Quiz> _quizzes = _generate();
 
   /// mixed（境界）は主アクションに畳む。
@@ -96,16 +113,7 @@ abstract final class PreflopRangeQuizzes {
     final hero = spot.heroPosition;
     final behind = _seatsBehind(hero);
     final openSize = _rangeSize(chart, RangeAction.raise);
-    final hands = _pick(chart, const [
-      'AA',
-      'AKs',
-      'KQs',
-      'A5s',
-      'KJo',
-      '72o',
-      'J4o',
-      'T6o',
-    ]);
+    final hands = _pick(chart, _canonical);
 
     return [
       for (final h in hands)
@@ -164,7 +172,7 @@ abstract final class PreflopRangeQuizzes {
     final villainLabel = villain?.label ?? '相手';
     final callSize = _rangeSize(chart, RangeAction.call);
     final threeBetSize = _rangeSize(chart, RangeAction.threeBet);
-    final hands = _pick(chart, const ['AA', 'AKo', 'QJs', 'K9o', '72o', 'J6o']);
+    final hands = _pick(chart, _canonical);
 
     return [
       for (final h in hands)
