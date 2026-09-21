@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../app/router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
 import '../../../profile/domain/learning_stats.dart';
@@ -47,6 +49,7 @@ class LearningRoadmapCard extends StatelessWidget {
             isCurrent: LearningStage.values[i] == current,
             showDivider: i > 0,
           ),
+        const _RangeDrillRow(),
       ],
     );
   }
@@ -60,6 +63,62 @@ class LearningRoadmapCard extends StatelessWidget {
       if (p.total == 0 || accuracy < 0.8) return stage;
     }
     return LearningStage.values.last;
+  }
+}
+
+/// 学習プランの最後に置く「レンジ表暗記」への導線（クイズの正答率とは別枠）。
+class _RangeDrillRow extends StatelessWidget {
+  const _RangeDrillRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: AppSpacing.md),
+      padding: const EdgeInsets.only(top: AppSpacing.md),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: InkWell(
+        onTap: () => context.go(AppRoutes.rangeDrill),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        child: Row(
+          children: [
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: AppColors.rangeThreeBet,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.grid_view_rounded,
+                size: 15,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'レンジ表暗記',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    '表を隠して、ハンドごとのアクションを当てる',
+                    style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
   }
 }
 
