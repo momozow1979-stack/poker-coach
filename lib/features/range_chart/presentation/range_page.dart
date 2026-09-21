@@ -80,7 +80,7 @@ class _RangePageState extends ConsumerState<RangePage> {
                           '色が広がる（薄い色）ほど後ろの席まで含む＝レンジが広がります。'
                           'ある席のオープンレンジ＝その色＋それより濃い（狭い）色すべて。'
                     : 'オープンに対して、コール＝席の色（下）、3ベット＝席の色（上）で表示。'
-                          '席で判断が割れるハンドは左下＝コール席・右上＝3ベット席のツートン、'
+                          '席で判断が割れるハンドは左上＝3ベット席・右下＝コール席のツートン、'
                           '全席が3ベットするハンドは黒。色は一番狭い席の目安なので、'
                           '正確な全席はマスをタップで確認できます。',
                 style: const TextStyle(
@@ -230,7 +230,7 @@ class _RangePageState extends ConsumerState<RangePage> {
     );
   }
 
-  /// ツートン（判断が割れる）の凡例。左下＝コール席・右上＝3ベット席。
+  /// ツートン（判断が割れる）の凡例。左上＝3ベット席・右下＝コール席。
   Widget _splitLegendChip() {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -311,7 +311,7 @@ class _RangePageState extends ConsumerState<RangePage> {
   }
 }
 
-/// 凡例用の小さなツートン見本（右上＝3ベット席色・左下＝コール席色）。
+/// 凡例用の小さなツートン見本（左下がり／：左上＝3ベット席色・右下＝コール席色）。
 class _LegendSplitPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -323,21 +323,23 @@ class _LegendSplitPainter extends CustomPainter {
     );
     canvas.clipRRect(rrect);
     final paint = Paint()..style = PaintingStyle.fill;
+    // 上側（左上）＝3ベット席色: (0,0)-(w,0)-(0,h)
     paint.color = positionColor(Position.btn).withValues(alpha: 0.85);
     canvas.drawPath(
       Path()
         ..moveTo(0, 0)
         ..lineTo(w, 0)
-        ..lineTo(w, h)
+        ..lineTo(0, h)
         ..close(),
       paint,
     );
+    // 下側（右下）＝コール席色: (w,0)-(w,h)-(0,h)
     paint.color = positionColor(Position.hj).withValues(alpha: 0.85);
     canvas.drawPath(
       Path()
-        ..moveTo(0, 0)
-        ..lineTo(0, h)
+        ..moveTo(w, 0)
         ..lineTo(w, h)
+        ..lineTo(0, h)
         ..close(),
       paint,
     );
