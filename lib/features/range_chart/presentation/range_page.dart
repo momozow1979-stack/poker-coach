@@ -12,8 +12,9 @@ import '../application/consolidated_range.dart';
 import '../application/range_providers.dart';
 import '../domain/range_action.dart';
 import '../domain/range_spot.dart';
+import 'widgets/range_cell.dart';
 
-/// 3ベットを表す共通色（席で分けず1色）。
+/// 全席が3ベットする（共通の）3ベットを表す黒。
 const Color _threeBetColor = Color(0xFF1F2937);
 
 /// プリフロップレンジ表（6MAX・ポジション別色分けの集約表示）。
@@ -39,8 +40,12 @@ class _RangePageState extends ConsumerState<RangePage> {
   Widget build(BuildContext context) {
     final repo = ref.read(rangeRepositoryProvider);
     final callOrRaise = _isOpen ? RangeAction.raise : RangeAction.call;
-    final heatmap = consolidate(repo, _table, _situation, callOrRaise);
-    final threeBets = _isOpen ? <StartingHand>{} : threeBetHands(repo, _table);
+    final heatmap = _isOpen
+        ? consolidate(repo, _table, _situation, callOrRaise)
+        : const <StartingHand, Position>{};
+    final vsMap = _isOpen
+        ? const <StartingHand, VsOpenCell>{}
+        : consolidateVsOpen(repo, _table);
     final legendPositions = positionsByWidth(
       repo,
       _table,
@@ -74,8 +79,10 @@ class _RangePageState extends ConsumerState<RangePage> {
                     ? '各ハンドを「オープンする一番レンジが狭い席」の色で表示。'
                           '色が広がる（薄い色）ほど後ろの席まで含む＝レンジが広がります。'
                           'ある席のオープンレンジ＝その色＋それより濃い（狭い）色すべて。'
-                    : 'オープンに対して、コールする席は席の色、3ベットは共通の黒、'
-                          'フォールドは灰で表示しています。',
+                    : 'オープンに対して、コール＝席の色（下）、3ベット＝席の色（上）で表示。'
+                          '席で判断が割れるハンドは左下＝コール席・右上＝3ベット席のツートン、'
+                          '全席が3ベットするハンドは黒。色は一番狭い席の目安なので、'
+                          '正確な全席はマスをタップで確認できます。',
                 style: const TextStyle(
                   fontSize: 12,
                   height: 1.6,
@@ -84,7 +91,7 @@ class _RangePageState extends ConsumerState<RangePage> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            AspectRatio(aspectRatio: 1, child: _grid(heatmap, threeBets)),
+            AspectRatio(aspectRatio: 1, child: _grid(heatmap, vsMap)),
             const SizedBox(height: AppSpacing.lg),
             _legend(legendPositions),
             const SizedBox(height: AppSpacing.md),
@@ -100,7 +107,7 @@ class _RangePageState extends ConsumerState<RangePage> {
 
   Widget _grid(
     Map<StartingHand, Position> heatmap,
-    Set<StartingHand> threeBets,
+    Map<StartingHand, VsOpenCell> vsMap,
   ) {
     return Column(
       children: [
@@ -110,11 +117,7 @@ class _RangePageState extends ConsumerState<RangePage> {
               children: [
                 for (var col = 0; col < 13; col++)
                   Expanded(
-                    child: _cell(
-                      StartingHand.fromGrid(row, col),
-                      heatmap,
-                      threeBets,
-                    ),
+                    child: _cell(StartingHand.fromGrid(row, col), heatmap, vsMap),
                   ),
               ],
             ),
@@ -126,44 +129,42 @@ class _RangePageState extends ConsumerState<RangePage> {
   Widget _cell(
     StartingHand hand,
     Map<StartingHand, Position> heatmap,
-    Set<StartingHand> threeBets,
+    Map<StartingHand, VsOpenCell> vsMap,
   ) {
-    final Color bg;
-    final Color fg;
-    if (threeBets.contains(hand)) {
-      bg = _threeBetColor;
-      fg = Colors.white;
-    } else if (heatmap[hand] case final pos?) {
-      bg = positionColor(pos).withValues(alpha: 0.85);
-      fg = Colors.white;
+    Color top;
+    Color bottom;
+    Color fg = Colors.white;
+
+    if (_isOpen) {
+      if (heatmap[hand] case final pos?) {
+        top = bottom = positionColor(pos).withValues(alpha: 0.85);
+      } else {
+        top = bottom = AppColors.rangeFold;
+        fg = AppColors.textMuted;
+      }
     } else {
-      bg = AppColors.rangeFold;
-      fg = AppColors.textMuted;
+      final cell = vsMap[hand] ?? const VsOpenCell();
+      if (cell.commonThreeBet) {
+        top = bottom = _threeBetColor;
+      } else if (cell.isSplit) {
+        top = positionColor(cell.threeBetPos!).withValues(alpha: 0.85);
+        bottom = positionColor(cell.callPos!).withValues(alpha: 0.85);
+      } else if (cell.callPos case final pos?) {
+        top = bottom = positionColor(pos).withValues(alpha: 0.85);
+      } else if (cell.threeBetPos case final pos?) {
+        top = bottom = positionColor(pos).withValues(alpha: 0.85);
+      } else {
+        top = bottom = AppColors.rangeFold;
+        fg = AppColors.textMuted;
+      }
     }
-    return GestureDetector(
+
+    return RangeCell(
+      code: hand.code,
+      topColor: top,
+      bottomColor: bottom,
+      textColor: fg,
       onTap: () => _showHandPositions(hand),
-      child: Container(
-        margin: const EdgeInsets.all(0.5),
-        decoration: BoxDecoration(
-          color: bg,
-          border: Border.all(color: AppColors.border, width: 0.5),
-        ),
-        alignment: Alignment.center,
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Padding(
-            padding: const EdgeInsets.all(2),
-            child: Text(
-              hand.code,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: fg,
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -186,7 +187,10 @@ class _RangePageState extends ConsumerState<RangePage> {
             runSpacing: AppSpacing.sm,
             children: [
               for (final p in positions) _legendChip(positionColor(p), p.label),
-              if (!_isOpen) _legendChip(_threeBetColor, '3ベット'),
+              if (!_isOpen) ...[
+                _legendChip(_threeBetColor, '共通3ベット'),
+                _splitLegendChip(),
+              ],
               _legendChip(AppColors.rangeFold, 'フォールド'),
             ],
           ),
@@ -213,6 +217,31 @@ class _RangePageState extends ConsumerState<RangePage> {
         Text(
           label,
           style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// ツートン（判断が割れる）の凡例。左下＝コール席・右上＝3ベット席。
+  Widget _splitLegendChip() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 16,
+          height: 16,
+          child: CustomPaint(
+            painter: _LegendSplitPainter(),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        const Text(
+          '割れ（上=3ベット / 下=コール）',
+          style: TextStyle(
             fontSize: 12,
             fontWeight: FontWeight.w600,
             color: AppColors.textSecondary,
@@ -278,4 +307,40 @@ class _RangePageState extends ConsumerState<RangePage> {
       ),
     );
   }
+}
+
+/// 凡例用の小さなツートン見本（右上＝3ベット席色・左下＝コール席色）。
+class _LegendSplitPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(3),
+    );
+    canvas.clipRRect(rrect);
+    final paint = Paint()..style = PaintingStyle.fill;
+    paint.color = positionColor(Position.btn).withValues(alpha: 0.85);
+    canvas.drawPath(
+      Path()
+        ..moveTo(0, 0)
+        ..lineTo(w, 0)
+        ..lineTo(w, h)
+        ..close(),
+      paint,
+    );
+    paint.color = positionColor(Position.hj).withValues(alpha: 0.85);
+    canvas.drawPath(
+      Path()
+        ..moveTo(0, 0)
+        ..lineTo(0, h)
+        ..lineTo(w, h)
+        ..close(),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_LegendSplitPainter oldDelegate) => false;
 }

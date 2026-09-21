@@ -95,6 +95,95 @@ Set<StartingHand> threeBetHands(RangeRepository repo, TableType tableType) {
   return result;
 }
 
+/// vsオープンの集約表・ドリルで、1ハンドを 1 マスにどう塗るかの判定結果。
+///
+/// コール／3ベットは席ごとに相手が違う＝レンジが入れ子ではないため、色は
+/// 「そのアクションを取る一番レンジが狭い（早い）席」を代表色にする。正確な
+/// 全席はタップ詳細（[handPositionSummary]）で確認する前提。
+/// * どの席もコールせず全席が3ベット → [commonThreeBet]（共通の黒）
+/// * コールと3ベットが割れる → [callPos]（下）＋[threeBetPos]（上）のツートン
+class VsOpenCell {
+  const VsOpenCell({
+    this.callPos,
+    this.threeBetPos,
+    this.commonThreeBet = false,
+  });
+
+  /// 一番狭くコールする席（無ければ null）。
+  final Position? callPos;
+
+  /// 一番狭く3ベットする席（無ければ null）。
+  final Position? threeBetPos;
+
+  /// 全席が3ベット（＝共通の黒で塗る）。
+  final bool commonThreeBet;
+
+  bool get isFold =>
+      callPos == null && threeBetPos == null && !commonThreeBet;
+
+  /// コールする席と3ベットする席が両方ある（ツートン）。
+  bool get isSplit => callPos != null && threeBetPos != null;
+}
+
+/// 1ハンドの vsオープン集約セルを判定する。
+VsOpenCell vsOpenCellFor(
+  RangeRepository repo,
+  TableType tableType,
+  StartingHand hand,
+) {
+  final positions = positionsWithChart(repo, tableType, RangeSituation.vsOpen);
+  final callers = <Position>[];
+  final threeBetters = <Position>[];
+  for (final p in positions) {
+    final chart = repo.chartFor(tableType, p, situation: RangeSituation.vsOpen)!;
+    switch (_effective(chart.entryFor(hand))) {
+      case RangeAction.call:
+        callers.add(p);
+      case RangeAction.threeBet:
+        threeBetters.add(p);
+      default:
+        break;
+    }
+  }
+  if (callers.isEmpty && threeBetters.isEmpty) return const VsOpenCell();
+
+  // 全席が3ベット（誰もコールしない）＝共通の黒。
+  final common =
+      callers.isEmpty && threeBetters.length == positions.length;
+
+  final byCallWidth =
+      positionsByWidth(repo, tableType, RangeSituation.vsOpen, RangeAction.call);
+  final byThreeWidth = positionsByWidth(
+    repo,
+    tableType,
+    RangeSituation.vsOpen,
+    RangeAction.threeBet,
+  );
+  Position? narrowest(List<Position> among, List<Position> order) {
+    for (final p in order) {
+      if (among.contains(p)) return p;
+    }
+    return among.isEmpty ? null : among.first;
+  }
+
+  return VsOpenCell(
+    callPos: callers.isEmpty ? null : narrowest(callers, byCallWidth),
+    threeBetPos: threeBetters.isEmpty
+        ? null
+        : narrowest(threeBetters, byThreeWidth),
+    commonThreeBet: common,
+  );
+}
+
+/// vsオープンの全169ハンドのセル判定。
+Map<StartingHand, VsOpenCell> consolidateVsOpen(
+  RangeRepository repo,
+  TableType tableType,
+) => {
+  for (final hand in StartingHand.all)
+    hand: vsOpenCellFor(repo, tableType, hand),
+};
+
 /// このシチュエーションで表が存在するポジション一覧（席の行動順）。
 List<Position> positionsWithChart(
   RangeRepository repo,
