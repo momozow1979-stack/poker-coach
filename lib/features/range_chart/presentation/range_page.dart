@@ -69,7 +69,7 @@ class _RangePageState extends ConsumerState<RangePage> {
               values: const [RangeSituation.openRaise, RangeSituation.vsOpen],
               selected: _situation,
               labelBuilder: (v) =>
-                  v == RangeSituation.openRaise ? 'オープンする' : 'オープンに対応する',
+                  v == RangeSituation.openRaise ? 'オープン' : 'vsオープン',
               onSelected: (v) => setState(() => _situation = v),
             ),
             const SizedBox(height: AppSpacing.md),
