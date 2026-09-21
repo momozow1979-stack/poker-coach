@@ -19,15 +19,21 @@ void main() {
   ];
 
   group('規模と構成', () {
-    test('全カテゴリ30問ずつある', () {
-      expect(quizzes, hasLength(QuizCategory.values.length * 30));
+    // 手書きバンクは各カテゴリ30問を基礎に持つ。加えてレンジ表からの
+    // 機械生成（PreflopRangeQuizzes、正解はレンジ表と一致）を上乗せするため、
+    // 総数・カテゴリ数は「30ずつ以上」を下限とする（1000問へ拡張中）。
+    test('全カテゴリで最低30問ずつ確保している', () {
+      expect(
+        quizzes.length,
+        greaterThanOrEqualTo(QuizCategory.values.length * 30),
+      );
     });
 
-    test('すべてのカテゴリに30問ずつある', () {
+    test('すべてのカテゴリに最低30問ある', () {
       for (final category in QuizCategory.values) {
         expect(
-          QuizBank.byCategory(category),
-          hasLength(30),
+          QuizBank.byCategory(category).length,
+          greaterThanOrEqualTo(30),
           reason: category.label,
         );
       }

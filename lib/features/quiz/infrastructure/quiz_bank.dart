@@ -7,6 +7,7 @@ import 'banks/gto_quizzes.dart';
 import 'banks/position_quizzes.dart';
 import 'banks/pot_odds_quizzes.dart';
 import 'banks/preflop_quizzes.dart';
+import 'banks/preflop_range_quizzes.dart';
 import 'banks/river_quizzes.dart';
 import 'banks/terminology_quizzes.dart';
 import 'banks/turn_quizzes.dart';
@@ -30,6 +31,7 @@ abstract final class QuizBank {
 
   static final List<Quiz> _all = List.unmodifiable([
     ...PreflopQuizzes.all,
+    ...PreflopRangeQuizzes.all,
     ...FlopQuizzes.all,
     ...TurnQuizzes.all,
     ...RiverQuizzes.all,

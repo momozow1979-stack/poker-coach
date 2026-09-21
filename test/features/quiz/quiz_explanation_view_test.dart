@@ -272,8 +272,12 @@ void main() {
       // 「参考になる関連チャート」を指すだけの設問（3Bet に直面した場面や
       // フロップの判断からオープンレイズ表を参照している設問など）が
       // 混ざっているため。
+      // レンジ表から機械生成した設問（pfr-）は「その決断そのもの」を指すので
+      // 必ずバーが出る。この回帰ガードは手書きバンクの force-fit しない挙動を
+      // 見るものなので、生成バンクは対象外にする（生成分は専用テストで検証）。
       final candidates = QuizBank.all.where(
         (quiz) =>
+            !quiz.id.startsWith('pfr-') &&
             quiz.explanation.relatedRangeSpotId != null &&
             quiz.situation != null &&
             quiz.situation!.heroCards.length == 2,
