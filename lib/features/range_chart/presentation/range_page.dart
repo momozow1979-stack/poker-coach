@@ -17,6 +17,9 @@ import 'widgets/range_cell.dart';
 /// 全席が3ベットする（共通の）3ベットを表す黒。
 const Color _threeBetColor = Color(0xFF1F2937);
 
+/// vsオープン表の表示切り替え。
+enum _VsView { call, raise, merge }
+
 /// プリフロップレンジ表（6MAX・ポジション別色分けの集約表示）。
 ///
 /// ポジションを1つずつ切り替えず、1枚の表に集約。各ハンドを「そのアクションを
@@ -33,6 +36,7 @@ class _RangePageState extends ConsumerState<RangePage> {
   // 覚えやすさ優先で 6MAX のみ扱う（9MAX の MP/LJ 等は分かりにくいため）。
   static const _table = TableType.sixMax;
   RangeSituation _situation = RangeSituation.openRaise;
+  _VsView _vsView = _VsView.merge;
 
   bool get _isOpen => _situation == RangeSituation.openRaise;
 
@@ -46,11 +50,14 @@ class _RangePageState extends ConsumerState<RangePage> {
     final vsMap = _isOpen
         ? const <StartingHand, VsOpenCell>{}
         : consolidateVsOpen(repo, _table);
+    final legendAction = _isOpen
+        ? RangeAction.raise
+        : (_vsView == _VsView.raise ? RangeAction.threeBet : RangeAction.call);
     final legendPositions = positionsByWidth(
       repo,
       _table,
       _situation,
-      callOrRaise,
+      legendAction,
     );
 
     return Scaffold(
@@ -72,17 +79,23 @@ class _RangePageState extends ConsumerState<RangePage> {
                   v == RangeSituation.openRaise ? 'オープン' : 'vsオープン',
               onSelected: (v) => setState(() => _situation = v),
             ),
+            if (!_isOpen) ...[
+              const SizedBox(height: AppSpacing.sm),
+              ChoiceChipGroup<_VsView>(
+                values: const [_VsView.call, _VsView.raise, _VsView.merge],
+                selected: _vsView,
+                labelBuilder: (v) => switch (v) {
+                  _VsView.call => 'コールのみ',
+                  _VsView.raise => 'レイズのみ',
+                  _VsView.merge => 'マージ',
+                },
+                onSelected: (v) => setState(() => _vsView = v),
+              ),
+            ],
             const SizedBox(height: AppSpacing.md),
             AppCard(
               child: Text(
-                _isOpen
-                    ? '各ハンドを「オープンする一番レンジが狭い席」の色で表示。'
-                          '色が広がる（薄い色）ほど後ろの席まで含む＝レンジが広がります。'
-                          'ある席のオープンレンジ＝その色＋それより濃い（狭い）色すべて。'
-                    : 'オープンに対して、コール＝席の色（下）、3ベット＝席の色（上）で表示。'
-                          '席で判断が割れるハンドは左上＝3ベット席・右下＝コール席のツートン、'
-                          '全席が3ベットするハンドは黒。色は一番狭い席の目安なので、'
-                          '正確な全席はマスをタップで確認できます。',
+                _description(),
                 style: const TextStyle(
                   fontSize: 12,
                   height: 1.6,
@@ -103,6 +116,25 @@ class _RangePageState extends ConsumerState<RangePage> {
         ),
       ),
     );
+  }
+
+  String _description() {
+    if (_isOpen) {
+      return '各ハンドを「オープンする一番レンジが狭い席」の色で表示。'
+          '色が広がる（薄い色）ほど後ろの席まで含む＝レンジが広がります。'
+          'ある席のオープンレンジ＝その色＋それより濃い（狭い）色すべて。';
+    }
+    return switch (_vsView) {
+      _VsView.call =>
+        'コールする席を色で表示。全席が3ベットするハンド（プレミアム）は黒で出すので、'
+            'フォールド（灰）と混ざりません。色は一番狭い席の目安で、正確な全席はタップで確認できます。',
+      _VsView.raise =>
+        '3ベットする席を色で表示。全席が3ベットするハンドは黒、それ以外は一番狭い3ベット席の色。'
+            'フォールドは灰。正確な全席はタップで確認できます。',
+      _VsView.merge =>
+        'コール＝下の色 / 3ベット＝上の色で表示。席で判断が割れるハンドは'
+            '左上＝3ベット席・右下＝コール席のツートン、全席が3ベットするハンドは黒。',
+    };
   }
 
   Widget _grid(
@@ -148,19 +180,7 @@ class _RangePageState extends ConsumerState<RangePage> {
       }
     } else {
       final cell = vsMap[hand] ?? const VsOpenCell();
-      if (cell.commonThreeBet) {
-        top = bottom = _threeBetColor;
-      } else if (cell.isSplit) {
-        top = positionColor(cell.threeBetPos!).withValues(alpha: 0.85);
-        bottom = positionColor(cell.callPos!).withValues(alpha: 0.85);
-      } else if (cell.callPos case final pos?) {
-        top = bottom = positionColor(pos).withValues(alpha: 0.85);
-      } else if (cell.threeBetPos case final pos?) {
-        top = bottom = positionColor(pos).withValues(alpha: 0.85);
-      } else {
-        top = bottom = AppColors.rangeFold;
-        fg = AppColors.textMuted;
-      }
+      (top, bottom, fg) = _vsColors(cell);
     }
 
     return RangeCell(
@@ -172,13 +192,55 @@ class _RangePageState extends ConsumerState<RangePage> {
     );
   }
 
+  /// vsオープンのセル色を、選択中の表示（コールのみ / レイズのみ / マージ）で決める。
+  (Color, Color, Color) _vsColors(VsOpenCell cell) {
+    Color solid(Position p) => positionColor(p).withValues(alpha: 0.85);
+    const fold = (
+      AppColors.rangeFold,
+      AppColors.rangeFold,
+      AppColors.textMuted,
+    );
+    const black = (_threeBetColor, _threeBetColor, Colors.white);
+    switch (_vsView) {
+      case _VsView.call:
+        // 全席3ベットのプレミアムは黒（フォールドと混ざらないように）。
+        if (cell.commonThreeBet) return black;
+        if (cell.callPos case final p?) {
+          return (solid(p), solid(p), Colors.white);
+        }
+        return fold;
+      case _VsView.raise:
+        if (cell.commonThreeBet) return black;
+        if (cell.threeBetPos case final p?) {
+          return (solid(p), solid(p), Colors.white);
+        }
+        return fold;
+      case _VsView.merge:
+        if (cell.commonThreeBet) return black;
+        if (cell.isSplit) {
+          return (solid(cell.threeBetPos!), solid(cell.callPos!), Colors.white);
+        }
+        if (cell.callPos case final p?) {
+          return (solid(p), solid(p), Colors.white);
+        }
+        if (cell.threeBetPos case final p?) {
+          return (solid(p), solid(p), Colors.white);
+        }
+        return fold;
+    }
+  }
+
   Widget _legend(List<Position> positions) {
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            _isOpen ? '色＝オープンする席（左＝狭い → 右＝広い）' : '色＝コールする席（左＝狭い → 右＝広い）',
+            _isOpen
+                ? '色＝オープンする席（左＝狭い → 右＝広い）'
+                : _vsView == _VsView.raise
+                ? '色＝3ベットする席（左＝狭い → 右＝広い）'
+                : '色＝コールする席（左＝狭い → 右＝広い）',
             style: const TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
@@ -191,10 +253,8 @@ class _RangePageState extends ConsumerState<RangePage> {
             runSpacing: AppSpacing.sm,
             children: [
               for (final p in positions) _legendChip(positionColor(p), p.label),
-              if (!_isOpen) ...[
-                _legendChip(_threeBetColor, '共通3ベット'),
-                _splitLegendChip(),
-              ],
+              if (!_isOpen) _legendChip(_threeBetColor, '共通3ベット'),
+              if (!_isOpen && _vsView == _VsView.merge) _splitLegendChip(),
               _legendChip(AppColors.rangeFold, 'フォールド'),
             ],
           ),
