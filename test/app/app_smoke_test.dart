@@ -97,10 +97,10 @@ void main() {
     await _openTab(tester, 'レンジ');
 
     expect(find.text('AA'), findsWidgets);
-    expect(find.text('オープンする'), findsOneWidget);
+    expect(find.text('オープン'), findsWidgets);
 
     // vsオープンに切り替えると、凡例に「共通3ベット」（全席3ベット＝黒）が現れる。
-    await tester.tap(find.text('オープンに対応する'));
+    await tester.tap(find.text('vsオープン'));
     await tester.pumpAndSettle();
     expect(find.text('共通3ベット'), findsWidgets);
   });
