@@ -15,6 +15,7 @@ import '../features/practice_table/presentation/practice_table_page.dart';
 import '../features/profile/presentation/profile_page.dart';
 import '../features/quiz/presentation/category_quiz_page.dart';
 import '../features/quiz/presentation/quiz_page.dart';
+import '../features/range_chart/presentation/range_drill_page.dart';
 import '../features/range_chart/presentation/range_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import 'app_shell.dart';
@@ -24,6 +25,9 @@ abstract final class AppRoutes {
   static const home = '/home';
   static const quiz = '/quiz';
   static const range = '/range';
+
+  /// レンジ表暗記ドリル（目隠し）。
+  static const rangeDrill = '/range/drill';
 
   /// レビュータブの入り口。自分のハンドのレビュー専用。
   static const review = '/review';
@@ -131,6 +135,12 @@ final routerProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: AppRoutes.range,
                 builder: (context, state) => const RangePage(),
+                routes: [
+                  GoRoute(
+                    path: 'drill',
+                    builder: (context, state) => const RangeDrillPage(),
+                  ),
+                ],
               ),
             ],
           ),
