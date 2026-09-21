@@ -118,6 +118,7 @@ class RoundSnapshot {
     required this.actions,
     required this.isComplete,
     required this.endedByFold,
+    required this.anyAllIn,
     required this.potBefore,
     required this.potAfter,
     required this.heroFacedCalls,
@@ -128,6 +129,10 @@ class RoundSnapshot {
   final List<HandAction> actions;
   final bool isComplete;
   final bool endedByFold;
+
+  /// このストリートで誰かがオールインしたか。成立後は以降のストリートで
+  /// もう賭ける余地が無い（＝アクション入力を出さない）ことの判定に使う。
+  final bool anyAllIn;
 
   /// ストリート開始時のポット。分からなければ null。
   final double? potBefore;
@@ -243,6 +248,9 @@ class HandFlow {
     }
 
     double? pot = 1.5;
+    // オールインが成立（コール等で受けられた）ら、以降のストリートは
+    // もう賭ける余地が無い。ボードだけ入力させて即レビュー可能にする。
+    var bettingClosedByAllIn = false;
     for (final street in Street.values) {
       final board = input.boardOf(street);
       final needed = _boardCountOf(street);
@@ -250,6 +258,10 @@ class HandFlow {
         step = NeedBoard(street: street, count: needed);
         return;
       }
+
+      // すでにオールイン成立済みなら、このストリートはアクションを取らない
+      // （上のボード入力チェックだけ通せば良い）。
+      if (bettingClosedByAllIn) continue;
 
       final round = _replayRound(street, pot);
       rounds.add(round);
@@ -264,6 +276,8 @@ class HandFlow {
         return;
       }
       pot = round.potAfter;
+      // このラウンドが完了し、かつオールインが含まれていれば、以降は賭けない。
+      if (round.anyAllIn) bettingClosedByAllIn = true;
     }
 
     step = const ReviewReady(endedByFold: false);
@@ -324,6 +338,7 @@ class HandFlow {
       actions: actions,
       isComplete: state.isComplete,
       endedByFold: state.endedByFold,
+      anyAllIn: state.anyAllIn,
       potBefore: potBefore,
       potAfter: state.pot,
       heroFacedCalls: faced,
@@ -348,6 +363,10 @@ class HandFlow {
     }
     final actor = _actorAt(street, actions.length);
     final facing = state.facingBetFor(actor);
+    final opponent = actor == Actor.hero ? Actor.villain : Actor.hero;
+    // 相手がすでにオールインしているなら、こちらはフォールドかコールのみ
+    // （オールインした相手にレイズはできない）。
+    final opponentAllIn = state.allIn[opponent] ?? false;
 
     return ActionPrompt(
       street: street,
@@ -360,12 +379,14 @@ class HandFlow {
       isBlindOnly: street == Street.preflop && state.aggressiveCount == 0,
       aggressiveLabel: state.aggressiveLabel(facing),
       choices: facing
-          ? const [
-              PokerActionType.fold,
-              PokerActionType.call,
-              PokerActionType.raise,
-              PokerActionType.allIn,
-            ]
+          ? (opponentAllIn
+                ? const [PokerActionType.fold, PokerActionType.call]
+                : const [
+                    PokerActionType.fold,
+                    PokerActionType.call,
+                    PokerActionType.raise,
+                    PokerActionType.allIn,
+                  ])
           : const [
               PokerActionType.check,
               PokerActionType.bet,
@@ -417,6 +438,13 @@ class _RoundState {
 
   bool endedByFold = false;
   bool _closed = false;
+
+  /// 各自がこのストリートでオールインしたか。
+  final Map<Actor, bool> allIn = {Actor.hero: false, Actor.villain: false};
+
+  /// このストリートで誰かがオールインしたか。
+  bool get anyAllIn =>
+      (allIn[Actor.hero] ?? false) || (allIn[Actor.villain] ?? false);
 
   /// 賭け金を増やすアクションが何回あったか。呼び名の決定に使う。
   int aggressiveCount = 0;
@@ -486,6 +514,7 @@ class _RoundState {
       case PokerActionType.raise:
       case PokerActionType.allIn:
         aggressiveCount++;
+        if (action.action == PokerActionType.allIn) allIn[actor] = true;
         final size = action.sizeBb;
         final mine = put[actor];
         if (size != null && mine != null) {

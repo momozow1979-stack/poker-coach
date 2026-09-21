@@ -136,10 +136,26 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       );
     }
 
+    // プレビューを画面いっぱいに cover 表示する（Center のままだと縦画面で
+    // 上下に黒帯＝レターボックスが出て「黒く塗りつぶし」に見えるため）。
+    // previewSize はセンサー基準（横長）なので、縦画面用に幅と高さを入れ替える。
+    final preview = controller.value.previewSize;
+    final previewW = preview?.height ?? 9;
+    final previewH = preview?.width ?? 16;
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        Center(child: CameraPreview(controller)),
+        ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: previewW,
+              height: previewH,
+              child: CameraPreview(controller),
+            ),
+          ),
+        ),
         // 撮影ガイド（枠と自分ゾーンの線）。
         Positioned.fill(
           child: IgnorePointer(

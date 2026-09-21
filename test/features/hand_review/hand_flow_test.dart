@@ -215,4 +215,55 @@ void main() {
       expect(flow.heroFacedBets.single.potBb, 9.5);
     });
   });
+
+  group('オールイン', () {
+    HandReviewInput base() => HandReviewInput(
+      heroPosition: Position.btn,
+      villainPosition: Position.bb,
+      heroHand: PlayingCard.parseAll(['Ah', 'Qs']),
+    );
+
+    test('オールインに直面したら選択肢はフォールドとコールだけ', () {
+      final input = base().copyWith(
+        preflop: [_a(hero, PokerActionType.allIn, 100)],
+      );
+      final step = HandFlow(input).step as NeedAction;
+      expect(step.prompt.actor, Actor.villain);
+      expect(step.prompt.facingBet, isTrue);
+      expect(step.prompt.choices, [PokerActionType.fold, PokerActionType.call]);
+    });
+
+    test('オールインがコールされ、ボード未入力ならアクションではなくボードを求める', () {
+      final input = base().copyWith(
+        preflop: [
+          _a(hero, PokerActionType.allIn, 100),
+          _a('BB', PokerActionType.call),
+        ],
+      );
+      final step = HandFlow(input).step;
+      expect(step, isA<NeedBoard>());
+      expect((step as NeedBoard).street, Street.flop);
+    });
+
+    test('オールインがコールされ、ボードが揃えば以降のアクションは求めずレビュー可能', () {
+      final input = base().copyWith(
+        preflop: [
+          _a(hero, PokerActionType.allIn, 100),
+          _a('BB', PokerActionType.call),
+        ],
+        flop: const StreetInput(),
+      );
+      // フロップ〜リバーを流し込む（オールイン成立後はアクション不要）。
+      final full = input.copyWith(
+        flop: StreetInput(cards: PlayingCard.parseAll(['2c', '7d', '9s'])),
+        turn: StreetInput(cards: PlayingCard.parseAll(['Kh'])),
+        river: StreetInput(cards: PlayingCard.parseAll(['3d'])),
+      );
+      final flow = HandFlow(full);
+      expect(flow.step, isA<ReviewReady>());
+      final ready = flow.step as ReviewReady;
+      expect(ready.endedByFold, isFalse);
+      expect(flow.isReady, isTrue);
+    });
+  });
 }
