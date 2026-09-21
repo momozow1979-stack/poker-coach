@@ -24,7 +24,8 @@ class RangeDrillPage extends ConsumerStatefulWidget {
 }
 
 class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
-  TableType _table = TableType.sixMax;
+  // 覚えやすさ優先で 6MAX のみ扱う。
+  final TableType _table = TableType.sixMax;
   RangeSituation _situation = RangeSituation.openRaise;
   Position? _position;
   RangeAction _vsAction = RangeAction.call; // vsオープンのとき call / threeBet
@@ -106,17 +107,6 @@ class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
                 onSelected: (v) => setState(() {
                   _situation = v;
                   _vsAction = RangeAction.call;
-                  _position = null;
-                  _reset();
-                }),
-              ),
-              const SizedBox(height: AppSpacing.sm),
-              _toggleRow<TableType>(
-                values: TableType.values,
-                selected: _table,
-                labels: {for (final t in TableType.values) t: t.label},
-                onSelected: (v) => setState(() {
-                  _table = v;
                   _position = null;
                   _reset();
                 }),

@@ -13,11 +13,14 @@ import '../application/range_providers.dart';
 import '../domain/range_action.dart';
 import '../domain/range_spot.dart';
 
-/// プリフロップレンジ表（ポジション別に色分けした集約表示）。
+/// 3ベットを表す共通色（席で分けず1色）。
+const Color _threeBetColor = Color(0xFF1F2937);
+
+/// プリフロップレンジ表（6MAX・ポジション別色分けの集約表示）。
 ///
-/// ポジションを1つずつ切り替えるのではなく、1枚の表で「どのハンドを
-/// どのポジションから取るか」を色で見せる。オープンは後ろの席ほど広がるので、
-/// 一番タイトな席の色で塗る＝色が広がるほど後ろの席まで含む、と読める。
+/// ポジションを1つずつ切り替えず、1枚の表に集約。各ハンドを「そのアクションを
+/// 取る一番レンジが狭い席の色」で塗る（色が広がるほど後ろの席まで含む）。
+/// vsオープンは、コール＝席の色 / 3ベット＝共通の黒 / フォールド＝灰。
 class RangePage extends ConsumerStatefulWidget {
   const RangePage({super.key});
 
@@ -26,21 +29,27 @@ class RangePage extends ConsumerStatefulWidget {
 }
 
 class _RangePageState extends ConsumerState<RangePage> {
+  // 覚えやすさ優先で 6MAX のみ扱う（9MAX の MP/LJ 等は分かりにくいため）。
+  static const _table = TableType.sixMax;
   RangeSituation _situation = RangeSituation.openRaise;
-  RangeAction _vsAction = RangeAction.call;
 
-  RangeAction get _action =>
-      _situation == RangeSituation.openRaise ? RangeAction.raise : _vsAction;
+  bool get _isOpen => _situation == RangeSituation.openRaise;
 
   @override
   Widget build(BuildContext context) {
-    final table = ref.watch(selectedTableTypeProvider);
     final repo = ref.read(rangeRepositoryProvider);
-    final heatmap = consolidate(repo, table, _situation, _action);
-    final positions = positionsWithChart(repo, table, _situation);
+    final callOrRaise = _isOpen ? RangeAction.raise : RangeAction.call;
+    final heatmap = consolidate(repo, _table, _situation, callOrRaise);
+    final threeBets = _isOpen ? <StartingHand>{} : threeBetHands(repo, _table);
+    final legendPositions = positionsByWidth(
+      repo,
+      _table,
+      _situation,
+      callOrRaise,
+    );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('レンジ表')),
+      appBar: AppBar(title: const Text('レンジ表（6MAX）')),
       body: SafeArea(
         top: false,
         child: ListView(
@@ -51,13 +60,6 @@ class _RangePageState extends ConsumerState<RangePage> {
             AppSpacing.xxl,
           ),
           children: [
-            ChoiceChipGroup<TableType>(
-              values: TableType.values,
-              selected: table,
-              labelBuilder: (v) => v.label,
-              onSelected: ref.read(selectedTableTypeProvider.notifier).select,
-            ),
-            const SizedBox(height: AppSpacing.md),
             ChoiceChipGroup<RangeSituation>(
               values: const [RangeSituation.openRaise, RangeSituation.vsOpen],
               selected: _situation,
@@ -65,23 +67,15 @@ class _RangePageState extends ConsumerState<RangePage> {
                   v == RangeSituation.openRaise ? 'オープンする' : 'オープンに対応する',
               onSelected: (v) => setState(() => _situation = v),
             ),
-            if (_situation == RangeSituation.vsOpen) ...[
-              const SizedBox(height: AppSpacing.md),
-              ChoiceChipGroup<RangeAction>(
-                values: const [RangeAction.call, RangeAction.threeBet],
-                selected: _vsAction,
-                labelBuilder: (v) => v == RangeAction.call ? 'コール' : '3ベット',
-                onSelected: (v) => setState(() => _vsAction = v),
-              ),
-            ],
             const SizedBox(height: AppSpacing.md),
             AppCard(
               child: Text(
-                _situation == RangeSituation.openRaise
-                    ? '各ハンドを「オープンする一番早い席」の色で表示しています。'
-                          '色が濃い（前の席）ほどタイト、後ろの席ほどレンジが広がります。'
-                    : 'オープンに対して${_vsAction == RangeAction.call ? "コール" : "3ベット"}する'
-                          '一番早い席の色で表示しています。',
+                _isOpen
+                    ? '各ハンドを「オープンする一番レンジが狭い席」の色で表示。'
+                          '色が広がる（薄い色）ほど後ろの席まで含む＝レンジが広がります。'
+                          'ある席のオープンレンジ＝その色＋それより濃い（狭い）色すべて。'
+                    : 'オープンに対して、コールする席は席の色、3ベットは共通の黒、'
+                          'フォールドは灰で表示しています。',
                 style: const TextStyle(
                   fontSize: 12,
                   height: 1.6,
@@ -90,9 +84,9 @@ class _RangePageState extends ConsumerState<RangePage> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            AspectRatio(aspectRatio: 1, child: _grid(heatmap)),
+            AspectRatio(aspectRatio: 1, child: _grid(heatmap, threeBets)),
             const SizedBox(height: AppSpacing.lg),
-            _legend(positions),
+            _legend(legendPositions),
             const SizedBox(height: AppSpacing.md),
             const Text(
               'マスをタップすると、そのハンドをどの席でオープン/コール/3ベットするかが見られます。',
@@ -104,7 +98,10 @@ class _RangePageState extends ConsumerState<RangePage> {
     );
   }
 
-  Widget _grid(Map<StartingHand, Position> heatmap) {
+  Widget _grid(
+    Map<StartingHand, Position> heatmap,
+    Set<StartingHand> threeBets,
+  ) {
     return Column(
       children: [
         for (var row = 0; row < 13; row++)
@@ -113,7 +110,11 @@ class _RangePageState extends ConsumerState<RangePage> {
               children: [
                 for (var col = 0; col < 13; col++)
                   Expanded(
-                    child: _cell(StartingHand.fromGrid(row, col), heatmap),
+                    child: _cell(
+                      StartingHand.fromGrid(row, col),
+                      heatmap,
+                      threeBets,
+                    ),
                   ),
               ],
             ),
@@ -122,12 +123,23 @@ class _RangePageState extends ConsumerState<RangePage> {
     );
   }
 
-  Widget _cell(StartingHand hand, Map<StartingHand, Position> heatmap) {
-    final pos = heatmap[hand];
-    final bg = pos == null
-        ? AppColors.rangeFold
-        : positionColor(pos).withValues(alpha: 0.85);
-    final fg = pos == null ? AppColors.textMuted : Colors.white;
+  Widget _cell(
+    StartingHand hand,
+    Map<StartingHand, Position> heatmap,
+    Set<StartingHand> threeBets,
+  ) {
+    final Color bg;
+    final Color fg;
+    if (threeBets.contains(hand)) {
+      bg = _threeBetColor;
+      fg = Colors.white;
+    } else if (heatmap[hand] case final pos?) {
+      bg = positionColor(pos).withValues(alpha: 0.85);
+      fg = Colors.white;
+    } else {
+      bg = AppColors.rangeFold;
+      fg = AppColors.textMuted;
+    }
     return GestureDetector(
       onTap: () => _showHandPositions(hand),
       child: Container(
@@ -157,53 +169,25 @@ class _RangePageState extends ConsumerState<RangePage> {
 
   Widget _legend(List<Position> positions) {
     return AppCard(
-      child: Wrap(
-        spacing: AppSpacing.md,
-        runSpacing: AppSpacing.sm,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final p in positions)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: positionColor(p).withValues(alpha: 0.85),
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-                const SizedBox(width: AppSpacing.xs),
-                Text(
-                  p.label,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ],
+          Text(
+            _isOpen ? '色＝オープンする席（左＝狭い → 右＝広い）' : '色＝コールする席（左＝狭い → 右＝広い）',
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textMuted,
             ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          Wrap(
+            spacing: AppSpacing.md,
+            runSpacing: AppSpacing.sm,
             children: [
-              Container(
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  color: AppColors.rangeFold,
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.xs),
-              const Text(
-                'フォールド',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
-              ),
+              for (final p in positions) _legendChip(positionColor(p), p.label),
+              if (!_isOpen) _legendChip(_threeBetColor, '3ベット'),
+              _legendChip(AppColors.rangeFold, 'フォールド'),
             ],
           ),
         ],
@@ -211,10 +195,36 @@ class _RangePageState extends ConsumerState<RangePage> {
     );
   }
 
+  Widget _legendChip(Color color, String label) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 16,
+          height: 16,
+          decoration: BoxDecoration(
+            color: color == AppColors.rangeFold
+                ? color
+                : color.withValues(alpha: 0.85),
+            borderRadius: BorderRadius.circular(3),
+          ),
+        ),
+        const SizedBox(width: AppSpacing.xs),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+
   void _showHandPositions(StartingHand hand) {
-    final table = ref.read(selectedTableTypeProvider);
     final repo = ref.read(rangeRepositoryProvider);
-    final summary = handPositionSummary(repo, table, hand);
+    final summary = handPositionSummary(repo, _table, hand);
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => Padding(

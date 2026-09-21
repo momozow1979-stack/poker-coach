@@ -19,7 +19,45 @@ RangeAction _effective(RangeEntry entry) => entry.action == RangeAction.mixed
     ? (entry.blend?.primary ?? RangeAction.fold)
     : entry.action;
 
-/// 各ハンドを「そのアクションを取る一番タイトな（早い）ポジション」に対応づける。
+/// [action] を取るハンド数（レンジの広さ）。並び順の判定に使う。
+int _rangeWidth(
+  RangeRepository repo,
+  TableType tableType,
+  Position position,
+  RangeSituation situation,
+  RangeAction action,
+) {
+  final chart = repo.chartFor(tableType, position, situation: situation);
+  if (chart == null) return 0;
+  return StartingHand.all
+      .where((h) => _effective(chart.entryFor(h)) == action)
+      .length;
+}
+
+/// そのシチュエーション・アクションで表があるポジションを「レンジが狭い順→広い順」に並べる。
+/// （オープンやコールは席の行動順とレンジの広さが必ずしも一致しない＝SB等があるため、
+///  実際の枚数で並べる。）
+List<Position> positionsByWidth(
+  RangeRepository repo,
+  TableType tableType,
+  RangeSituation situation,
+  RangeAction action,
+) {
+  final list = positionsWithChart(repo, tableType, situation);
+  list.sort(
+    (a, b) => _rangeWidth(
+      repo,
+      tableType,
+      a,
+      situation,
+      action,
+    ).compareTo(_rangeWidth(repo, tableType, b, situation, action)),
+  );
+  return list;
+}
+
+/// 各ハンドを「そのアクションを取る一番レンジが狭いポジション」に対応づける。
+/// 狭い順に塗るので、あるポジションの全レンジ＝「その色＋それより狭い色」になる。
 /// どのポジションも取らないハンドは含めない（＝フォールド扱い）。
 Map<StartingHand, Position> consolidate(
   RangeRepository repo,
@@ -28,18 +66,36 @@ Map<StartingHand, Position> consolidate(
   RangeAction action,
 ) {
   final result = <StartingHand, Position>{};
-  for (final position in Position.orderFor(tableType)) {
-    final chart = repo.chartFor(tableType, position, situation: situation);
-    if (chart == null) continue;
+  for (final position in positionsByWidth(repo, tableType, situation, action)) {
+    final chart = repo.chartFor(tableType, position, situation: situation)!;
     for (final hand in StartingHand.all) {
-      if (result.containsKey(hand)) continue; // より早いポジションで確定済み
+      if (result.containsKey(hand)) continue; // より狭いポジションで確定済み
       if (_effective(chart.entryFor(hand)) == action) result[hand] = position;
     }
   }
   return result;
 }
 
-/// このシチュエーション・アクションで、実際に表が存在するポジション一覧（早い順）。
+/// vsオープンで、どこかのポジションが3ベットするハンド（表示・出題で共通の黒にする）。
+Set<StartingHand> threeBetHands(RangeRepository repo, TableType tableType) {
+  final result = <StartingHand>{};
+  for (final position in Position.orderFor(tableType)) {
+    final chart = repo.chartFor(
+      tableType,
+      position,
+      situation: RangeSituation.vsOpen,
+    );
+    if (chart == null) continue;
+    for (final hand in StartingHand.all) {
+      if (_effective(chart.entryFor(hand)) == RangeAction.threeBet) {
+        result.add(hand);
+      }
+    }
+  }
+  return result;
+}
+
+/// このシチュエーションで表が存在するポジション一覧（席の行動順）。
 List<Position> positionsWithChart(
   RangeRepository repo,
   TableType tableType,
