@@ -184,47 +184,14 @@ class _Legend extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const _LegendDot(color: AppColors.accent, label: 'あなた'),
-        const SizedBox(width: AppSpacing.lg),
-        const _LegendDot(color: AppColors.info, label: '相手'),
-        const Spacer(),
-        const Text(
-          'D = ディーラーボタン',
-          style: TextStyle(fontSize: 10, color: AppColors.textMuted),
-        ),
-      ],
-    );
-  }
-}
-
-class _LegendDot extends StatelessWidget {
-  const _LegendDot({required this.color, required this.label});
-
-  final Color color;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 9,
-          height: 9,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: AppSpacing.xs),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
+    // 「自分 / 相手」は席マークの直下に表示するようにしたので、ここでは
+    // ディーラーボタンの説明だけ残す。
+    return const Align(
+      alignment: Alignment.centerRight,
+      child: Text(
+        'D = ディーラーボタン',
+        style: TextStyle(fontSize: 10, color: AppColors.textMuted),
+      ),
     );
   }
 }
