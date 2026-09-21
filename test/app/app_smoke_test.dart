@@ -104,17 +104,16 @@ void main() {
     expect(find.text('UTG+1'), findsOneWidget);
   });
 
-  testWidgets('レンジ表のハンドをタップすると詳細シートが開く', (tester) async {
+  testWidgets('レンジ表のハンドをタップするとポジション一覧が開く', (tester) async {
     await _pumpApp(tester);
     await _openTab(tester, 'レンジ');
 
     await tester.tap(find.text('AA').first);
     await tester.pumpAndSettle();
 
-    expect(find.text('なぜこのアクションか'), findsOneWidget);
-    expect(find.text('初心者向け'), findsOneWidget);
-    expect(find.text('GTO解説'), findsOneWidget);
-    expect(find.text('実戦での調整'), findsOneWidget);
+    // 集約表示では、タップしたハンドを「どの席でオープン/コール/3ベットするか」を出す。
+    expect(find.text('AA（ポケットAA）'), findsOneWidget);
+    expect(find.textContaining('オープンする席', findRichText: true), findsOneWidget);
   });
 
   testWidgets('レビュータブは自分のハンドレビュー専用になっている', (tester) async {

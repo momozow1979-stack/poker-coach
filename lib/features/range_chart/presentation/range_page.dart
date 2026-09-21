@@ -1,36 +1,43 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../app/router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../shared/models/position.dart';
+import '../../../shared/models/starting_hand.dart';
 import '../../../shared/models/table_type.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/choice_chip_group.dart';
-import '../../../shared/widgets/empty_state.dart';
-import '../../../shared/widgets/fade_slide_in.dart';
+import '../application/consolidated_range.dart';
 import '../application/range_providers.dart';
 import '../domain/range_action.dart';
-import '../domain/range_guidance.dart';
 import '../domain/range_spot.dart';
-import 'widgets/hand_detail_sheet.dart';
-import 'widgets/range_legend.dart';
-import 'widgets/range_matrix.dart';
 
-/// プリフロップレンジ表の画面。
-class RangePage extends ConsumerWidget {
+/// プリフロップレンジ表（ポジション別に色分けした集約表示）。
+///
+/// ポジションを1つずつ切り替えるのではなく、1枚の表で「どのハンドを
+/// どのポジションから取るか」を色で見せる。オープンは後ろの席ほど広がるので、
+/// 一番タイトな席の色で塗る＝色が広がるほど後ろの席まで含む、と読める。
+class RangePage extends ConsumerStatefulWidget {
   const RangePage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tableType = ref.watch(selectedTableTypeProvider);
-    final position = ref.watch(selectedPositionProvider);
-    final chart = ref.watch(selectedRangeChartProvider);
-    final positions = Position.orderFor(tableType);
-    final situations = ref.watch(availableSituationsProvider);
-    final selectedSituation = ref.watch(selectedSituationProvider);
+  ConsumerState<RangePage> createState() => _RangePageState();
+}
+
+class _RangePageState extends ConsumerState<RangePage> {
+  RangeSituation _situation = RangeSituation.openRaise;
+  RangeAction _vsAction = RangeAction.call;
+
+  RangeAction get _action =>
+      _situation == RangeSituation.openRaise ? RangeAction.raise : _vsAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final table = ref.watch(selectedTableTypeProvider);
+    final repo = ref.read(rangeRepositoryProvider);
+    final heatmap = consolidate(repo, table, _situation, _action);
+    final positions = positionsWithChart(repo, table, _situation);
 
     return Scaffold(
       appBar: AppBar(title: const Text('レンジ表')),
@@ -46,183 +53,218 @@ class RangePage extends ConsumerWidget {
           children: [
             ChoiceChipGroup<TableType>(
               values: TableType.values,
-              selected: tableType,
-              labelBuilder: (value) => value.label,
-              onSelected: (value) => _selectTableType(ref, value),
+              selected: table,
+              labelBuilder: (v) => v.label,
+              onSelected: ref.read(selectedTableTypeProvider.notifier).select,
             ),
             const SizedBox(height: AppSpacing.md),
-            ChoiceChipGroup<Position>(
-              values: positions,
-              selected: position,
-              labelBuilder: (value) => value.label,
-              onSelected: (value) => _selectPosition(ref, value),
+            ChoiceChipGroup<RangeSituation>(
+              values: const [RangeSituation.openRaise, RangeSituation.vsOpen],
+              selected: _situation,
+              labelBuilder: (v) =>
+                  v == RangeSituation.openRaise ? 'オープンする' : 'オープンに対応する',
+              onSelected: (v) => setState(() => _situation = v),
             ),
-            if (situations.length > 1) ...[
+            if (_situation == RangeSituation.vsOpen) ...[
               const SizedBox(height: AppSpacing.md),
-              ChoiceChipGroup<RangeSituation>(
-                values: situations,
-                selected: selectedSituation ?? situations.first,
-                labelBuilder: (value) => switch (value) {
-                  RangeSituation.openRaise => 'オープンする',
-                  RangeSituation.vsOpen => 'オープンに対応する',
-                  RangeSituation.vsThreeBet => 'vs 3Bet',
-                  RangeSituation.vsFourBet => 'vs 4Bet',
-                },
-                onSelected: ref.read(selectedSituationProvider.notifier).select,
+              ChoiceChipGroup<RangeAction>(
+                values: const [RangeAction.call, RangeAction.threeBet],
+                selected: _vsAction,
+                labelBuilder: (v) => v == RangeAction.call ? 'コール' : '3ベット',
+                onSelected: (v) => setState(() => _vsAction = v),
               ),
             ],
+            const SizedBox(height: AppSpacing.md),
+            AppCard(
+              child: Text(
+                _situation == RangeSituation.openRaise
+                    ? '各ハンドを「オープンする一番早い席」の色で表示しています。'
+                          '色が濃い（前の席）ほどタイト、後ろの席ほどレンジが広がります。'
+                    : 'オープンに対して${_vsAction == RangeAction.call ? "コール" : "3ベット"}する'
+                          '一番早い席の色で表示しています。',
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.6,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
             const SizedBox(height: AppSpacing.lg),
-            if (chart == null)
-              AppCard(
-                child: EmptyState(
-                  icon: Icons.grid_off_rounded,
-                  title: 'このポジションのレンジ表は準備中です',
-                  message: '${position.label} の表は今後のアップデートで追加します。',
-                ),
-              )
-            else ...[
-              AppCard(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            chart.spot.title,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '${chart.vpipPercent.toStringAsFixed(1)}%',
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.accent,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: AppSpacing.sm),
-                    Text(
-                      chart.spot.headline,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        height: 1.6,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    const SizedBox(height: AppSpacing.md),
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.info_outline_rounded,
-                          size: 14,
-                          color: AppColors.textMuted,
-                        ),
-                        const SizedBox(width: AppSpacing.xs),
-                        Expanded(
-                          child: Text(
-                            '${chart.spot.situation.label} / '
-                            '${chart.spot.stackBb.toInt()}BB ・ 学習用の目安として整理した表です',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              FadeSlideIn(
-                key: ValueKey(chart.spot.id),
-                child: RangeMatrix(
-                  chart: chart,
-                  onHandTap: (hand) => _showHandDetail(
-                    context,
-                    ref,
-                    chart.spot,
-                    RangeGuidanceBuilder.build(
-                      spot: chart.spot,
-                      entry: chart.entryFor(hand),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.lg),
-              AppCard(
-                child: RangeLegend(
-                  actions: _legendActions(chart.spot.situation),
-                ),
-              ),
-              const SizedBox(height: AppSpacing.md),
-              const Text(
-                'オープンレイズと、直前のポジションのオープンに対応する vs Open は '
-                '切り替えられるようになりました。vs 3Bet / vs 4Bet は今後のアップデートで対応します。',
-                style: TextStyle(fontSize: 12, color: AppColors.textMuted),
-              ),
-            ],
+            AspectRatio(aspectRatio: 1, child: _grid(heatmap)),
+            const SizedBox(height: AppSpacing.lg),
+            _legend(positions),
+            const SizedBox(height: AppSpacing.md),
+            const Text(
+              'マスをタップすると、そのハンドをどの席でオープン/コール/3ベットするかが見られます。',
+              style: TextStyle(fontSize: 12, color: AppColors.textMuted),
+            ),
           ],
         ),
       ),
     );
   }
 
-  List<RangeAction> _legendActions(RangeSituation situation) =>
-      situation == RangeSituation.openRaise
-      ? const [RangeAction.raise, RangeAction.mixed, RangeAction.fold]
-      : const [
-          RangeAction.threeBet,
-          RangeAction.call,
-          RangeAction.mixed,
-          RangeAction.fold,
-        ];
-
-  void _selectTableType(WidgetRef ref, TableType value) {
-    ref.read(selectedTableTypeProvider.notifier).select(value);
-    // 9MAX 専用ポジションのまま 6MAX に切り替えると表が無くなるので補正する。
-    final positions = Position.orderFor(value);
-    final current = ref.read(selectedPositionProvider);
-    if (!positions.contains(current)) {
-      ref.read(selectedPositionProvider.notifier).select(Position.btn);
-    }
-    ref
-        .read(selectedSituationProvider.notifier)
-        .resetIfUnavailable(value, ref.read(selectedPositionProvider));
+  Widget _grid(Map<StartingHand, Position> heatmap) {
+    return Column(
+      children: [
+        for (var row = 0; row < 13; row++)
+          Expanded(
+            child: Row(
+              children: [
+                for (var col = 0; col < 13; col++)
+                  Expanded(
+                    child: _cell(StartingHand.fromGrid(row, col), heatmap),
+                  ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 
-  void _selectPosition(WidgetRef ref, Position value) {
-    ref.read(selectedPositionProvider.notifier).select(value);
-    ref
-        .read(selectedSituationProvider.notifier)
-        .resetIfUnavailable(ref.read(selectedTableTypeProvider), value);
+  Widget _cell(StartingHand hand, Map<StartingHand, Position> heatmap) {
+    final pos = heatmap[hand];
+    final bg = pos == null
+        ? AppColors.rangeFold
+        : positionColor(pos).withValues(alpha: 0.85);
+    final fg = pos == null ? AppColors.textMuted : Colors.white;
+    return GestureDetector(
+      onTap: () => _showHandPositions(hand),
+      child: Container(
+        margin: const EdgeInsets.all(0.5),
+        decoration: BoxDecoration(
+          color: bg,
+          border: Border.all(color: AppColors.border, width: 0.5),
+        ),
+        alignment: Alignment.center,
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Padding(
+            padding: const EdgeInsets.all(2),
+            child: Text(
+              hand.code,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: fg,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
-  void _showHandDetail(
-    BuildContext context,
-    WidgetRef ref,
-    RangeSpot spot,
-    RangeHandGuidance guidance,
-  ) {
+  Widget _legend(List<Position> positions) {
+    return AppCard(
+      child: Wrap(
+        spacing: AppSpacing.md,
+        runSpacing: AppSpacing.sm,
+        children: [
+          for (final p in positions)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: positionColor(p).withValues(alpha: 0.85),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.xs),
+                Text(
+                  p.label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  color: AppColors.rangeFold,
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              ),
+              const SizedBox(width: AppSpacing.xs),
+              const Text(
+                'フォールド',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showHandPositions(StartingHand hand) {
+    final table = ref.read(selectedTableTypeProvider);
+    final repo = ref.read(rangeRepositoryProvider);
+    final summary = handPositionSummary(repo, table, hand);
     showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: true,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(AppSpacing.lg),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${hand.code}（${hand.description}）',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: AppSpacing.md),
+            _summaryLine('オープンする席', summary.opens),
+            _summaryLine('オープンにコールする席', summary.calls),
+            _summaryLine('オープンに3ベットする席', summary.threeBets),
+            if (summary.opens.isEmpty &&
+                summary.calls.isEmpty &&
+                summary.threeBets.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: AppSpacing.sm),
+                child: Text(
+                  'どのレンジにも入っていません（基本フォールド）。',
+                  style: TextStyle(color: AppColors.textSecondary),
+                ),
+              ),
+          ],
+        ),
       ),
-      builder: (sheetContext) => HandDetailSheet(
-        guidance: guidance,
-        spotTitle: spot.title,
-        onPractice: () {
-          Navigator.of(sheetContext).pop();
-          context.go(AppRoutes.quiz);
-        },
+    );
+  }
+
+  Widget _summaryLine(String label, List<Position> positions) {
+    if (positions.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+      child: RichText(
+        text: TextSpan(
+          style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
+          children: [
+            TextSpan(
+              text: '$label: ',
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            TextSpan(text: positions.map((p) => p.label).join('・')),
+          ],
+        ),
       ),
     );
   }
