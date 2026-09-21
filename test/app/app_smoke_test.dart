@@ -92,16 +92,17 @@ void main() {
     expect(find.text('2 / 10'), findsOneWidget);
   });
 
-  testWidgets('レンジタブで13x13マトリクスとテーブル切替が動く', (tester) async {
+  testWidgets('レンジタブは13x13で、オープン/vsオープンを切り替えられる', (tester) async {
     await _pumpApp(tester);
     await _openTab(tester, 'レンジ');
 
     expect(find.text('AA'), findsWidgets);
-    expect(find.text('9MAX'), findsOneWidget);
+    expect(find.text('オープンする'), findsOneWidget);
 
-    await tester.tap(find.text('9MAX'));
+    // vsオープンに切り替えると、凡例に「3ベット」が現れる（共通の黒）。
+    await tester.tap(find.text('オープンに対応する'));
     await tester.pumpAndSettle();
-    expect(find.text('UTG+1'), findsOneWidget);
+    expect(find.text('3ベット'), findsWidgets);
   });
 
   testWidgets('レンジ表のハンドをタップするとポジション一覧が開く', (tester) async {
@@ -113,7 +114,7 @@ void main() {
 
     // 集約表示では、タップしたハンドを「どの席でオープン/コール/3ベットするか」を出す。
     expect(find.text('AA（ポケットAA）'), findsOneWidget);
-    expect(find.textContaining('オープンする席', findRichText: true), findsOneWidget);
+    expect(find.textContaining('オープンする席', findRichText: true), findsWidgets);
   });
 
   testWidgets('レビュータブは自分のハンドレビュー専用になっている', (tester) async {
