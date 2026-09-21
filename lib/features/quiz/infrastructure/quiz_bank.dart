@@ -1,6 +1,7 @@
 import '../domain/quiz.dart';
 import '../domain/quiz_category.dart';
 import 'banks/bet_sizing_quizzes.dart';
+import 'banks/combo_count_quizzes.dart';
 import 'banks/exploit_quizzes.dart';
 import 'banks/flop_quizzes.dart';
 import 'banks/gto_quizzes.dart';
@@ -39,6 +40,7 @@ abstract final class QuizBank {
     ...BetSizingQuizzes.all,
     ...PotOddsQuizzes.all,
     ...ValueBluffQuizzes.all,
+    ...ComboCountQuizzes.all,
     ...GtoQuizzes.all,
     ...ExploitQuizzes.all,
     ...TerminologyQuizzes.all,
