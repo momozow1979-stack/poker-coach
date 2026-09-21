@@ -1,6 +1,3 @@
-import 'package:flutter/material.dart';
-
-import '../../../core/theme/app_colors.dart';
 import '../../../shared/models/position.dart';
 import '../../../shared/models/starting_hand.dart';
 import '../../../shared/models/table_type.dart';
@@ -9,27 +6,14 @@ import '../domain/range_entry.dart';
 import '../domain/range_repository.dart';
 import '../domain/range_spot.dart';
 
+// ポジション色はアプリ共通の定義を使う（重複させない）。
+export '../../../shared/theme/position_palette.dart' show positionColor;
+
 /// ポジション別に色分けした「集約レンジ表」を作るためのヘルパー。
 ///
 /// オープンはポジションが後ろになるほど広がる（前のポジションのレンジを含む）。
 /// そこで「そのハンドで最初にそのアクションを取る一番タイトなポジション」で
 /// 色を決めると、1枚の表でレンジの広がりが見える。Mixed は廃止し主アクションに畳む。
-
-const List<Color> _positionPalette = [
-  AppColors.rangeFourBet,
-  AppColors.rangeThreeBet,
-  AppColors.rangeRaise,
-  AppColors.reward,
-  AppColors.accent,
-  AppColors.info,
-  AppColors.rangeCall,
-  AppColors.danger,
-];
-
-/// ポジションごとの表示色（表・凡例で共通に使う）。
-Color positionColor(Position position) =>
-    _positionPalette[Position.values.indexOf(position) %
-        _positionPalette.length];
 
 RangeAction _effective(RangeEntry entry) => entry.action == RangeAction.mixed
     ? (entry.blend?.primary ?? RangeAction.fold)

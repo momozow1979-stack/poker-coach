@@ -8,6 +8,7 @@ import '../../core/theme/canvas_text.dart';
 import '../models/poker_action.dart';
 import '../models/position.dart';
 import '../models/table_type.dart';
+import '../theme/position_palette.dart';
 
 /// [PokerTableView] にチップアニメーションを再生させるための情報。
 ///
@@ -345,22 +346,16 @@ class _PokerTablePainter extends CustomPainter {
     final isHero = position == heroPosition;
     final isVillain = position == villainPosition;
 
-    final Color fill;
-    final Color border;
-    final Color label;
-    if (isHero) {
-      fill = AppColors.accent;
-      border = AppColors.accent;
-      label = AppColors.onAccent;
-    } else if (isVillain) {
-      fill = AppColors.info.withValues(alpha: 0.22);
-      border = AppColors.info;
-      label = AppColors.info;
-    } else {
-      fill = AppColors.surface;
-      border = AppColors.border;
-      label = AppColors.textMuted;
-    }
+    // 席の色は「ポジション色」で統一する（自分/相手で色を変えない）。
+    // 自分・相手は関与している席として濃く塗り、その他は薄く。
+    // 自分/相手の区別は席の下の文字ラベルで行う。
+    final posColor = positionColor(position);
+    final involved = isHero || isVillain;
+    final Color fill = involved
+        ? posColor.withValues(alpha: 0.9)
+        : posColor.withValues(alpha: 0.16);
+    final Color border = involved ? posColor : AppColors.border;
+    final Color label = involved ? Colors.white : AppColors.textMuted;
 
     canvas.drawCircle(
       seatCenter,
@@ -398,7 +393,7 @@ class _PokerTablePainter extends CustomPainter {
         canvas,
         isHero ? '自分' : '相手',
         seatCenter + Offset(0, dy),
-        color: isHero ? AppColors.accent : AppColors.info,
+        color: seatRoleLabelColor,
         fontSize: 9,
         weight: FontWeight.w800,
       );
