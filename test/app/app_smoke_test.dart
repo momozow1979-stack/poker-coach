@@ -99,10 +99,10 @@ void main() {
     expect(find.text('AA'), findsWidgets);
     expect(find.text('オープンする'), findsOneWidget);
 
-    // vsオープンに切り替えると、凡例に「3ベット」が現れる（共通の黒）。
+    // vsオープンに切り替えると、凡例に「共通3ベット」（全席3ベット＝黒）が現れる。
     await tester.tap(find.text('オープンに対応する'));
     await tester.pumpAndSettle();
-    expect(find.text('3ベット'), findsWidgets);
+    expect(find.text('共通3ベット'), findsWidgets);
   });
 
   testWidgets('レンジ表のハンドをタップするとポジション一覧が開く', (tester) async {
