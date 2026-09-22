@@ -42,6 +42,10 @@ BOARDS = [
     ("wet_two_tone", ("9h", "8h", "5c")),
     ("paired", ("Jd", "Jc", "6s")),
     ("monotone", ("Ah", "Th", "6h")),
+    ("k_high_dry", ("Kh", "8s", "3c")),
+    ("mid_connected", ("8c", "7d", "6h")),
+    ("broadway", ("Qd", "Js", "Th")),
+    ("ace_two_tone", ("Ah", "Kd", "4d")),
 ]
 
 _RANK_ORDER = "AKQJT98765432"
