@@ -18,6 +18,7 @@ Writes partial results after each board, so an interrupt keeps finished boards.
 from __future__ import annotations
 
 import json
+import os
 import time
 
 from cfr_solver.cfr import CFRSolver
@@ -135,7 +136,25 @@ def main() -> None:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         print(f"[{spot_id}] wrote partial {out_path} ({len(spots)} spots)", flush=True)
+    _maybe_upload(out_path)
     print("ALL DONE", flush=True)
+
+
+def _maybe_upload(path: str) -> None:
+    """OUTPUT_GCS_URI（gs://bucket/name.json）が指定されていれば結果をアップロードする。
+
+    Cloud Run Jobs ではジョブのサービスアカウントで自動認証される。ローカル実行時は
+    環境変数が無いので何もしない（google-cloud-storage が無くても落ちない）。
+    """
+    uri = os.environ.get("OUTPUT_GCS_URI")
+    if not uri or not uri.startswith("gs://"):
+        return
+    from google.cloud import storage  # type: ignore
+
+    bucket_name, _, blob_name = uri[len("gs://") :].partition("/")
+    client = storage.Client()
+    client.bucket(bucket_name).blob(blob_name).upload_from_filename(path)
+    print(f"uploaded {path} -> {uri}", flush=True)
 
 
 if __name__ == "__main__":

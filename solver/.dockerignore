@@ -1,0 +1,10 @@
+.venv/
+native/target/
+vendor/
+__pycache__/
+.pytest_cache/
+*.pyd
+*.so
+*.log
+train.pid
+solved_srp_btn_bb.json
