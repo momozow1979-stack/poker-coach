@@ -6,6 +6,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../shared/models/position.dart';
 import '../../../shared/models/starting_hand.dart';
 import '../../../shared/models/table_type.dart';
+import '../../profile/application/progress_providers.dart';
 import '../application/consolidated_range.dart';
 import '../application/range_providers.dart';
 import '../domain/range_action.dart';
@@ -406,9 +407,7 @@ class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
             : SizedBox(
                 width: double.infinity,
                 child: FilledButton(
-                  onPressed: _hasPaint
-                      ? () => setState(() => _graded = true)
-                      : null,
+                  onPressed: _hasPaint ? () => _grade(repo) : null,
                   child: const Text('回答する'),
                 ),
               ),
@@ -421,6 +420,37 @@ class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
       : _callPaint.isNotEmpty ||
             _threeBetPaint.isNotEmpty ||
             _blackPaint.isNotEmpty;
+
+  /// 採点する。満点（全問一致）ならそのシチュエーションをクリア済みとして記録する
+  /// （レベル判定に使う）。
+  void _grade(RangeRepository repo) {
+    final perfect = _isPerfect(repo);
+    setState(() => _graded = true);
+    if (perfect) {
+      ref
+          .read(drillProgressStoreProvider.notifier)
+          .markCleared(_isOpen ? 'open' : 'vsopen');
+    }
+  }
+
+  bool _isPerfect(RangeRepository repo) {
+    if (_isOpen) {
+      final target = consolidate(
+        repo,
+        _table,
+        RangeSituation.openRaise,
+        RangeAction.raise,
+      );
+      for (final h in StartingHand.all) {
+        if (_openPaint[h] != target[h]) return false;
+      }
+      return true;
+    }
+    for (final h in StartingHand.all) {
+      if (!_vsMatches(h, vsOpenCellFor(repo, _table, h))) return false;
+    }
+    return true;
+  }
 
   Widget _result(RangeRepository repo) {
     var total = 0;

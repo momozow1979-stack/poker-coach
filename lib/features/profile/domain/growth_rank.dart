@@ -16,20 +16,25 @@ enum GrowthRank {
   final String label;
   final String emoji;
 
-  /// 全体正答率と回答数からランクを決める。
+  /// レベル番号（1〜6）。見習い=Lv.1、名人=Lv.6。表示の「Lv.N」に使う。
+  int get level => index + 1;
+
+  /// 座学のユニーク正解数と、レンジ表暗記のクリア状況から昇格を決める。
   ///
-  /// 回答数が少ないうちは正答率がぶれるので、一定数に達するまでは
-  /// 見習いのまま据え置く。
-  static GrowthRank forStats({
-    required double accuracy,
-    required int totalAnswered,
+  /// 「正答率だけ」ではなく「どれだけ身につけたか（正解した問題数）」を主軸にし、
+  /// 後半はレンジ暗記のクリアを条件に足す。数値は学習用の目安。
+  static GrowthRank forProgress({
+    required int uniqueSolved,
+    required bool openDrillCleared,
+    required bool vsOpenDrillCleared,
   }) {
-    if (totalAnswered < 30) return GrowthRank.apprentice;
-    if (accuracy < 0.55) return GrowthRank.apprentice;
-    if (accuracy < 0.65) return GrowthRank.training;
-    if (accuracy < 0.75) return GrowthRank.journeyman;
-    if (accuracy < 0.85) return GrowthRank.skilled;
-    if (accuracy < 0.92) return GrowthRank.expert;
-    return GrowthRank.master;
+    if (uniqueSolved >= 700 && openDrillCleared && vsOpenDrillCleared) {
+      return GrowthRank.master;
+    }
+    if (uniqueSolved >= 450 && vsOpenDrillCleared) return GrowthRank.expert;
+    if (uniqueSolved >= 250 && openDrillCleared) return GrowthRank.skilled;
+    if (uniqueSolved >= 100) return GrowthRank.journeyman;
+    if (uniqueSolved >= 30) return GrowthRank.training;
+    return GrowthRank.apprentice;
   }
 }

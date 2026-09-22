@@ -116,7 +116,7 @@ class HomePage extends ConsumerWidget {
                     const SizedBox(height: AppSpacing.lg),
                     const Divider(height: 1, color: AppColors.border),
                     const SizedBox(height: AppSpacing.lg),
-                    LearningRoadmapCard(stats: stats),
+                    const LearningRoadmapCard(),
                   ],
                 ),
               ),
