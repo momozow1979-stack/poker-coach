@@ -8,6 +8,7 @@ import '../features/hand_review/presentation/hand_review_result_page.dart';
 import '../features/hand_review/presentation/review_home_page.dart';
 import '../features/hand_trainer/presentation/trainer_list_page.dart';
 import '../features/hand_trainer/presentation/trainer_play_page.dart';
+import '../features/gto_strategy/presentation/gto_flop_page.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/onboarding/application/onboarding_providers.dart';
 import '../features/onboarding/presentation/onboarding_flow_page.dart';
@@ -28,6 +29,9 @@ abstract final class AppRoutes {
 
   /// レンジ表暗記ドリル（目隠し）。
   static const rangeDrill = '/range/drill';
+
+  /// ソルバーで学習した GTO フロップ戦略ビューア。
+  static const gtoFlop = '/range/gto';
 
   /// レビュータブの入り口。自分のハンドのレビュー専用。
   static const review = '/review';
@@ -139,6 +143,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'drill',
                     builder: (context, state) => const RangeDrillPage(),
+                  ),
+                  GoRoute(
+                    path: 'gto',
+                    builder: (context, state) => const GtoFlopPage(),
                   ),
                 ],
               ),

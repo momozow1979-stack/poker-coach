@@ -1,0 +1,1606 @@
+{
+  "matchup": "BTN open vs BB call (single-raised pot)",
+  "hero": "BTN (aggressor)",
+  "hero_range": "22+,A2s+,K2s+,Q4s+,J6s+,T6s+,95s+,85s+,74s+,64s+,53s+,A2o+,K7o+,Q8o+,J8o+,T8o+,98o,87o,76o",
+  "villain_range": "22-88,A2s+,K2s+,Q5s+,J7s+,T7s+,96s+,85s+,75s+,64s+,53s+,A2o+,K8o+,Q9o+,J9o+,T9o,98o",
+  "decision": "flop c-bet (check vs bet), hero acts first",
+  "note": "approximate solve (CFR+, external sampling) at the stated iterations; values are CFRSolver.average_strategy() readouts, aggregated to 169 hand classes as mean c-bet frequency.",
+  "spots": [
+    {
+      "id": "a_high_dry",
+      "board": [
+        "As",
+        "7d",
+        "2c"
+      ],
+      "iterations": 12000000,
+      "classes": {
+        "22": {
+          "bet": 0.9342,
+          "combos": 3
+        },
+        "K2s": {
+          "bet": 0.5098,
+          "combos": 3
+        },
+        "A2o": {
+          "bet": 0.6306,
+          "combos": 7
+        },
+        "A2s": {
+          "bet": 0.6211,
+          "combos": 2
+        },
+        "33": {
+          "bet": 0.6744,
+          "combos": 6
+        },
+        "53s": {
+          "bet": 0.8534,
+          "combos": 4
+        },
+        "K3s": {
+          "bet": 0.6832,
+          "combos": 4
+        },
+        "A3o": {
+          "bet": 0.1711,
+          "combos": 9
+        },
+        "A3s": {
+          "bet": 0.1039,
+          "combos": 3
+        },
+        "44": {
+          "bet": 0.5725,
+          "combos": 6
+        },
+        "54s": {
+          "bet": 0.864,
+          "combos": 4
+        },
+        "64s": {
+          "bet": 0.898,
+          "combos": 4
+        },
+        "74s": {
+          "bet": 0.8052,
+          "combos": 3
+        },
+        "Q4s": {
+          "bet": 0.7569,
+          "combos": 4
+        },
+        "K4s": {
+          "bet": 0.4553,
+          "combos": 4
+        },
+        "A4o": {
+          "bet": 0.1227,
+          "combos": 9
+        },
+        "A4s": {
+          "bet": 0.1319,
+          "combos": 3
+        },
+        "55": {
+          "bet": 0.564,
+          "combos": 6
+        },
+        "65s": {
+          "bet": 0.8902,
+          "combos": 4
+        },
+        "75s": {
+          "bet": 0.7521,
+          "combos": 3
+        },
+        "85s": {
+          "bet": 0.9022,
+          "combos": 4
+        },
+        "95s": {
+          "bet": 0.8511,
+          "combos": 4
+        },
+        "Q5s": {
+          "bet": 0.8293,
+          "combos": 4
+        },
+        "K5s": {
+          "bet": 0.4557,
+          "combos": 4
+        },
+        "A5o": {
+          "bet": 0.1279,
+          "combos": 9
+        },
+        "A5s": {
+          "bet": 0.1854,
+          "combos": 3
+        },
+        "66": {
+          "bet": 0.5809,
+          "combos": 6
+        },
+        "76s": {
+          "bet": 0.6743,
+          "combos": 3
+        },
+        "76o": {
+          "bet": 0.6927,
+          "combos": 9
+        },
+        "86s": {
+          "bet": 0.8635,
+          "combos": 4
+        },
+        "96s": {
+          "bet": 0.872,
+          "combos": 4
+        },
+        "T6s": {
+          "bet": 0.8094,
+          "combos": 4
+        },
+        "J6s": {
+          "bet": 0.6908,
+          "combos": 4
+        },
+        "Q6s": {
+          "bet": 0.7622,
+          "combos": 4
+        },
+        "K6s": {
+          "bet": 0.4635,
+          "combos": 4
+        },
+        "A6o": {
+          "bet": 0.1606,
+          "combos": 9
+        },
+        "A6s": {
+          "bet": 0.1711,
+          "combos": 3
+        },
+        "77": {
+          "bet": 0.9268,
+          "combos": 3
+        },
+        "87s": {
+          "bet": 0.6788,
+          "combos": 3
+        },
+        "87o": {
+          "bet": 0.621,
+          "combos": 9
+        },
+        "97s": {
+          "bet": 0.5044,
+          "combos": 3
+        },
+        "T7s": {
+          "bet": 0.5007,
+          "combos": 3
+        },
+        "J7s": {
+          "bet": 0.6115,
+          "combos": 3
+        },
+        "Q7s": {
+          "bet": 0.6015,
+          "combos": 3
+        },
+        "K7s": {
+          "bet": 0.726,
+          "combos": 3
+        },
+        "K7o": {
+          "bet": 0.7534,
+          "combos": 9
+        },
+        "A7o": {
+          "bet": 0.8074,
+          "combos": 7
+        },
+        "A7s": {
+          "bet": 0.854,
+          "combos": 2
+        },
+        "88": {
+          "bet": 0.7147,
+          "combos": 6
+        },
+        "98s": {
+          "bet": 0.8514,
+          "combos": 4
+        },
+        "98o": {
+          "bet": 0.842,
+          "combos": 12
+        },
+        "T8s": {
+          "bet": 0.7483,
+          "combos": 4
+        },
+        "T8o": {
+          "bet": 0.7716,
+          "combos": 12
+        },
+        "J8s": {
+          "bet": 0.8601,
+          "combos": 4
+        },
+        "J8o": {
+          "bet": 0.7706,
+          "combos": 12
+        },
+        "Q8s": {
+          "bet": 0.7774,
+          "combos": 4
+        },
+        "Q8o": {
+          "bet": 0.5422,
+          "combos": 12
+        },
+        "K8s": {
+          "bet": 0.2167,
+          "combos": 4
+        },
+        "K8o": {
+          "bet": 0.3684,
+          "combos": 12
+        },
+        "A8o": {
+          "bet": 0.3252,
+          "combos": 9
+        },
+        "A8s": {
+          "bet": 0.2624,
+          "combos": 3
+        },
+        "99": {
+          "bet": 0.5766,
+          "combos": 6
+        },
+        "T9s": {
+          "bet": 0.7821,
+          "combos": 4
+        },
+        "T9o": {
+          "bet": 0.7331,
+          "combos": 12
+        },
+        "J9s": {
+          "bet": 0.7933,
+          "combos": 4
+        },
+        "J9o": {
+          "bet": 0.6623,
+          "combos": 12
+        },
+        "Q9s": {
+          "bet": 0.5716,
+          "combos": 4
+        },
+        "Q9o": {
+          "bet": 0.358,
+          "combos": 12
+        },
+        "K9s": {
+          "bet": 0.1307,
+          "combos": 4
+        },
+        "K9o": {
+          "bet": 0.1644,
+          "combos": 12
+        },
+        "A9o": {
+          "bet": 0.4464,
+          "combos": 9
+        },
+        "A9s": {
+          "bet": 0.5257,
+          "combos": 3
+        },
+        "TT": {
+          "bet": 0.244,
+          "combos": 6
+        },
+        "JTs": {
+          "bet": 0.6568,
+          "combos": 4
+        },
+        "JTo": {
+          "bet": 0.7221,
+          "combos": 12
+        },
+        "QTs": {
+          "bet": 0.5176,
+          "combos": 4
+        },
+        "QTo": {
+          "bet": 0.4197,
+          "combos": 12
+        },
+        "KTs": {
+          "bet": 0.2288,
+          "combos": 4
+        },
+        "KTo": {
+          "bet": 0.1919,
+          "combos": 12
+        },
+        "ATo": {
+          "bet": 0.5963,
+          "combos": 9
+        },
+        "ATs": {
+          "bet": 0.7294,
+          "combos": 3
+        },
+        "JJ": {
+          "bet": 0.2037,
+          "combos": 6
+        },
+        "QJs": {
+          "bet": 0.4561,
+          "combos": 4
+        },
+        "QJo": {
+          "bet": 0.4204,
+          "combos": 12
+        },
+        "KJs": {
+          "bet": 0.1983,
+          "combos": 4
+        },
+        "KJo": {
+          "bet": 0.2149,
+          "combos": 12
+        },
+        "AJo": {
+          "bet": 0.5589,
+          "combos": 9
+        },
+        "AJs": {
+          "bet": 0.563,
+          "combos": 3
+        },
+        "QQ": {
+          "bet": 0.1563,
+          "combos": 6
+        },
+        "KQs": {
+          "bet": 0.1317,
+          "combos": 4
+        },
+        "KQo": {
+          "bet": 0.2,
+          "combos": 12
+        },
+        "AQo": {
+          "bet": 0.7048,
+          "combos": 9
+        },
+        "AQs": {
+          "bet": 0.702,
+          "combos": 3
+        },
+        "KK": {
+          "bet": 0.0764,
+          "combos": 6
+        },
+        "AKo": {
+          "bet": 0.7202,
+          "combos": 9
+        },
+        "AKs": {
+          "bet": 0.709,
+          "combos": 3
+        },
+        "AA": {
+          "bet": 0.6367,
+          "combos": 3
+        }
+      }
+    },
+    {
+      "id": "wet_two_tone",
+      "board": [
+        "9h",
+        "8h",
+        "5c"
+      ],
+      "iterations": 12000000,
+      "classes": {
+        "22": {
+          "bet": 0.6574,
+          "combos": 6
+        },
+        "K2s": {
+          "bet": 0.7664,
+          "combos": 4
+        },
+        "A2s": {
+          "bet": 0.5679,
+          "combos": 4
+        },
+        "A2o": {
+          "bet": 0.6032,
+          "combos": 12
+        },
+        "33": {
+          "bet": 0.4223,
+          "combos": 6
+        },
+        "53s": {
+          "bet": 0.4533,
+          "combos": 3
+        },
+        "K3s": {
+          "bet": 0.7923,
+          "combos": 4
+        },
+        "A3s": {
+          "bet": 0.6784,
+          "combos": 4
+        },
+        "A3o": {
+          "bet": 0.4874,
+          "combos": 12
+        },
+        "44": {
+          "bet": 0.2987,
+          "combos": 6
+        },
+        "54s": {
+          "bet": 0.4762,
+          "combos": 3
+        },
+        "64s": {
+          "bet": 0.8285,
+          "combos": 4
+        },
+        "74s": {
+          "bet": 0.7277,
+          "combos": 4
+        },
+        "Q4s": {
+          "bet": 0.6887,
+          "combos": 4
+        },
+        "K4s": {
+          "bet": 0.7322,
+          "combos": 4
+        },
+        "A4s": {
+          "bet": 0.4551,
+          "combos": 4
+        },
+        "A4o": {
+          "bet": 0.4584,
+          "combos": 12
+        },
+        "55": {
+          "bet": 0.7008,
+          "combos": 3
+        },
+        "65s": {
+          "bet": 0.5298,
+          "combos": 3
+        },
+        "75s": {
+          "bet": 0.4519,
+          "combos": 3
+        },
+        "85s": {
+          "bet": 0.3103,
+          "combos": 2
+        },
+        "95s": {
+          "bet": 0.3018,
+          "combos": 2
+        },
+        "Q5s": {
+          "bet": 0.2747,
+          "combos": 3
+        },
+        "K5s": {
+          "bet": 0.3354,
+          "combos": 3
+        },
+        "A5s": {
+          "bet": 0.4035,
+          "combos": 3
+        },
+        "A5o": {
+          "bet": 0.3255,
+          "combos": 9
+        },
+        "66": {
+          "bet": 0.4186,
+          "combos": 6
+        },
+        "76s": {
+          "bet": 0.7895,
+          "combos": 4
+        },
+        "76o": {
+          "bet": 0.748,
+          "combos": 12
+        },
+        "86s": {
+          "bet": 0.7175,
+          "combos": 3
+        },
+        "96s": {
+          "bet": 0.5386,
+          "combos": 3
+        },
+        "T6s": {
+          "bet": 0.79,
+          "combos": 4
+        },
+        "J6s": {
+          "bet": 0.802,
+          "combos": 4
+        },
+        "Q6s": {
+          "bet": 0.8288,
+          "combos": 4
+        },
+        "K6s": {
+          "bet": 0.8186,
+          "combos": 4
+        },
+        "A6s": {
+          "bet": 0.6066,
+          "combos": 4
+        },
+        "A6o": {
+          "bet": 0.5803,
+          "combos": 12
+        },
+        "77": {
+          "bet": 0.3671,
+          "combos": 6
+        },
+        "87s": {
+          "bet": 0.6224,
+          "combos": 3
+        },
+        "87o": {
+          "bet": 0.4953,
+          "combos": 9
+        },
+        "97s": {
+          "bet": 0.8132,
+          "combos": 3
+        },
+        "T7s": {
+          "bet": 0.7658,
+          "combos": 4
+        },
+        "J7s": {
+          "bet": 0.7937,
+          "combos": 4
+        },
+        "Q7s": {
+          "bet": 0.7263,
+          "combos": 4
+        },
+        "K7s": {
+          "bet": 0.8051,
+          "combos": 4
+        },
+        "K7o": {
+          "bet": 0.8082,
+          "combos": 12
+        },
+        "A7s": {
+          "bet": 0.7219,
+          "combos": 4
+        },
+        "A7o": {
+          "bet": 0.6667,
+          "combos": 12
+        },
+        "88": {
+          "bet": 0.7334,
+          "combos": 3
+        },
+        "98s": {
+          "bet": 0.6343,
+          "combos": 3
+        },
+        "98o": {
+          "bet": 0.6054,
+          "combos": 6
+        },
+        "T8s": {
+          "bet": 0.3665,
+          "combos": 3
+        },
+        "T8o": {
+          "bet": 0.4279,
+          "combos": 9
+        },
+        "J8s": {
+          "bet": 0.4491,
+          "combos": 3
+        },
+        "J8o": {
+          "bet": 0.4375,
+          "combos": 9
+        },
+        "Q8s": {
+          "bet": 0.3747,
+          "combos": 3
+        },
+        "Q8o": {
+          "bet": 0.4249,
+          "combos": 9
+        },
+        "K8s": {
+          "bet": 0.4193,
+          "combos": 3
+        },
+        "K8o": {
+          "bet": 0.3821,
+          "combos": 9
+        },
+        "A8s": {
+          "bet": 0.4936,
+          "combos": 3
+        },
+        "A8o": {
+          "bet": 0.5223,
+          "combos": 9
+        },
+        "99": {
+          "bet": 0.5378,
+          "combos": 3
+        },
+        "T9s": {
+          "bet": 0.6338,
+          "combos": 3
+        },
+        "T9o": {
+          "bet": 0.5798,
+          "combos": 9
+        },
+        "J9s": {
+          "bet": 0.7249,
+          "combos": 3
+        },
+        "J9o": {
+          "bet": 0.6974,
+          "combos": 9
+        },
+        "Q9s": {
+          "bet": 0.7824,
+          "combos": 3
+        },
+        "Q9o": {
+          "bet": 0.6734,
+          "combos": 9
+        },
+        "K9s": {
+          "bet": 0.8247,
+          "combos": 3
+        },
+        "K9o": {
+          "bet": 0.7322,
+          "combos": 9
+        },
+        "A9s": {
+          "bet": 0.8572,
+          "combos": 3
+        },
+        "A9o": {
+          "bet": 0.8027,
+          "combos": 9
+        },
+        "TT": {
+          "bet": 0.8087,
+          "combos": 6
+        },
+        "JTs": {
+          "bet": 0.8068,
+          "combos": 4
+        },
+        "JTo": {
+          "bet": 0.8,
+          "combos": 12
+        },
+        "QTs": {
+          "bet": 0.7891,
+          "combos": 4
+        },
+        "QTo": {
+          "bet": 0.8039,
+          "combos": 12
+        },
+        "KTs": {
+          "bet": 0.8343,
+          "combos": 4
+        },
+        "KTo": {
+          "bet": 0.8115,
+          "combos": 12
+        },
+        "ATs": {
+          "bet": 0.655,
+          "combos": 4
+        },
+        "ATo": {
+          "bet": 0.4706,
+          "combos": 12
+        },
+        "JJ": {
+          "bet": 0.8101,
+          "combos": 6
+        },
+        "QJs": {
+          "bet": 0.8652,
+          "combos": 4
+        },
+        "QJo": {
+          "bet": 0.8275,
+          "combos": 12
+        },
+        "KJs": {
+          "bet": 0.7995,
+          "combos": 4
+        },
+        "KJo": {
+          "bet": 0.7555,
+          "combos": 12
+        },
+        "AJs": {
+          "bet": 0.6449,
+          "combos": 4
+        },
+        "AJo": {
+          "bet": 0.5733,
+          "combos": 12
+        },
+        "QQ": {
+          "bet": 0.7751,
+          "combos": 6
+        },
+        "KQs": {
+          "bet": 0.6133,
+          "combos": 4
+        },
+        "KQo": {
+          "bet": 0.7333,
+          "combos": 12
+        },
+        "AQs": {
+          "bet": 0.4157,
+          "combos": 4
+        },
+        "AQo": {
+          "bet": 0.5067,
+          "combos": 12
+        },
+        "KK": {
+          "bet": 0.7081,
+          "combos": 6
+        },
+        "AKs": {
+          "bet": 0.5081,
+          "combos": 4
+        },
+        "AKo": {
+          "bet": 0.4094,
+          "combos": 12
+        },
+        "AA": {
+          "bet": 0.4674,
+          "combos": 6
+        }
+      }
+    },
+    {
+      "id": "paired",
+      "board": [
+        "Jd",
+        "Jc",
+        "6s"
+      ],
+      "iterations": 12000000,
+      "classes": {
+        "22": {
+          "bet": 0.8048,
+          "combos": 6
+        },
+        "K2s": {
+          "bet": 0.7179,
+          "combos": 4
+        },
+        "A2s": {
+          "bet": 0.635,
+          "combos": 4
+        },
+        "A2o": {
+          "bet": 0.5545,
+          "combos": 12
+        },
+        "33": {
+          "bet": 0.8349,
+          "combos": 6
+        },
+        "53s": {
+          "bet": 0.8898,
+          "combos": 4
+        },
+        "K3s": {
+          "bet": 0.6846,
+          "combos": 4
+        },
+        "A3s": {
+          "bet": 0.4533,
+          "combos": 4
+        },
+        "A3o": {
+          "bet": 0.5115,
+          "combos": 12
+        },
+        "44": {
+          "bet": 0.7745,
+          "combos": 6
+        },
+        "54s": {
+          "bet": 0.8886,
+          "combos": 4
+        },
+        "74s": {
+          "bet": 0.8928,
+          "combos": 4
+        },
+        "Q4s": {
+          "bet": 0.8357,
+          "combos": 4
+        },
+        "K4s": {
+          "bet": 0.7995,
+          "combos": 4
+        },
+        "A4s": {
+          "bet": 0.5497,
+          "combos": 4
+        },
+        "A4o": {
+          "bet": 0.5217,
+          "combos": 12
+        },
+        "64s": {
+          "bet": 0.6526,
+          "combos": 3
+        },
+        "55": {
+          "bet": 0.7857,
+          "combos": 6
+        },
+        "75s": {
+          "bet": 0.8617,
+          "combos": 4
+        },
+        "85s": {
+          "bet": 0.8573,
+          "combos": 4
+        },
+        "95s": {
+          "bet": 0.7955,
+          "combos": 4
+        },
+        "Q5s": {
+          "bet": 0.8453,
+          "combos": 4
+        },
+        "K5s": {
+          "bet": 0.7331,
+          "combos": 4
+        },
+        "A5s": {
+          "bet": 0.4167,
+          "combos": 4
+        },
+        "A5o": {
+          "bet": 0.5494,
+          "combos": 12
+        },
+        "65s": {
+          "bet": 0.7542,
+          "combos": 3
+        },
+        "66": {
+          "bet": 0.8015,
+          "combos": 3
+        },
+        "76o": {
+          "bet": 0.7196,
+          "combos": 9
+        },
+        "76s": {
+          "bet": 0.7266,
+          "combos": 3
+        },
+        "86s": {
+          "bet": 0.5997,
+          "combos": 3
+        },
+        "96s": {
+          "bet": 0.6225,
+          "combos": 3
+        },
+        "T6s": {
+          "bet": 0.7349,
+          "combos": 3
+        },
+        "J6s": {
+          "bet": 0.8513,
+          "combos": 1
+        },
+        "Q6s": {
+          "bet": 0.5669,
+          "combos": 3
+        },
+        "K6s": {
+          "bet": 0.658,
+          "combos": 3
+        },
+        "A6o": {
+          "bet": 0.6687,
+          "combos": 9
+        },
+        "A6s": {
+          "bet": 0.7063,
+          "combos": 3
+        },
+        "77": {
+          "bet": 0.7991,
+          "combos": 6
+        },
+        "87s": {
+          "bet": 0.8597,
+          "combos": 4
+        },
+        "87o": {
+          "bet": 0.882,
+          "combos": 12
+        },
+        "97s": {
+          "bet": 0.892,
+          "combos": 4
+        },
+        "T7s": {
+          "bet": 0.8475,
+          "combos": 4
+        },
+        "J7s": {
+          "bet": 0.7301,
+          "combos": 2
+        },
+        "Q7s": {
+          "bet": 0.8044,
+          "combos": 4
+        },
+        "K7s": {
+          "bet": 0.6415,
+          "combos": 4
+        },
+        "K7o": {
+          "bet": 0.6829,
+          "combos": 12
+        },
+        "A7s": {
+          "bet": 0.4052,
+          "combos": 4
+        },
+        "A7o": {
+          "bet": 0.4397,
+          "combos": 12
+        },
+        "88": {
+          "bet": 0.804,
+          "combos": 6
+        },
+        "98s": {
+          "bet": 0.831,
+          "combos": 4
+        },
+        "98o": {
+          "bet": 0.8394,
+          "combos": 12
+        },
+        "T8s": {
+          "bet": 0.7471,
+          "combos": 4
+        },
+        "T8o": {
+          "bet": 0.7976,
+          "combos": 12
+        },
+        "J8s": {
+          "bet": 0.7518,
+          "combos": 2
+        },
+        "J8o": {
+          "bet": 0.7333,
+          "combos": 6
+        },
+        "Q8s": {
+          "bet": 0.8076,
+          "combos": 4
+        },
+        "Q8o": {
+          "bet": 0.6923,
+          "combos": 12
+        },
+        "K8s": {
+          "bet": 0.5034,
+          "combos": 4
+        },
+        "K8o": {
+          "bet": 0.5408,
+          "combos": 12
+        },
+        "A8s": {
+          "bet": 0.3352,
+          "combos": 4
+        },
+        "A8o": {
+          "bet": 0.3429,
+          "combos": 12
+        },
+        "99": {
+          "bet": 0.6392,
+          "combos": 6
+        },
+        "T9s": {
+          "bet": 0.7796,
+          "combos": 4
+        },
+        "T9o": {
+          "bet": 0.8203,
+          "combos": 12
+        },
+        "J9s": {
+          "bet": 0.8287,
+          "combos": 2
+        },
+        "J9o": {
+          "bet": 0.8364,
+          "combos": 6
+        },
+        "Q9s": {
+          "bet": 0.726,
+          "combos": 4
+        },
+        "Q9o": {
+          "bet": 0.7344,
+          "combos": 12
+        },
+        "K9s": {
+          "bet": 0.5083,
+          "combos": 4
+        },
+        "K9o": {
+          "bet": 0.4196,
+          "combos": 12
+        },
+        "A9s": {
+          "bet": 0.4061,
+          "combos": 4
+        },
+        "A9o": {
+          "bet": 0.3988,
+          "combos": 12
+        },
+        "TT": {
+          "bet": 0.5277,
+          "combos": 6
+        },
+        "JTs": {
+          "bet": 0.8303,
+          "combos": 2
+        },
+        "JTo": {
+          "bet": 0.7968,
+          "combos": 6
+        },
+        "QTs": {
+          "bet": 0.6243,
+          "combos": 4
+        },
+        "QTo": {
+          "bet": 0.7136,
+          "combos": 12
+        },
+        "KTs": {
+          "bet": 0.4252,
+          "combos": 4
+        },
+        "KTo": {
+          "bet": 0.5134,
+          "combos": 12
+        },
+        "ATs": {
+          "bet": 0.4591,
+          "combos": 4
+        },
+        "ATo": {
+          "bet": 0.5632,
+          "combos": 12
+        },
+        "JJ": {
+          "bet": 0.8402,
+          "combos": 1
+        },
+        "QJs": {
+          "bet": 0.8215,
+          "combos": 2
+        },
+        "QJo": {
+          "bet": 0.8077,
+          "combos": 6
+        },
+        "KJs": {
+          "bet": 0.8516,
+          "combos": 2
+        },
+        "KJo": {
+          "bet": 0.8353,
+          "combos": 6
+        },
+        "AJs": {
+          "bet": 0.5602,
+          "combos": 2
+        },
+        "AJo": {
+          "bet": 0.6736,
+          "combos": 6
+        },
+        "QQ": {
+          "bet": 0.4274,
+          "combos": 6
+        },
+        "KQs": {
+          "bet": 0.441,
+          "combos": 4
+        },
+        "KQo": {
+          "bet": 0.4761,
+          "combos": 12
+        },
+        "AQs": {
+          "bet": 0.4017,
+          "combos": 4
+        },
+        "AQo": {
+          "bet": 0.584,
+          "combos": 12
+        },
+        "KK": {
+          "bet": 0.2126,
+          "combos": 6
+        },
+        "AKs": {
+          "bet": 0.6965,
+          "combos": 4
+        },
+        "AKo": {
+          "bet": 0.636,
+          "combos": 12
+        },
+        "AA": {
+          "bet": 0.0943,
+          "combos": 6
+        }
+      }
+    },
+    {
+      "id": "monotone",
+      "board": [
+        "Ah",
+        "Th",
+        "6h"
+      ],
+      "iterations": 12000000,
+      "classes": {
+        "22": {
+          "bet": 0.6145,
+          "combos": 6
+        },
+        "K2s": {
+          "bet": 0.6555,
+          "combos": 4
+        },
+        "A2s": {
+          "bet": 0.342,
+          "combos": 3
+        },
+        "A2o": {
+          "bet": 0.2491,
+          "combos": 9
+        },
+        "33": {
+          "bet": 0.5641,
+          "combos": 6
+        },
+        "53s": {
+          "bet": 0.719,
+          "combos": 4
+        },
+        "K3s": {
+          "bet": 0.4735,
+          "combos": 4
+        },
+        "A3s": {
+          "bet": 0.4385,
+          "combos": 3
+        },
+        "A3o": {
+          "bet": 0.2388,
+          "combos": 9
+        },
+        "44": {
+          "bet": 0.6741,
+          "combos": 6
+        },
+        "54s": {
+          "bet": 0.7907,
+          "combos": 4
+        },
+        "64s": {
+          "bet": 0.7684,
+          "combos": 3
+        },
+        "74s": {
+          "bet": 0.7648,
+          "combos": 4
+        },
+        "Q4s": {
+          "bet": 0.7306,
+          "combos": 4
+        },
+        "K4s": {
+          "bet": 0.6181,
+          "combos": 4
+        },
+        "A4s": {
+          "bet": 0.3822,
+          "combos": 3
+        },
+        "A4o": {
+          "bet": 0.2459,
+          "combos": 9
+        },
+        "55": {
+          "bet": 0.525,
+          "combos": 6
+        },
+        "65s": {
+          "bet": 0.696,
+          "combos": 3
+        },
+        "75s": {
+          "bet": 0.6884,
+          "combos": 4
+        },
+        "85s": {
+          "bet": 0.6533,
+          "combos": 4
+        },
+        "95s": {
+          "bet": 0.6894,
+          "combos": 4
+        },
+        "Q5s": {
+          "bet": 0.6223,
+          "combos": 4
+        },
+        "K5s": {
+          "bet": 0.436,
+          "combos": 4
+        },
+        "A5s": {
+          "bet": 0.3108,
+          "combos": 3
+        },
+        "A5o": {
+          "bet": 0.2984,
+          "combos": 9
+        },
+        "66": {
+          "bet": 0.907,
+          "combos": 3
+        },
+        "76s": {
+          "bet": 0.6047,
+          "combos": 3
+        },
+        "76o": {
+          "bet": 0.5156,
+          "combos": 9
+        },
+        "86s": {
+          "bet": 0.6544,
+          "combos": 3
+        },
+        "96s": {
+          "bet": 0.749,
+          "combos": 3
+        },
+        "T6s": {
+          "bet": 0.8248,
+          "combos": 3
+        },
+        "J6s": {
+          "bet": 0.5883,
+          "combos": 3
+        },
+        "Q6s": {
+          "bet": 0.4822,
+          "combos": 3
+        },
+        "K6s": {
+          "bet": 0.4792,
+          "combos": 3
+        },
+        "A6s": {
+          "bet": 0.735,
+          "combos": 3
+        },
+        "A6o": {
+          "bet": 0.6673,
+          "combos": 6
+        },
+        "77": {
+          "bet": 0.2793,
+          "combos": 6
+        },
+        "87s": {
+          "bet": 0.8266,
+          "combos": 4
+        },
+        "87o": {
+          "bet": 0.7654,
+          "combos": 12
+        },
+        "97s": {
+          "bet": 0.817,
+          "combos": 4
+        },
+        "T7s": {
+          "bet": 0.3334,
+          "combos": 3
+        },
+        "J7s": {
+          "bet": 0.5693,
+          "combos": 4
+        },
+        "Q7s": {
+          "bet": 0.6434,
+          "combos": 4
+        },
+        "K7s": {
+          "bet": 0.4796,
+          "combos": 4
+        },
+        "K7o": {
+          "bet": 0.463,
+          "combos": 12
+        },
+        "A7s": {
+          "bet": 0.303,
+          "combos": 3
+        },
+        "A7o": {
+          "bet": 0.39,
+          "combos": 9
+        },
+        "88": {
+          "bet": 0.158,
+          "combos": 6
+        },
+        "98s": {
+          "bet": 0.7772,
+          "combos": 4
+        },
+        "98o": {
+          "bet": 0.7106,
+          "combos": 12
+        },
+        "T8s": {
+          "bet": 0.3647,
+          "combos": 3
+        },
+        "T8o": {
+          "bet": 0.2928,
+          "combos": 9
+        },
+        "J8s": {
+          "bet": 0.6005,
+          "combos": 4
+        },
+        "J8o": {
+          "bet": 0.5941,
+          "combos": 12
+        },
+        "Q8s": {
+          "bet": 0.631,
+          "combos": 4
+        },
+        "Q8o": {
+          "bet": 0.6344,
+          "combos": 12
+        },
+        "K8s": {
+          "bet": 0.4691,
+          "combos": 4
+        },
+        "K8o": {
+          "bet": 0.4199,
+          "combos": 12
+        },
+        "A8s": {
+          "bet": 0.3729,
+          "combos": 3
+        },
+        "A8o": {
+          "bet": 0.3034,
+          "combos": 9
+        },
+        "99": {
+          "bet": 0.1652,
+          "combos": 6
+        },
+        "T9s": {
+          "bet": 0.507,
+          "combos": 3
+        },
+        "T9o": {
+          "bet": 0.2859,
+          "combos": 9
+        },
+        "J9s": {
+          "bet": 0.6643,
+          "combos": 4
+        },
+        "J9o": {
+          "bet": 0.6172,
+          "combos": 12
+        },
+        "Q9s": {
+          "bet": 0.6291,
+          "combos": 4
+        },
+        "Q9o": {
+          "bet": 0.6177,
+          "combos": 12
+        },
+        "K9s": {
+          "bet": 0.3964,
+          "combos": 4
+        },
+        "K9o": {
+          "bet": 0.4845,
+          "combos": 12
+        },
+        "A9s": {
+          "bet": 0.4818,
+          "combos": 3
+        },
+        "A9o": {
+          "bet": 0.5083,
+          "combos": 9
+        },
+        "TT": {
+          "bet": 0.8336,
+          "combos": 3
+        },
+        "JTs": {
+          "bet": 0.2834,
+          "combos": 3
+        },
+        "JTo": {
+          "bet": 0.2492,
+          "combos": 9
+        },
+        "QTs": {
+          "bet": 0.2856,
+          "combos": 3
+        },
+        "QTo": {
+          "bet": 0.3777,
+          "combos": 9
+        },
+        "KTs": {
+          "bet": 0.4529,
+          "combos": 3
+        },
+        "KTo": {
+          "bet": 0.4142,
+          "combos": 9
+        },
+        "ATs": {
+          "bet": 0.702,
+          "combos": 3
+        },
+        "ATo": {
+          "bet": 0.7182,
+          "combos": 6
+        },
+        "JJ": {
+          "bet": 0.3472,
+          "combos": 6
+        },
+        "QJs": {
+          "bet": 0.8315,
+          "combos": 4
+        },
+        "QJo": {
+          "bet": 0.7276,
+          "combos": 12
+        },
+        "KJs": {
+          "bet": 0.7794,
+          "combos": 4
+        },
+        "KJo": {
+          "bet": 0.6516,
+          "combos": 12
+        },
+        "AJs": {
+          "bet": 0.6556,
+          "combos": 3
+        },
+        "AJo": {
+          "bet": 0.4571,
+          "combos": 9
+        },
+        "QQ": {
+          "bet": 0.3814,
+          "combos": 6
+        },
+        "KQs": {
+          "bet": 0.5988,
+          "combos": 4
+        },
+        "KQo": {
+          "bet": 0.6018,
+          "combos": 12
+        },
+        "AQs": {
+          "bet": 0.721,
+          "combos": 3
+        },
+        "AQo": {
+          "bet": 0.6205,
+          "combos": 9
+        },
+        "KK": {
+          "bet": 0.3607,
+          "combos": 6
+        },
+        "AKs": {
+          "bet": 0.7315,
+          "combos": 3
+        },
+        "AKo": {
+          "bet": 0.7773,
+          "combos": 9
+        },
+        "AA": {
+          "bet": 0.4819,
+          "combos": 3
+        }
+      }
+    }
+  ]
+}

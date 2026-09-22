@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -8,6 +9,7 @@ import '../../../shared/models/starting_hand.dart';
 import '../../../shared/models/table_type.dart';
 import '../../../shared/widgets/app_card.dart';
 import '../../../shared/widgets/choice_chip_group.dart';
+import '../../gto_strategy/application/gto_flop_providers.dart';
 import '../application/consolidated_range.dart';
 import '../application/range_providers.dart';
 import '../domain/range_action.dart';
@@ -72,6 +74,16 @@ class _RangePageState extends ConsumerState<RangePage> {
             AppSpacing.xxl,
           ),
           children: [
+            if (ref
+                    .watch(gtoFlopStrategyProvider)
+                    .asData
+                    ?.value
+                    .spots
+                    .isNotEmpty ??
+                false) ...[
+              _gtoEntry(context),
+              const SizedBox(height: AppSpacing.md),
+            ],
             ChoiceChipGroup<RangeSituation>(
               values: const [RangeSituation.openRaise, RangeSituation.vsOpen],
               selected: _situation,
@@ -112,6 +124,27 @@ class _RangePageState extends ConsumerState<RangePage> {
               'マスをタップすると、そのハンドをどの席でオープン/コール/3ベットするかが見られます。',
               style: TextStyle(fontSize: 12, color: AppColors.textMuted),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _gtoEntry(BuildContext context) {
+    return GestureDetector(
+      onTap: () => context.push('/range/gto'),
+      child: AppCard(
+        child: Row(
+          children: [
+            const Icon(Icons.insights, color: AppColors.accent),
+            const SizedBox(width: AppSpacing.sm),
+            const Expanded(
+              child: Text(
+                'GTOフロップ戦略',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+              ),
+            ),
+            const Icon(Icons.chevron_right, color: AppColors.textMuted),
           ],
         ),
       ),
