@@ -268,11 +268,16 @@ final handReviewHistoryProvider = Provider<List<HandReviewRecord>>(
 
 /// ログインユーザーのプロフィール。Supabase の `profiles` を取れたら差し替わる。
 class ProfileStore extends Notifier<UserProfile> {
+  static const _nicknameKey = 'nickname';
+
+  KeyValueStore get _kv => ref.read(keyValueStoreProvider);
+
   @override
   UserProfile build() {
     // オンボーディングで選んだレベルがあればそれを初期値にする。
     // 完了前（読み込み中含む）は null なので、その間は初級者扱いにしておく。
     final onboardingLevel = ref.watch(onboardingAnswersProvider)?.pokerLevel;
+    _loadNickname();
     return UserProfile(
       id: 'local',
       displayName: 'プレイヤー',
@@ -281,7 +286,22 @@ class ProfileStore extends Notifier<UserProfile> {
     );
   }
 
+  Future<void> _loadNickname() async {
+    final saved = await _kv.getString(_nicknameKey);
+    if (saved != null && saved.isNotEmpty && ref.mounted) {
+      state = state.copyWith(displayName: saved);
+    }
+  }
+
   void apply(UserProfile profile) => state = profile;
+
+  /// ニックネームを設定して端末に保存する。
+  Future<void> setNickname(String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return;
+    state = state.copyWith(displayName: trimmed);
+    await _kv.setString(_nicknameKey, trimmed);
+  }
 }
 
 final profileStoreProvider = NotifierProvider<ProfileStore, UserProfile>(

@@ -27,4 +27,16 @@ class UserProfile {
 
   int get daysSinceJoined =>
       DateTime.now().difference(createdAt).inDays.clamp(0, 100000);
+
+  UserProfile copyWith({
+    String? id,
+    String? displayName,
+    PokerLevel? pokerLevel,
+    DateTime? createdAt,
+  }) => UserProfile(
+    id: id ?? this.id,
+    displayName: displayName ?? this.displayName,
+    pokerLevel: pokerLevel ?? this.pokerLevel,
+    createdAt: createdAt ?? this.createdAt,
+  );
 }

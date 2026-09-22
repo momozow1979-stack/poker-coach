@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_spacing.dart';
+import '../../../profile/application/progress_providers.dart';
 import '../../../profile/domain/growth_rank.dart';
 import '../../../profile/domain/learning_stats.dart';
 import '../../../profile/domain/user_profile.dart';
@@ -15,7 +17,7 @@ import '../../../profile/domain/user_profile.dart';
 /// 上達スコアのリング（直近7日の正答率が母数）を別カードで両方
 /// 出していたが、どちらも「今どれくらい進んでいるか」を示す見た目が
 /// 重複していたため、進捗バーは削除しリングだけに一本化した。
-class HomeHeader extends StatelessWidget {
+class HomeHeader extends ConsumerWidget {
   const HomeHeader({super.key, required this.profile, required this.stats});
 
   final UserProfile profile;
@@ -30,16 +32,13 @@ class HomeHeader extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final score = (stats.accuracyLast7Days * 100).round().clamp(0, 100);
     final hasComparison = stats.hasPreviousWeekData;
     final deltaPt = hasComparison
         ? ((stats.accuracyLast7Days - stats.accuracyPreviousWeek) * 100).round()
         : null;
-    final rank = GrowthRank.forStats(
-      accuracy: stats.accuracy,
-      totalAnswered: stats.totalAnswered,
-    );
+    final rank = ref.watch(growthRankProvider);
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.lg),
@@ -66,9 +65,9 @@ class HomeHeader extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Lv.${stats.level}  ${profile.pokerLevel.label}',
+                  'Lv.${rank.level}  ${rank.label} ${rank.emoji}',
                   style: const TextStyle(
-                    fontSize: 28,
+                    fontSize: 26,
                     fontWeight: FontWeight.w800,
                     height: 1.2,
                     letterSpacing: -0.5,

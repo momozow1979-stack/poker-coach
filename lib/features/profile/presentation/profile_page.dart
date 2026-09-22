@@ -13,6 +13,7 @@ import '../../../shared/widgets/tag_chip.dart';
 import '../../../shared/widgets/trend_chart.dart';
 import '../../auth/presentation/account_card.dart';
 import '../application/learning_providers.dart';
+import '../application/progress_providers.dart';
 import 'widgets/category_accuracy_list.dart';
 
 /// マイページ / 学習履歴。
@@ -22,6 +23,7 @@ class ProfilePage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final profile = ref.watch(userProfileProvider);
+    final rank = ref.watch(growthRankProvider);
     final stats = ref.watch(learningStatsProvider);
     final reviews = ref.watch(handReviewHistoryProvider);
     final weak = stats.weakCategories();
@@ -70,7 +72,7 @@ class ProfilePage extends ConsumerWidget {
                       ),
                     ),
                     child: Text(
-                      'Lv.${stats.level}',
+                      'Lv.${rank.level}',
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -92,7 +94,7 @@ class ProfilePage extends ConsumerWidget {
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          '${profile.pokerLevel.label} ・ 学習${profile.daysSinceJoined + 1}日目',
+                          '${rank.emoji} ${rank.label} ・ 学習${profile.daysSinceJoined + 1}日目',
                           style: const TextStyle(
                             fontSize: 12,
                             color: AppColors.textSecondary,
@@ -100,6 +102,12 @@ class ProfilePage extends ConsumerWidget {
                         ),
                       ],
                     ),
+                  ),
+                  IconButton(
+                    tooltip: 'ニックネームを変更',
+                    onPressed: () =>
+                        _editNickname(context, ref, profile.displayName),
+                    icon: const Icon(Icons.edit_outlined, size: 20),
                   ),
                 ],
               ),
@@ -295,5 +303,40 @@ class ProfilePage extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _editNickname(
+    BuildContext context,
+    WidgetRef ref,
+    String current,
+  ) async {
+    final controller = TextEditingController(text: current);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ニックネーム'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          decoration: const InputDecoration(hintText: '表示名を入力'),
+          onSubmitted: (v) => Navigator.of(context).pop(v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('キャンセル'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name != null && name.trim().isNotEmpty) {
+      await ref.read(profileStoreProvider.notifier).setNickname(name);
+    }
   }
 }
