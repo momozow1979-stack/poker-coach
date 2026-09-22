@@ -2,6 +2,8 @@ import '../domain/trainer_repository.dart';
 import '../domain/trainer_scenario.dart';
 import 'scenarios/bb_kq_triple_barrel_defense.dart';
 import 'scenarios/bb_middle_pair_defense.dart';
+import 'scenarios/bb_qq_threebet_pot.dart';
+import 'scenarios/btn_ak_flush_scare.dart';
 import 'scenarios/bb_set_deep_stack.dart';
 import 'scenarios/bb_threebet_paired_board.dart';
 import 'scenarios/btn_ak_monotone.dart';
@@ -35,6 +37,8 @@ class BundledTrainerRepository implements TrainerScenarioRepository {
     sbAkThreeBetAHigh,
     coQqOverpairPotControl,
     bbKqTripleBarrelDefense,
+    btnAkFlushScare,
+    bbQqThreeBetPot,
   ]);
 
   @override
