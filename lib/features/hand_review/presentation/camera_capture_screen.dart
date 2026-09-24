@@ -40,10 +40,17 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
         });
         return;
       }
-      final back = cameras.firstWhere(
-        (c) => c.lensDirection == CameraLensDirection.back,
-        orElse: () => cameras.first,
-      );
+      final backCameras = cameras
+          .where((c) => c.lensDirection == CameraLensDirection.back)
+          .toList();
+      // 背面に複数レンズ（広角・超広角・望遠）が別々に列挙される機種があるため、
+      // 基本の広角レンズを明示的に選ぶ。情報が無ければ先頭の背面カメラにフォールバック。
+      final back = backCameras.isEmpty
+          ? cameras.first
+          : backCameras.firstWhere(
+              (c) => c.lensType == CameraLensType.wide,
+              orElse: () => backCameras.first,
+            );
       final controller = CameraController(
         back,
         ResolutionPreset.high,
@@ -136,8 +143,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       );
     }
 
-    // プレビューを画面いっぱいに cover 表示する（Center のままだと縦画面で
-    // 上下に黒帯＝レターボックスが出て「黒く塗りつぶし」に見えるため）。
+    // BoxFit.cover で画面いっぱいに引き伸ばすと、センサーのアスペクト比と
+    // 画面のアスペクト比の差分だけ端が切り取られ「ズームして全体が映らない」
+    // 状態になる。テーブル全体を必ず映すことを優先し、contain 相当で
+    // 全体表示する（画面とレンズの比率が違えば上下に黒帯が出る）。
     // previewSize はセンサー基準（横長）なので、縦画面用に幅と高さを入れ替える。
     final preview = controller.value.previewSize;
     final previewW = preview?.height ?? 9;
@@ -146,20 +155,20 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        ClipRect(
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: previewW,
-              height: previewH,
-              child: CameraPreview(controller),
+        Center(
+          child: AspectRatio(
+            // 撮影ガイドを実際に写る範囲へ正しく重ねるため、プレビューと
+            // 同じ Stack の中に収める（枠だけ別サイズだとズレるため）。
+            aspectRatio: previewW / previewH,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                CameraPreview(controller),
+                IgnorePointer(
+                  child: CustomPaint(painter: _GuideOverlayPainter()),
+                ),
+              ],
             ),
-          ),
-        ),
-        // 撮影ガイド（枠と自分ゾーンの線）。
-        Positioned.fill(
-          child: IgnorePointer(
-            child: CustomPaint(painter: _GuideOverlayPainter()),
           ),
         ),
         const Positioned(
