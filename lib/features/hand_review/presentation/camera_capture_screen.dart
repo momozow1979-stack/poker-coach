@@ -145,9 +145,14 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
 
     // BoxFit.cover で画面いっぱいに引き伸ばすと、センサーのアスペクト比と
     // 画面のアスペクト比の差分だけ端が切り取られ「ズームして全体が映らない」
-    // 状態になる。テーブル全体を必ず映すことを優先し、contain 相当で
-    // 全体表示する（画面とレンズの比率が違えば上下に黒帯が出る）。
+    // 状態になる。テーブル全体を必ず映すことを優先し、contain で全体表示する
+    // （画面とレンズの比率が違えば上下に黒帯が出る）。
     // previewSize はセンサー基準（横長）なので、縦画面用に幅と高さを入れ替える。
+    //
+    // Web 版は video 要素（プラットフォームビュー）を使うため、AspectRatio +
+    // Center を重ねる組み方だと中央からズレて表示されることがあった。
+    // 必ず中央寄せされる FittedBox（+固定サイズの SizedBox）に統一し、
+    // 撮影ガイドの枠も同じ箱の中に入れてプレビューとズレないようにする。
     final preview = controller.value.previewSize;
     final previewW = preview?.height ?? 9;
     final previewH = preview?.width ?? 16;
@@ -155,11 +160,11 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        Center(
-          child: AspectRatio(
-            // 撮影ガイドを実際に写る範囲へ正しく重ねるため、プレビューと
-            // 同じ Stack の中に収める（枠だけ別サイズだとズレるため）。
-            aspectRatio: previewW / previewH,
+        FittedBox(
+          fit: BoxFit.contain,
+          child: SizedBox(
+            width: previewW,
+            height: previewH,
             child: Stack(
               fit: StackFit.expand,
               children: [
