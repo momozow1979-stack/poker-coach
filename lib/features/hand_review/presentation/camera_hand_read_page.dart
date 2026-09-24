@@ -8,12 +8,17 @@ import 'package:image_picker/image_picker.dart';
 import '../../../app/router.dart';
 import '../application/hand_review_providers.dart';
 import '../domain/camera_hand_assignment.dart';
-import 'camera_capture_screen.dart';
 
 /// テーブル写真からカードを読み取り、役割を確認・修正してレビュー入力に反映する画面。
 ///
 /// 撮影 → Edge Function `/read-hand`(Claude Vision) → 位置で自動仕分け →
 /// この画面で確認・修正 → 既存のレビュー入力へ。詳細は docs/camera-hand-read.md。
+///
+/// 撮影は OS 標準のカメラアプリ（`image_picker` の `ImageSource.camera`）を使う。
+/// 以前はアプリ内に自前のライブプレビュー（`camera` パッケージ）を持ち、撮影ガイドの
+/// 枠を重ねていたが、機種・ブラウザによってプレビューの表示が崩れる不具合が続いたため
+/// 廃止した。撮影時の目安（テーブル全体を入れる／自分の2枚は画面下側）は intro 画面の
+/// 説明文で伝える。
 class CameraHandReadPage extends ConsumerStatefulWidget {
   const CameraHandReadPage({super.key});
 
@@ -29,18 +34,7 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
   List<String> _warnings = [];
   String _error = '';
 
-  /// アプリ内カメラ（撮影ガイド付き）で撮る。モバイルもWeb(スマホのブラウザ)も
-  /// camera パッケージのライブプレビューを使い、ガイドの枠を重ねる。
-  Future<void> _openInAppCamera() async {
-    final navigator = Navigator.of(context);
-    final bytes = await navigator.push<Uint8List>(
-      MaterialPageRoute(builder: (_) => const CameraCaptureScreen()),
-    );
-    if (bytes == null || !mounted) return;
-    await _process(bytes, 'image/jpeg');
-  }
-
-  /// ギャラリー等から写真を選ぶ。
+  /// カメラ・ギャラリーいずれも `image_picker` 経由。
   Future<void> _pick(ImageSource source) async {
     final picker = ImagePicker();
     final file = await picker.pickImage(source: source, imageQuality: 85);
@@ -119,7 +113,7 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: _openInAppCamera,
+            onPressed: () => _pick(ImageSource.camera),
             icon: const Icon(Icons.photo_camera_outlined),
             label: const Text('カメラで撮影'),
           ),
