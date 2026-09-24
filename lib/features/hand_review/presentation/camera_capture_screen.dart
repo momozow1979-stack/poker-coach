@@ -143,11 +143,10 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
       );
     }
 
-    // BoxFit.cover で画面いっぱいに引き伸ばすと、センサーのアスペクト比と
-    // 画面のアスペクト比の差分だけ端が切り取られ「ズームして全体が映らない」
-    // 状態になる。テーブル全体を必ず映すことを優先し、contain で全体表示する
-    // （画面とレンズの比率が違えば上下に黒帯が出る）。
-    // previewSize はセンサー基準（横長）なので、縦画面用に幅と高さを入れ替える。
+    // 黒帯を出さず、画面いっぱいに縦長で表示する（cover）。はみ出た分は
+    // 切れるが、広角レンズを優先選択していることもあり、実用上は
+    // テーブル全体が入る想定。previewSize はセンサー基準（横長）なので、
+    // 縦画面用に幅と高さを入れ替える。
     //
     // Web 版は video 要素（プラットフォームビュー）を使うため、AspectRatio +
     // Center を重ねる組み方だと中央からズレて表示されることがあった。
@@ -160,19 +159,21 @@ class _CameraCaptureScreenState extends State<CameraCaptureScreen>
     return Stack(
       fit: StackFit.expand,
       children: [
-        FittedBox(
-          fit: BoxFit.contain,
-          child: SizedBox(
-            width: previewW,
-            height: previewH,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CameraPreview(controller),
-                IgnorePointer(
-                  child: CustomPaint(painter: _GuideOverlayPainter()),
-                ),
-              ],
+        ClipRect(
+          child: FittedBox(
+            fit: BoxFit.cover,
+            child: SizedBox(
+              width: previewW,
+              height: previewH,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CameraPreview(controller),
+                  IgnorePointer(
+                    child: CustomPaint(painter: _GuideOverlayPainter()),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
