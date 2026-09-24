@@ -43,7 +43,10 @@ dependencies:
   shared_preferences: ^2.5.5
   flutter_animate: ^4.5.2
   confetti: ^0.8.0
-  # テーブル写真の撮影に使う（カメラ起動・ギャラリー選択とも）。
+  # テーブル写真の撮影に使う。
+  # camera: アプリ内カメラ（撮影ガイドの枠を重ねるためのライブプレビュー、モバイル）。
+  # image_picker: 「写真を選ぶ」（ギャラリー）。
+  camera: ^0.11.0
   image_picker: ^1.1.2
 
 dev_dependencies:
