@@ -8,18 +8,19 @@ import 'package:image_picker/image_picker.dart';
 import '../../../app/router.dart';
 import '../application/hand_review_providers.dart';
 import '../domain/camera_hand_assignment.dart';
-import 'camera_capture_screen.dart';
 
 /// テーブル写真からカードを読み取り、役割を確認・修正してレビュー入力に反映する画面。
 ///
 /// 撮影 → Edge Function `/read-hand`(Claude Vision) → 位置で自動仕分け →
 /// この画面で確認・修正 → 既存のレビュー入力へ。詳細は docs/camera-hand-read.md。
 ///
-/// 撮影はアプリ内カメラ（撮影ガイド付き）を使う。OS標準カメラ（image_picker の
-/// ImageSource.camera）に一時的に切り替えたことがあるが、ズーム倍率・レンズを
-/// アプリ側から一切制御できないため、「テーブル全体を画角に入れる」という
-/// 要件を満たせなかった。超広角レンズの優先選択とズーム初期値のリセットを
-/// アプリ内カメラ側で行うことで対応する（camera_capture_screen.dart 参照）。
+/// 撮影は OS 標準のカメラアプリ（`image_picker` の `ImageSource.camera`）を使う。
+/// アプリ内に自前のライブプレビュー（`camera` パッケージ）を持たせたことが
+/// 複数回あるが、Web版では毎回別種の不具合（表示崩れ・プレビューが真っ黒になる・
+/// レンズ種別の情報を`camera_web`が一切持たないためレンズ選択が原理的に不可能、等）
+/// にぶつかり、実装をいくら直しても解決しなかったため、標準カメラに一本化する。
+/// テーブル全体を画角に入れる／レンズ切り替えは、ユーザーが普段使っている
+/// カメラアプリの操作に委ねる（intro 画面の説明文でも案内）。
 class CameraHandReadPage extends ConsumerStatefulWidget {
   const CameraHandReadPage({super.key});
 
@@ -35,20 +36,23 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
   List<String> _warnings = [];
   String _error = '';
 
-  /// アプリ内カメラ（撮影ガイド付き）で撮る。
-  Future<void> _openInAppCamera() async {
-    final navigator = Navigator.of(context);
-    final bytes = await navigator.push<Uint8List>(
-      MaterialPageRoute(builder: (_) => const CameraCaptureScreen()),
-    );
-    if (bytes == null || !mounted) return;
-    await _process(bytes, 'image/jpeg');
-  }
+  /// カメラ・ギャラリーいずれも `image_picker` 経由。
+  ///
+  /// 標準カメラで撮った写真は機種によって数千万画素になり得るため、長辺を
+  /// [_maxImageDimension] に制限する。カード読み取りに必要な解像度は十分
+  /// 確保しつつ、Edge Function への送信サイズと Claude Vision 側の処理を
+  /// 安定させる（無制限のまま送ると、機種によっては巨大なペイロードになり、
+  /// 読み取りの失敗・遅延につながりうる）。
+  static const int _maxImageDimension = 2000;
 
-  /// ギャラリーから写真を選ぶ。
   Future<void> _pick(ImageSource source) async {
     final picker = ImagePicker();
-    final file = await picker.pickImage(source: source, imageQuality: 85);
+    final file = await picker.pickImage(
+      source: source,
+      imageQuality: 90,
+      maxWidth: _maxImageDimension.toDouble(),
+      maxHeight: _maxImageDimension.toDouble(),
+    );
     if (file == null || !mounted) return;
     final bytes = await file.readAsBytes();
     if (!mounted) return;
@@ -124,7 +128,7 @@ class _CameraHandReadPageState extends ConsumerState<CameraHandReadPage> {
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: _openInAppCamera,
+            onPressed: () => _pick(ImageSource.camera),
             icon: const Icon(Icons.photo_camera_outlined),
             label: const Text('カメラで撮影'),
           ),
