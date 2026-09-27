@@ -245,8 +245,7 @@ abstract final class RangeDefinitions {
       tableType: TableType.sixMax,
       position: Position.co,
       headline: '後ろは BTN とブラインドだけ。ここからレンジを大きく広げます。',
-      raise:
-          '44+, A8s+, KTs+, QTs+, J9s+, T9s, 98s, 87s, 76s, ATo+, KJo+, QJo',
+      raise: '44+, A8s+, KTs+, QTs+, J9s+, T9s, 98s, 87s, 76s, ATo+, KJo+, QJo',
       mixed: '33, A7s, K9s, Q9s, J8s, T8s, 65s, A9o, KTo',
     ),
     _vsOpen(
@@ -486,8 +485,7 @@ abstract final class RangeDefinitions {
       tableType: TableType.nineMax,
       position: Position.co,
       headline: '後ろは BTN とブラインドだけ。ここから一気に広げます。',
-      raise:
-          '44+, A8s+, KTs+, QTs+, J9s+, T9s, 98s, 87s, 76s, ATo+, KJo+, QJo',
+      raise: '44+, A8s+, KTs+, QTs+, J9s+, T9s, 98s, 87s, 76s, ATo+, KJo+, QJo',
       mixed: '33, A7s, K9s, Q9s, J8s, T8s, 65s, A9o, KTo',
     ),
     _vsOpen(
