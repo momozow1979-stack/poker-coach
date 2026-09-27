@@ -385,8 +385,8 @@ class _RangePageState extends ConsumerState<RangePage> {
     if (positions.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-      child: RichText(
-        text: TextSpan(
+      child: Text.rich(
+        TextSpan(
           style: const TextStyle(fontSize: 14, color: AppColors.textPrimary),
           children: [
             TextSpan(
