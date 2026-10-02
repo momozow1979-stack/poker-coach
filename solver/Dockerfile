@@ -16,7 +16,12 @@ COPY . /app
 
 # maturin build-backend が native/ をコンパイルし、cfr_solver._native を入れる。
 # google-cloud-storage は結果を GCS にアップするために追加。
-RUN pip install --no-cache-dir . google-cloud-storage
+RUN pip install --no-cache-dir . google-cloud-storage \
+    # pip install 後、/app に残る生のソース（cfr_solver/, native/）を削除する。
+    # 残したままだと、実行時に import cfr_solver がカレントディレクトリの
+    # 生ソース（_native 未コンパイル）を site-packages より先に読み込んでしまい、
+    # ImportError: cannot import name '_native' になる。
+    && rm -rf cfr_solver native
 
 # 既定は BTN vs BB SRP の学習。実行時に環境変数で上書き可能:
 #   OUTPUT_GCS_URI=gs://bucket/solved_srp_btn_bb.json を渡すと結果をアップロードする。
