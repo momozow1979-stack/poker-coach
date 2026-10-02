@@ -28,9 +28,10 @@ from cfr_solver.poker.cards import card_str, parse_card
 ITERATIONS = 12_000_000
 
 # このアプリの BTN オープン / BB コール（vs BTN）レンジ（純粋部分）。
+# BTN_OPEN は range_definitions.dart の BTN オープン（raise のみ、mixed は含まない）と一致させる。
 BTN_OPEN = (
-    "22+,A2s+,K2s+,Q4s+,J6s+,T6s+,95s+,85s+,74s+,64s+,53s+,"
-    "A2o+,K7o+,Q8o+,J8o+,T8o+,98o,87o,76o"
+    "22+,A2s+,K5s+,Q8s+,J8s+,T8s+,97s+,86s+,76s,65s,54s,"
+    "A5o+,K8o+,Q9o+,J9o+,T9o"
 )
 BB_CALL = (
     "22-88,A2s+,K2s+,Q5s+,J7s+,T7s+,96s+,85s+,75s+,64s+,53s+,"
