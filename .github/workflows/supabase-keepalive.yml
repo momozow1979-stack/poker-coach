@@ -1,0 +1,35 @@
+name: Supabase keepalive
+
+# Supabase の無料プランは、7日間 API アクセスが無いとプロジェクトが
+# 自動的に一時停止（pause）される。GCP のソルバー実行とは無関係に、
+# Supabase 側だけで定期的に軽いリクエストを送って休止を防ぐ。
+#
+# PostgREST のルートエンドポイント（OpenAPI スキーマを返すだけ）に
+# apikey 付きで GET するだけで、どのテーブルの行も読まない・RLS にも
+# 依存しない最小のリクエスト。
+#
+# 別プロジェクトを指したいときは pages.yml と同じく
+#   Settings → Secrets and variables → Actions → Variables
+# に SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY を作れば上書きされる。
+on:
+  schedule:
+    - cron: '17 3 * * *' # 毎日 UTC 3:17（JST 12:17 ごろ）
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://rfxcovghfifmagnbjayl.supabase.co' }}
+      SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_CzNFlmiqxeZU5XLxsU285A_fF7-5bJ3' }}
+    steps:
+      - name: Ping Supabase REST endpoint
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
+            "$SUPABASE_URL/rest/v1/")
+          echo "HTTP $code"
+          if [ "$code" -ge 400 ]; then
+            echo "::error::Supabase への ping が失敗しました（HTTP $code）。プロジェクトが休止・削除されていないか確認してください。"
+            exit 1
+          fi
