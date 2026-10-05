@@ -122,8 +122,12 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
 
 def main() -> None:
     out_path = "solved_srp_btn_bb.json"
-    spots = []
+    spots = _download_existing(out_path)
+    done_ids = {s["id"] for s in spots}
     for spot_id, board in BOARDS:
+        if spot_id in done_ids:
+            print(f"[{spot_id}] already solved (resumed), skipping", flush=True)
+            continue
         spots.append(solve_board(spot_id, board))
         payload = {
             "matchup": "BTN open vs BB call (single-raised pot)",
@@ -141,7 +145,9 @@ def main() -> None:
         with open(out_path, "w", encoding="utf-8") as f:
             json.dump(payload, f, ensure_ascii=False, indent=2)
         print(f"[{spot_id}] wrote partial {out_path} ({len(spots)} spots)", flush=True)
-    _maybe_upload(out_path)
+        # 盤ごとにアップロードする（1 回の実行が長時間に及ぶため、タイムアウトや
+        # メンテナンス中断で打ち切られても、そこまでの盤の結果を失わないように）。
+        _maybe_upload(out_path)
     print("ALL DONE", flush=True)
 
 
@@ -160,6 +166,29 @@ def _maybe_upload(path: str) -> None:
     client = storage.Client()
     client.bucket(bucket_name).blob(blob_name).upload_from_filename(path)
     print(f"uploaded {path} -> {uri}", flush=True)
+
+
+def _download_existing(out_path: str) -> list[dict]:
+    """OUTPUT_GCS_URI に前回までの出力があれば取得し、再開できるようにする。
+
+    中断されたジョブを再実行したとき、既に解けている盤を再計算せずに済む。
+    """
+    uri = os.environ.get("OUTPUT_GCS_URI")
+    if not uri or not uri.startswith("gs://"):
+        return []
+    from google.cloud import storage  # type: ignore
+
+    bucket_name, _, blob_name = uri[len("gs://") :].partition("/")
+    client = storage.Client()
+    blob = client.bucket(bucket_name).blob(blob_name)
+    if not blob.exists():
+        return []
+    blob.download_to_filename(out_path)
+    with open(out_path, encoding="utf-8") as f:
+        payload = json.load(f)
+    spots = payload.get("spots", [])
+    print(f"resumed: found {len(spots)} already-solved spot(s) in {uri}", flush=True)
+    return spots
 
 
 if __name__ == "__main__":
