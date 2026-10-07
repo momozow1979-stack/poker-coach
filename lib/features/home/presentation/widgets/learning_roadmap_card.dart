@@ -43,6 +43,7 @@ class LearningRoadmapCard extends ConsumerWidget {
             showDivider: i > 0,
           ),
         const _RangeDrillRow(),
+        const _PositionRangeDrillRow(),
       ],
     );
   }
@@ -99,6 +100,58 @@ class _RangeDrillRow extends StatelessWidget {
                   SizedBox(height: 3),
                   Text(
                     '表を隠して、ハンドごとのアクションを当てる',
+                    style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded, color: AppColors.textMuted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ポジションを1つ選んで、そのポジションのオープン/vsオープンだけに集中するドリルへの導線。
+class _PositionRangeDrillRow extends StatelessWidget {
+  const _PositionRangeDrillRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(top: AppSpacing.sm),
+      child: InkWell(
+        onTap: () => context.go(AppRoutes.positionRangeDrill),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        child: Row(
+          children: [
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: AppColors.rangeCall,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.person_pin_circle_rounded,
+                size: 15,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: AppSpacing.md),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'ポジション別レンジ暗記',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+                  ),
+                  SizedBox(height: 3),
+                  Text(
+                    '1つの席だけに集中して、オープン/vsオープンを覚える',
                     style: TextStyle(fontSize: 11, color: AppColors.textMuted),
                   ),
                 ],
