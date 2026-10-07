@@ -1,7 +1,8 @@
 """Solve BTN-open / BB-call single-raised pots on a few representative flops,
-and export the BTN (aggressor) / BB (defender) strategy — flop, turn, river,
-including facing-bet and facing-raise decisions — aggregated to the 169
-starting-hand classes, for the Flutter app to bundle.
+and export the BTN (aggressor, in position) / BB (defender, out of position)
+strategy — flop, turn, river, including facing-bet and facing-raise decisions
+with pot-relative bet sizing — aggregated to the 169 starting-hand classes,
+for the Flutter app to bundle.
 
 Scope / honesty (see AGENTS.md rule 1, solver/BENCHMARKS.md):
 - Ranges are this app's own BTN-open / BB-call ranges (realistic, wide).
@@ -10,9 +11,19 @@ Scope / honesty (see AGENTS.md rule 1, solver/BENCHMARKS.md):
   wide, we do NOT run the (very expensive) exact-exploitability walk here; the
   export is labelled an approximate solve at N iterations, not a certified
   exact equilibrium.
-- `max_wagers_per_round=2` allows one bet + one raise per street (capped at
-  a single raise — no re-raise), so "facing a raise" decisions are real
-  solver output too, not invented.
+- Positional order is real, not arbitrary: in a BTN-vs-BB single-raised pot,
+  **BB (out of position) acts first on every post-flop street, BTN (in
+  position) acts last.** `PostflopSubgame` requires the out-of-position
+  player's range as `hero_range_notation` (player 0, acts first) — see that
+  module's docstring. Getting this backwards (as an earlier version of this
+  script did) silently computes strategy for an imaginary game where BTN acts
+  first, which is not the real game. `hero_combos`/`villain_combos` below are
+  therefore BB's/BTN's combos respectively (the engine's own "hero" is BB in
+  this matchup); every node name and the exported payload use `oop`/`ip`
+  instead of "hero"/"villain" to avoid re-making that mistake.
+- Bet/raise sizing is pot-relative, chosen from `BET_FRACTIONS` (1/3, 1/2,
+  2/3 pot, and a 1.5x-pot overbet) — not a fixed bb amount. `max_wagers_per_
+  round=2` allows one bet + one raise per street (capped at a single raise).
 - Turn/river strategy depends on the actual dealt card, not just the flop —
   a single information set does not represent "the turn" in general. Instead
   of covering all ~44/~43 possible turn/river cards (which would blow up both
@@ -28,16 +39,20 @@ Scope / honesty (see AGENTS.md rule 1, solver/BENCHMARKS.md):
   This mirrors the existing "a few representative flops instead of every
   possible flop" design of this file (see BOARDS below) and is a free
   readout from the one already-planned training run — it does not require
-  any additional solver iterations or GCP cost beyond what the original
-  (flop-only) version of this script already spent/budgeted.
-- Decision-point coverage per street (both players, 2 or 3 legal actions):
-  hero's first action, villain facing hero's bet (can raise), hero facing
-  villain's raise, villain checking back to open, hero facing villain's bet
-  after checking (can raise), villain facing hero's raise. The turn/river
-  readouts only cover the "checked through" line into that street (flop_a /
-  turn_a == "xx") — the bet-called line into a later street is out of scope
-  here, to keep export size and GCP time bounded; this is a real coverage
-  gap, not an invented number filling the gap.
+  any additional solver iterations or GCP cost beyond what was already
+  spent/budgeted.
+- Decision-point coverage per street: OOP's first action (check or bet at
+  any of the 4 sizes), IP's response to a check (check or bet at any size),
+  IP facing each of OOP's 4 possible initial bet sizes (fold/call/raise),
+  OOP facing each of IP's 4 possible bet-after-check sizes (fold/call/raise),
+  and one representative facing-raise node per line (anchored at the 1/2-pot
+  size, since enumerating every bet-size x raise-size combination would blow
+  up export size for diminishing teaching value — a real coverage bound, not
+  an invented number filling the gap). The turn/river readouts only cover the
+  "checked through" line into that street (flop_a / turn_a == "xx") — the
+  bet-called line into a later street is out of scope here, to keep export
+  size and GCP time bounded; this is a real coverage gap, not an invented
+  number filling the gap.
 - Because the facing-raise lines are rarer branches of the same tree, their
   frequencies may be noisier (less converged) than the main first-action
   lines at the same iteration budget — flagged in the exported "note", not
@@ -59,6 +74,7 @@ from cfr_solver.poker.cards import DECK, card_str, parse_card, rank_of, suit_of
 
 ITERATIONS = 12_000_000
 MAX_WAGERS_PER_ROUND = 2  # 1 bet + 1 raise per street (capped at one raise)
+BET_FRACTIONS = (1 / 3, 1 / 2, 2 / 3, 1.5)  # 1/3, 1/2, 2/3 pot, overbet
 
 # このアプリの BTN オープン / BB コール（vs BTN）レンジ（純粋部分）。
 # BTN_OPEN は range_definitions.dart の BTN オープン（raise のみ、mixed は含まない）と一致させる。
@@ -83,16 +99,28 @@ BOARDS = [
 ]
 
 _RANK_ORDER = "AKQJT98765432"
+_BET_TOKENS = "1234"  # must match PostflopSubgame's own _BET_TOKENS order
 
 # (node name, action tokens for the active street, acting player, legal actions)
-# player 0 = hero (BTN, acts first on every street), player 1 = villain (BB).
+# player 0 = OOP = BB (acts first every street), player 1 = IP = BTN (acts last).
+# See module docstring for why this order, and why facing-raise is bounded to
+# one representative anchor size instead of every size x size combination.
 _STREET_NODES: tuple[tuple[str, str, int, tuple[str, ...]], ...] = (
-    ("hero_first", "", 0, ("x", "b")),
-    ("villain_vs_check", "x", 1, ("x", "b")),
-    ("hero_vs_bet_after_check", "xb", 0, ("f", "c", "b")),
-    ("villain_vs_raise_after_check", "xbb", 1, ("f", "c")),
-    ("villain_vs_bet", "b", 1, ("f", "c", "b")),
-    ("hero_vs_raise", "bb", 0, ("f", "c")),
+    ("oop_first", "", 0, ("x", *_BET_TOKENS)),
+    ("ip_vs_check", "x", 1, ("x", *_BET_TOKENS)),
+    *[
+        (f"ip_vs_bet_{sz}", sz, 1, ("f", "c", *_BET_TOKENS))
+        for sz in _BET_TOKENS
+    ],
+    *[
+        (f"oop_vs_checkbet_{sz}", f"x{sz}", 0, ("f", "c", *_BET_TOKENS))
+        for sz in _BET_TOKENS
+    ],
+    # facing a raise: anchored at the 1/2-pot size ("2") for both the initial
+    # bet and the raise, on both lines (bet-first, and check-then-bet) — see
+    # module docstring.
+    ("oop_vs_raise", "22", 0, ("f", "c")),
+    ("ip_vs_raise_after_check", "x22", 1, ("f", "c")),
 )
 
 
@@ -221,6 +249,8 @@ def _street_nodes(
             ta = tokens
         else:
             ra = tokens
+        # player 0 = OOP = game.hero_combos, player 1 = IP = game.villain_combos
+        # (see module docstring: hero_range_notation is always the OOP range).
         combos = game.hero_combos if player == 0 else game.villain_combos
 
         def history_fn(combo, fa=fa, ta=ta, ra=ra, player=player):
@@ -236,9 +266,9 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
     board_ids = [parse_card(c) for c in board_cards]
     game = PostflopSubgame(
         board_ids,
-        hero_range_notation=BTN_OPEN,
-        villain_range_notation=BB_CALL,
-        bet_sizes=(2.5, 5.0, 7.5),
+        hero_range_notation=BB_CALL,  # OOP: acts first every street (real positional fact)
+        villain_range_notation=BTN_OPEN,  # IP: acts last every street
+        bet_fractions=BET_FRACTIONS,
         max_wagers_per_round=MAX_WAGERS_PER_ROUND,
     )
     game.hero_combos = sorted(game.hero_combos)
@@ -246,8 +276,8 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
 
     solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
     print(
-        f"[{spot_id}] {board_cards} hero={len(game.hero_combos)} "
-        f"villain={len(game.villain_combos)} :: training {ITERATIONS:,}...",
+        f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
+        f"ip(BTN)={len(game.villain_combos)} :: training {ITERATIONS:,}...",
         flush=True,
     )
     t0 = time.time()
@@ -303,12 +333,17 @@ def main() -> None:
         spots.append(solve_board(spot_id, board))
         payload = {
             "matchup": "BTN open vs BB call (single-raised pot)",
-            "hero": "BTN (aggressor)",
-            "villain": "BB (defender)",
-            "hero_range": BTN_OPEN,
-            "villain_range": BB_CALL,
+            "oop_position": "BB (defender)",
+            "ip_position": "BTN (aggressor)",
+            "oop_range": BB_CALL,
+            "ip_range": BTN_OPEN,
+            "bet_fractions": list(BET_FRACTIONS),
             "max_wagers_per_round": MAX_WAGERS_PER_ROUND,
-            "decision": "flop/turn/river, hero acts first each street, 1 bet + 1 raise cap",
+            "decision": (
+                "flop/turn/river; BB (out of position) acts first every "
+                "street, BTN (in position) acts last; 1 bet + 1 raise cap "
+                "per street, 4 pot-relative bet/raise sizes"
+            ),
             "note": (
                 "approximate solve (CFR+, external sampling) at the stated "
                 "iterations; values are CFRSolver.average_strategy() readouts, "
@@ -316,7 +351,10 @@ def main() -> None:
                 "Turn/river nodes are read out only on the representative "
                 "card textures listed per spot (not every possible card), and "
                 "only along the checked-through line into that street. "
-                "Facing-raise nodes are rarer branches of the same tree and "
+                "Facing-raise nodes ('oop_vs_raise' / 'ip_vs_raise_after_check') "
+                "are anchored at a single representative 1/2-pot size for both "
+                "the initial bet and the raise (not every size x size "
+                "combination), and are rarer branches of the same tree, so "
                 "may be noisier (less converged) than first-action nodes at "
                 "the same iteration budget."
             ),

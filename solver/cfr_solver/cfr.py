@@ -178,7 +178,9 @@ from dataclasses import dataclass, field
 from cfr_solver import _native
 from cfr_solver.games.game import Action, Game, History
 
-STRIDE = 3  # the most actions any information set in this package needs
+STRIDE = 6  # the most actions any information set in this package needs
+# (PostflopSubgame facing a bet with a raise still allowed: fold, call, plus
+# up to 4 pot-relative bet/raise sizes)
 
 _SAVE_FORMAT_MAGIC = b"CFRSOLV1"
 
