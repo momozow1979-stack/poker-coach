@@ -6,9 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   Future<void> pumpPage(WidgetTester tester) async {
     await tester.pumpWidget(
-      const ProviderScope(
-        child: MaterialApp(home: PositionRangeDrillPage()),
-      ),
+      const ProviderScope(child: MaterialApp(home: PositionRangeDrillPage())),
     );
     await tester.pumpAndSettle();
   }

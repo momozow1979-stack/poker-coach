@@ -102,9 +102,7 @@ class _PositionRangeDrillPageState
             const SizedBox(height: AppSpacing.sm),
             if (chart != null) ...[
               Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: AppSpacing.lg,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 child: _spotHeader(chart.spot),
               ),
               const SizedBox(height: AppSpacing.sm),
@@ -175,9 +173,10 @@ class _PositionRangeDrillPageState
             p.label,
             selected: p == _position,
             onTap: () => _selectPosition(p),
-            cleared: RangeDefinitions.situationsFor(_table, p).every(
-              (s) => clears.contains(_drillKey(s, p)),
-            ),
+            cleared: RangeDefinitions.situationsFor(
+              _table,
+              p,
+            ).every((s) => clears.contains(_drillKey(s, p))),
           ),
       ],
     );
@@ -398,8 +397,7 @@ class _PositionRangeDrillPageState
     );
   }
 
-  bool get _hasPaint =>
-      _isOpen ? _openPaint.isNotEmpty : _vsPaint.isNotEmpty;
+  bool get _hasPaint => _isOpen ? _openPaint.isNotEmpty : _vsPaint.isNotEmpty;
 
   void _grade(RangeChart chart) {
     final perfect = _isPerfect(chart);
