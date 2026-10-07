@@ -16,6 +16,7 @@ import '../features/practice_table/presentation/practice_table_page.dart';
 import '../features/profile/presentation/profile_page.dart';
 import '../features/quiz/presentation/category_quiz_page.dart';
 import '../features/quiz/presentation/quiz_page.dart';
+import '../features/range_chart/presentation/position_range_drill_page.dart';
 import '../features/range_chart/presentation/range_drill_page.dart';
 import '../features/range_chart/presentation/range_page.dart';
 import '../features/settings/presentation/settings_page.dart';
@@ -29,6 +30,9 @@ abstract final class AppRoutes {
 
   /// レンジ表暗記ドリル（目隠し）。
   static const rangeDrill = '/range/drill';
+
+  /// ポジション別レンジ暗記ドリル（1ポジションに集中）。
+  static const positionRangeDrill = '/range/drill/position';
 
   /// ソルバーで学習した GTO フロップ戦略ビューア。
   static const gtoFlop = '/range/gto';
@@ -143,6 +147,13 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'drill',
                     builder: (context, state) => const RangeDrillPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'position',
+                        builder: (context, state) =>
+                            const PositionRangeDrillPage(),
+                      ),
+                    ],
                   ),
                   GoRoute(
                     path: 'gto',
