@@ -15,10 +15,30 @@ History = `(hero_combo, villain_combo, board, flop_actions, turn_actions,
 river_actions)`. `board` starts as the given 3-card flop and grows to 4
 cards (turn dealt by chance, once the flop round ends without a fold) and
 then 5 (river dealt by chance, once the turn round ends without a fold).
-Each street reuses the same bet/call/fold/raise action encoding as
-`flop_subgame.py` (`"x"`/`"b"`/`"c"`/`"f"`), independently sized and capped
-per street. Showdown (reached only if neither street-ending fold happens)
-evaluates the best 5-card hand out of the 2 hole + 5 board cards.
+Each street reuses the same check/bet/call/fold/raise action encoding
+(`"x"`/`"1".."4"`/`"c"`/`"f"`), capped per street by `max_wagers_per_round`.
+Showdown (reached only if neither street-ending fold happens) evaluates the
+best 5-card hand out of the 2 hole + 5 board cards.
+
+Bet/raise sizing is pot-relative (not a fixed chip amount): `"1".."4"` each
+select one fraction from `bet_fractions` (default: 1/3, 1/2, 2/3 pot, and a
+1.5x-pot overbet), computed against the pot AS OF that decision — the
+standard "X% pot" sizing used by real solvers, not a flat bb amount. The
+same fraction grid is offered for every bet AND every raise, on every
+street (no separate per-street sizing).
+
+Player 0 always acts first on every street (`current_player` is
+`len(tokens) % 2`, and every street's tokens start fresh at `""`). This is
+a real positional fact, not an arbitrary simplification: in a heads-up pot
+the out-of-position player acts first on every post-flop street, and the
+in-position player acts last — see AGENTS.md's "ポジションの前後判定" note.
+**Callers must assign the out-of-position player's range to
+`hero_range_notation` (player 0) and the in-position player's range to
+`villain_range_notation` (player 1)**, regardless of which one the caller
+is actually trying to teach a strategy for — e.g. for a BTN-open/BB-call
+single-raised pot, BB is out of position and must be `hero_range_notation`
+even though the app teaches BTN's strategy; get this backwards and every
+exported frequency models the wrong player acting first on every street.
 """
 
 from __future__ import annotations
@@ -59,54 +79,66 @@ def _round_folded(tokens: str) -> bool:
     return bool(tokens) and tokens[-1] == "f"
 
 
+# One character per pot-fraction in `bet_fractions` — index into the tuple.
+_BET_TOKENS = "1234"
+
+
 @lru_cache(maxsize=None)
-def _legal_for_tokens(tokens: str, max_wagers: int) -> tuple[Action, ...]:
+def _legal_for_tokens(tokens: str, max_wagers: int, n_sizes: int) -> tuple[Action, ...]:
+    bet_tokens = _BET_TOKENS[:n_sizes]
     if tokens == "" or tokens[-1] == "x":
-        return ("x", "b")
-    if tokens[-1] == "b":
-        if tokens.count("b") < max_wagers:
-            return ("f", "c", "b")
+        return ("x", *bet_tokens)
+    if tokens[-1] in _BET_TOKENS:
+        n_bets = sum(1 for ch in tokens if ch in _BET_TOKENS)
+        if n_bets < max_wagers:
+            return ("f", "c", *bet_tokens)
         return ("f", "c")
     raise ValueError(f"legal_actions called on a completed round: {tokens!r}")
 
 
 @lru_cache(maxsize=None)
-def _simulate_round(tokens: str, bet_size: float) -> tuple[tuple[float, float], int | None]:
+def _simulate_round(
+    tokens: str, pot_before: float, bet_fractions: tuple[float, ...]
+) -> tuple[tuple[float, float], int | None, float]:
+    """Simulate one street's betting. Bet/raise sizes are a fraction of the
+    pot AS OF that action (standard "X% pot" sizing): `to_call` is added to
+    the pot first, then the chosen fraction of THAT pot is the raise on top
+    — so the first bet in a round (`to_call == 0`) is simply
+    `fraction * pot_before`, and a raise is `to_call + fraction * (pot so
+    far + to_call)`. Returns ((contrib0, contrib1), folder_or_None,
+    pot_after_this_round) — `pot_after_this_round` feeds the next street's
+    `pot_before` (or, on a fold, is irrelevant and omitted by the caller)."""
     contrib = [0.0, 0.0]
     level = 0.0
     actor = 0
     for ch in tokens:
-        if ch == "b":
-            level += bet_size
-            contrib[actor] = level
-        elif ch == "c":
+        if ch == "c":
             contrib[actor] = level
         elif ch == "f":
-            return (contrib[0], contrib[1]), actor
+            return (contrib[0], contrib[1]), actor, pot_before + contrib[0] + contrib[1]
+        elif ch in _BET_TOKENS:
+            fraction = bet_fractions[_BET_TOKENS.index(ch)]
+            to_call = level - contrib[actor]
+            pot_if_called = pot_before + contrib[0] + contrib[1] + to_call
+            contrib[actor] += to_call + fraction * pot_if_called
+            level = contrib[actor]
         actor = 1 - actor
-    return (contrib[0], contrib[1]), None
+    return (contrib[0], contrib[1]), None, pot_before + contrib[0] + contrib[1]
 
 
 @lru_cache(maxsize=None)
 def _active_round_for(
-    board: tuple[int, ...],
-    flop_a: str,
-    turn_a: str,
-    river_a: str,
-    bet_sizes: tuple[float, float, float],
-) -> tuple[str, float, int] | None:
+    board: tuple[int, ...], flop_a: str, turn_a: str, river_a: str
+) -> tuple[str, int] | None:
     """Module-level, cached twin of `PostflopSubgame._active_round` — identical
     logic, just pulled out of the class so `lru_cache` can key on the
-    (board, action-strings, bet_sizes) tuple directly instead of needing an
-    instance-aware cache. `bet_sizes` is passed through so this stays a pure
-    function shareable across every `PostflopSubgame` instance with the same
-    bet sizing (harmless: results depend only on the arguments, never on
-    which instance asked)."""
+    (board, action-strings) tuple directly instead of needing an
+    instance-aware cache."""
     if len(board) == 3:
-        return (flop_a, bet_sizes[0], 0) if not _round_done(flop_a) else None
+        return (flop_a, 0) if not _round_done(flop_a) else None
     if len(board) == 4:
-        return (turn_a, bet_sizes[1], 1) if not _round_done(turn_a) else None
-    return (river_a, bet_sizes[2], 2) if not _round_done(river_a) else None
+        return (turn_a, 1) if not _round_done(turn_a) else None
+    return (river_a, 2) if not _round_done(river_a) else None
 
 
 @lru_cache(maxsize=None)
@@ -130,9 +162,9 @@ def _payoffs_from_fold(total_contrib: list[float], folder: int) -> list[float]:
 
 
 class PostflopSubgame(Game):
-    """Player 0 ("hero") acts first on every street — the same simplification
-    `flop_subgame.py` makes (real position depends on the exact preflop
-    action; this benchmark does not model who was actually last to act).
+    """Player 0 ("hero") acts first on every street. This is a real
+    positional fact, not an arbitrary simplification — see the module
+    docstring's note on assigning the out-of-position player to player 0.
     """
 
     def __init__(
@@ -142,11 +174,13 @@ class PostflopSubgame(Game):
         villain_range_notation: str,
         *,
         preflop_contrib: tuple[float, float] = (2.5, 2.5),
-        bet_sizes: tuple[float, float, float] = (2.5, 5.0, 7.5),
+        bet_fractions: tuple[float, ...] = (1 / 3, 1 / 2, 2 / 3, 1.5),
         max_wagers_per_round: int = 1,
     ) -> None:
         if len(flop_board) != 3:
             raise ValueError("PostflopSubgame expects exactly a 3-card flop board")
+        if len(bet_fractions) > len(_BET_TOKENS):
+            raise ValueError(f"at most {len(_BET_TOKENS)} bet_fractions are supported")
         self.flop_board: tuple[int, ...] = tuple(flop_board)
         blocked = set(flop_board)
         self.hero_combos: list[Combo] = range_combos(expand_range(hero_range_notation), blocked)
@@ -156,7 +190,7 @@ class PostflopSubgame(Game):
         if not self.hero_combos or not self.villain_combos:
             raise ValueError("a range produced zero combos after removing the flop board")
         self.preflop_contrib = preflop_contrib
-        self.bet_sizes = bet_sizes  # (flop, turn, river)
+        self.bet_fractions = bet_fractions
         self.max_wagers_per_round = max_wagers_per_round
         self._equity_cache = _native.EquityCache()
 
@@ -170,11 +204,11 @@ class PostflopSubgame(Game):
     # -- street helpers -----------------------------------------------
 
     def _active_round(self, board: tuple[int, ...], flop_a: str, turn_a: str, river_a: str):
-        """(tokens, bet_size, street_index) for whichever round is currently
-        being bet, or None if we're between streets / at showdown. Delegates
-        to the cached module-level `_active_round_for` (same logic, just
-        memoized — see that function's docstring)."""
-        return _active_round_for(board, flop_a, turn_a, river_a, self.bet_sizes)
+        """(tokens, street_index) for whichever round is currently being bet,
+        or None if we're between streets / at showdown. Delegates to the
+        cached module-level `_active_round_for` (same logic, just memoized —
+        see that function's docstring)."""
+        return _active_round_for(board, flop_a, turn_a, river_a)
 
     # -- Game interface -------------------------------------------------
 
@@ -237,36 +271,45 @@ class PostflopSubgame(Game):
         _hero_combo, _villain_combo, board, flop_a, turn_a, river_a = history
         active = self._active_round(board, flop_a, turn_a, river_a)
         assert active is not None
-        tokens, _bet_size, _street = active
+        tokens, _street = active
         return len(tokens) % 2
 
     def legal_actions(self, history: History) -> list[Action]:
         _hero_combo, _villain_combo, board, flop_a, turn_a, river_a = history
         active = self._active_round(board, flop_a, turn_a, river_a)
         assert active is not None
-        tokens, _bet_size, _street = active
+        tokens, _street = active
         # `_legal_for_tokens` is `lru_cache`d and returns a shared tuple —
         # `list(...)` here gives every caller its own fresh list (matching
         # the pre-caching behavior exactly) while still skipping the cached
-        # function's branching on a repeat (tokens, max_wagers) pair.
-        return list(_legal_for_tokens(tokens, self.max_wagers_per_round))
+        # function's branching on a repeat (tokens, max_wagers, n_sizes) pair.
+        return list(
+            _legal_for_tokens(tokens, self.max_wagers_per_round, len(self.bet_fractions))
+        )
 
     def returns(self, history: History) -> list[float]:
         hero_combo, villain_combo, board, flop_a, turn_a, river_a = history
+        pot0 = self.preflop_contrib[0] + self.preflop_contrib[1]
 
-        contrib_flop, folder_flop = _simulate_round(flop_a, self.bet_sizes[0])
+        contrib_flop, folder_flop, pot_after_flop = _simulate_round(
+            flop_a, pot0, self.bet_fractions
+        )
         if folder_flop is not None:
             total = [self.preflop_contrib[i] + contrib_flop[i] for i in (0, 1)]
             return _payoffs_from_fold(total, folder_flop)
 
-        contrib_turn, folder_turn = _simulate_round(turn_a, self.bet_sizes[1])
+        contrib_turn, folder_turn, pot_after_turn = _simulate_round(
+            turn_a, pot_after_flop, self.bet_fractions
+        )
         if folder_turn is not None:
             total = [
                 self.preflop_contrib[i] + contrib_flop[i] + contrib_turn[i] for i in (0, 1)
             ]
             return _payoffs_from_fold(total, folder_turn)
 
-        contrib_river, folder_river = _simulate_round(river_a, self.bet_sizes[2])
+        contrib_river, folder_river, _pot_after_river = _simulate_round(
+            river_a, pot_after_turn, self.bet_fractions
+        )
         total = [
             self.preflop_contrib[i] + contrib_flop[i] + contrib_turn[i] + contrib_river[i]
             for i in (0, 1)

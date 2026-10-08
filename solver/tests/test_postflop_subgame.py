@@ -25,9 +25,22 @@ def _flop_board() -> list[int]:
 
 def test_postflop_subgame_is_well_formed() -> None:
     # The smallest possible range on each side: AA and KK, neither touched
-    # by this board (6 combos each).
-    game = PostflopSubgame(_flop_board(), hero_range_notation="AA", villain_range_notation="KK")
-    assert_game_is_well_formed(game, max_histories=10_000_000)
+    # by this board (6 combos each). Only 2 bet fractions here (not the
+    # default 4) — this test exhaustively WALKS every history (not MCCFR
+    # sampling), and each extra bet-size option multiplies the exact tree
+    # roughly 3x per street (round-start fan-out x/1/2/3/4 instead of x/b,
+    # same facing-bet fan-out since max_wagers_per_round=1 forbids raises
+    # either way); 2 sizes is enough to exercise the multi-size action code
+    # without the exact walk blowing past any sane time/history budget. A
+    # real solve (external-sampling MCCFR, not this exhaustive walk) pays
+    # none of this cost — see BENCHMARKS.md.
+    game = PostflopSubgame(
+        _flop_board(),
+        hero_range_notation="AA",
+        villain_range_notation="KK",
+        bet_fractions=(0.5, 1.5),
+    )
+    assert_game_is_well_formed(game, max_histories=30_000_000)
 
 
 def test_combo_counts_match_pair_combinatorics() -> None:

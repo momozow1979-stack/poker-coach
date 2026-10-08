@@ -240,7 +240,7 @@ def test_postflop_subgame_resume_is_bit_exact_and_timing_is_reported(tmp_path) -
             board,
             hero_range_notation="AA",
             villain_range_notation="KK",
-            bet_sizes=(2.5, 5.0, 7.5),
+            bet_fractions=(1 / 3, 1 / 2, 2 / 3, 1.5),
             max_wagers_per_round=2,
         )
 

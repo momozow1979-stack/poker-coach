@@ -53,38 +53,48 @@ def _round_folded_naive(tokens: str) -> bool:
     return bool(tokens) and tokens[-1] == "f"
 
 
-def _legal_for_tokens_naive(tokens: str, max_wagers: int) -> list[str]:
+_BET_TOKENS_NAIVE = "1234"
+
+
+def _legal_for_tokens_naive(tokens: str, max_wagers: int, n_sizes: int = 4) -> list[str]:
+    bet_tokens = list(_BET_TOKENS_NAIVE[:n_sizes])
     if tokens == "" or tokens[-1] == "x":
-        return ["x", "b"]
-    if tokens[-1] == "b":
-        if tokens.count("b") < max_wagers:
-            return ["f", "c", "b"]
+        return ["x", *bet_tokens]
+    if tokens[-1] in _BET_TOKENS_NAIVE:
+        n_bets = sum(1 for ch in tokens if ch in _BET_TOKENS_NAIVE)
+        if n_bets < max_wagers:
+            return ["f", "c", *bet_tokens]
         return ["f", "c"]
     raise ValueError(f"legal_actions called on a completed round: {tokens!r}")
 
 
-def _simulate_round_naive(tokens: str, bet_size: float) -> tuple[list[float], int | None]:
+def _simulate_round_naive(
+    tokens: str, pot_before: float, bet_fractions: tuple[float, ...]
+) -> tuple[list[float], int | None, float]:
     contrib = [0.0, 0.0]
     level = 0.0
     actor = 0
     for ch in tokens:
-        if ch == "b":
-            level += bet_size
-            contrib[actor] = level
-        elif ch == "c":
+        if ch == "c":
             contrib[actor] = level
         elif ch == "f":
-            return contrib, actor
+            return contrib, actor, pot_before + contrib[0] + contrib[1]
+        elif ch in _BET_TOKENS_NAIVE:
+            fraction = bet_fractions[_BET_TOKENS_NAIVE.index(ch)]
+            to_call = level - contrib[actor]
+            pot_if_called = pot_before + contrib[0] + contrib[1] + to_call
+            contrib[actor] += to_call + fraction * pot_if_called
+            level = contrib[actor]
         actor = 1 - actor
-    return contrib, None
+    return contrib, None, pot_before + contrib[0] + contrib[1]
 
 
-def _active_round_naive(board, flop_a, turn_a, river_a, bet_sizes):
+def _active_round_naive(board, flop_a, turn_a, river_a):
     if len(board) == 3:
-        return (flop_a, bet_sizes[0], 0) if not _round_done_naive(flop_a) else None
+        return (flop_a, 0) if not _round_done_naive(flop_a) else None
     if len(board) == 4:
-        return (turn_a, bet_sizes[1], 1) if not _round_done_naive(turn_a) else None
-    return (river_a, bet_sizes[2], 2) if not _round_done_naive(river_a) else None
+        return (turn_a, 1) if not _round_done_naive(turn_a) else None
+    return (river_a, 2) if not _round_done_naive(river_a) else None
 
 
 def _card_digits_naive(cards) -> str:
@@ -130,10 +140,10 @@ def test_reachable_token_strings_are_nonempty_and_include_every_ending() -> None
     strings = _reachable_token_strings(max_wagers=1)
     assert "" in strings
     assert "xx" in strings  # check-check
-    assert "xbc" in strings  # check-bet-call
-    assert "xbf" in strings  # check-bet-fold
-    assert "bc" in strings  # bet-call
-    assert "bf" in strings  # bet-fold
+    assert "x1c" in strings  # check-bet(size 1)-call
+    assert "x1f" in strings  # check-bet(size 1)-fold
+    assert "1c" in strings  # bet(size 1)-call
+    assert "1f" in strings  # bet(size 1)-fold
 
 
 # -- 1. `_round_done` / `_round_folded` -------------------------------------
@@ -168,7 +178,7 @@ def test_legal_for_tokens_matches_naive_reference_on_every_reachable_string() ->
         for tokens in _reachable_token_strings(max_wagers):
             if _round_done_naive(tokens):
                 continue  # both raise ValueError here; nothing to compare
-            got = list(pfs._legal_for_tokens(tokens, max_wagers))
+            got = list(pfs._legal_for_tokens(tokens, max_wagers, 4))
             expected = _legal_for_tokens_naive(tokens, max_wagers)
             assert got == expected, (tokens, max_wagers)
 
@@ -194,7 +204,7 @@ def test_legal_for_tokens_raise_or_return_identically_on_completed_rounds() -> N
             except ValueError:
                 naive_raised = True
             try:
-                got = list(pfs._legal_for_tokens(tokens, max_wagers))
+                got = list(pfs._legal_for_tokens(tokens, max_wagers, 4))
                 cached_raised = False
             except ValueError:
                 cached_raised = True
@@ -208,19 +218,24 @@ def test_legal_for_tokens_raise_or_return_identically_on_completed_rounds() -> N
 
 def test_simulate_round_matches_naive_reference_on_every_reachable_string() -> None:
     for max_wagers in (1, 2, 3):
-        for bet_size in (2.5, 5.0, 7.5, 1.0):
-            for tokens in _reachable_token_strings(max_wagers):
-                got_contrib, got_folder = pfs._simulate_round(tokens, bet_size)
-                expected_contrib, expected_folder = _simulate_round_naive(tokens, bet_size)
-                assert list(got_contrib) == expected_contrib, (tokens, bet_size)
-                assert got_folder == expected_folder, (tokens, bet_size)
+        for pot_before in (5.0, 10.0, 1.0):
+            for bet_fractions in ((1 / 3, 1 / 2, 2 / 3, 1.5), (0.5, 1.0, 1.25, 2.0)):
+                for tokens in _reachable_token_strings(max_wagers):
+                    got_contrib, got_folder, got_pot = pfs._simulate_round(
+                        tokens, pot_before, bet_fractions
+                    )
+                    expected_contrib, expected_folder, expected_pot = _simulate_round_naive(
+                        tokens, pot_before, bet_fractions
+                    )
+                    assert list(got_contrib) == expected_contrib, (tokens, pot_before)
+                    assert got_folder == expected_folder, (tokens, pot_before)
+                    assert got_pot == expected_pot, (tokens, pot_before)
 
 
 # -- 4. `_active_round` / `_active_round_for` --------------------------------
 
 
 def test_active_round_matches_naive_reference() -> None:
-    bet_sizes = (2.5, 5.0, 7.5)
     boards = [
         tuple(_flop_board()),
         tuple(_flop_board()) + (parse_card("4c"),),
@@ -232,8 +247,8 @@ def test_active_round_matches_naive_reference() -> None:
             for flop_a in reachable:
                 for turn_a in reachable if len(board) >= 4 else [""]:
                     for river_a in reachable if len(board) == 5 else [""]:
-                        got = pfs._active_round_for(board, flop_a, turn_a, river_a, bet_sizes)
-                        expected = _active_round_naive(board, flop_a, turn_a, river_a, bet_sizes)
+                        got = pfs._active_round_for(board, flop_a, turn_a, river_a)
+                        expected = _active_round_naive(board, flop_a, turn_a, river_a)
                         assert got == expected, (board, flop_a, turn_a, river_a)
 
 
@@ -292,7 +307,7 @@ def test_aa_vs_kk_sampled_training_matches_pre_optimization_fixture_exactly() ->
         _flop_board(),
         hero_range_notation="AA",
         villain_range_notation="KK",
-        bet_sizes=(2.5, 5.0, 7.5),
+        bet_fractions=(1 / 3, 1 / 2, 2 / 3, 1.5),
         max_wagers_per_round=1,
     )
     solver = CFRSolver(game, variant="cfr_plus", random_seed=7)
@@ -301,14 +316,14 @@ def test_aa_vs_kk_sampled_training_matches_pre_optimization_fixture_exactly() ->
 
 
 def test_aa_vs_kk_reraise_sampled_training_matches_pre_optimization_fixture_exactly() -> None:
-    """Same spot but max_wagers_per_round=2, so the re-raise ('b' after 'b')
-    branch of `_legal_for_tokens`/`_simulate_round` — never reached by the
-    max_wagers=1 exported spots — is exercised too."""
+    """Same spot but max_wagers_per_round=2, so the re-raise ('1'..'4' after
+    '1'..'4') branch of `_legal_for_tokens`/`_simulate_round` — never
+    reached by the max_wagers=1 exported spots — is exercised too."""
     game = PostflopSubgame(
         _flop_board(),
         hero_range_notation="AA",
         villain_range_notation="KK",
-        bet_sizes=(2.5, 5.0, 7.5),
+        bet_fractions=(1 / 3, 1 / 2, 2 / 3, 1.5),
         max_wagers_per_round=2,
     )
     solver = CFRSolver(game, variant="cfr_plus", random_seed=11)
