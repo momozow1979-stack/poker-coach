@@ -59,6 +59,17 @@ Scope / honesty (see AGENTS.md rule 1, solver/BENCHMARKS.md):
   silently smoothed over.
 
 Writes partial results after each board, so an interrupt keeps finished boards.
+
+Boards are solved in parallel, one OS process per board, via
+`SOLVER_WORKERS` (default: all available CPUs). This is lossless — each
+board's CFR training is completely independent of every other board (fresh
+`PostflopSubgame`/`CFRSolver`, no shared state), so running them in separate
+processes computes the exact same numbers as running them one at a time; it
+only changes wall-clock time, not any trained value. This is NOT the same
+kind of change as parallelizing *within* one board's training loop (which
+would need the samples in a batch to share a stale regret snapshot and
+would therefore no longer match the sequential algorithm bit-for-bit) —
+that is deliberately out of scope here.
 """
 
 from __future__ import annotations
@@ -67,6 +78,7 @@ import json
 import os
 import time
 from collections import Counter
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from cfr_solver.cfr import CFRSolver
 from cfr_solver.games.postflop_subgame import PostflopSubgame
@@ -322,50 +334,75 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
     }
 
 
+def _build_payload(spots: list[dict]) -> dict:
+    return {
+        "matchup": "BTN open vs BB call (single-raised pot)",
+        "oop_position": "BB (defender)",
+        "ip_position": "BTN (aggressor)",
+        "oop_range": BB_CALL,
+        "ip_range": BTN_OPEN,
+        "bet_fractions": list(BET_FRACTIONS),
+        "max_wagers_per_round": MAX_WAGERS_PER_ROUND,
+        "decision": (
+            "flop/turn/river; BB (out of position) acts first every "
+            "street, BTN (in position) acts last; 1 bet + 1 raise cap "
+            "per street, 4 pot-relative bet/raise sizes"
+        ),
+        "note": (
+            "approximate solve (CFR+, external sampling) at the stated "
+            "iterations; values are CFRSolver.average_strategy() readouts, "
+            "aggregated to 169 hand classes as mean frequency per action. "
+            "Turn/river nodes are read out only on the representative "
+            "card textures listed per spot (not every possible card), and "
+            "only along the checked-through line into that street. "
+            "Facing-raise nodes ('oop_vs_raise' / 'ip_vs_raise_after_check') "
+            "are anchored at a single representative 1/2-pot size for both "
+            "the initial bet and the raise (not every size x size "
+            "combination), and are rarer branches of the same tree, so "
+            "may be noisier (less converged) than first-action nodes at "
+            "the same iteration budget."
+        ),
+        "spots": spots,
+    }
+
+
 def main() -> None:
     out_path = "solved_srp_btn_bb.json"
     spots = _download_existing(out_path)
     done_ids = {s["id"] for s in spots}
-    for spot_id, board in BOARDS:
+    pending = [(spot_id, board) for spot_id, board in BOARDS if spot_id not in done_ids]
+    for spot_id, _ in BOARDS:
         if spot_id in done_ids:
             print(f"[{spot_id}] already solved (resumed), skipping", flush=True)
-            continue
-        spots.append(solve_board(spot_id, board))
-        payload = {
-            "matchup": "BTN open vs BB call (single-raised pot)",
-            "oop_position": "BB (defender)",
-            "ip_position": "BTN (aggressor)",
-            "oop_range": BB_CALL,
-            "ip_range": BTN_OPEN,
-            "bet_fractions": list(BET_FRACTIONS),
-            "max_wagers_per_round": MAX_WAGERS_PER_ROUND,
-            "decision": (
-                "flop/turn/river; BB (out of position) acts first every "
-                "street, BTN (in position) acts last; 1 bet + 1 raise cap "
-                "per street, 4 pot-relative bet/raise sizes"
-            ),
-            "note": (
-                "approximate solve (CFR+, external sampling) at the stated "
-                "iterations; values are CFRSolver.average_strategy() readouts, "
-                "aggregated to 169 hand classes as mean frequency per action. "
-                "Turn/river nodes are read out only on the representative "
-                "card textures listed per spot (not every possible card), and "
-                "only along the checked-through line into that street. "
-                "Facing-raise nodes ('oop_vs_raise' / 'ip_vs_raise_after_check') "
-                "are anchored at a single representative 1/2-pot size for both "
-                "the initial bet and the raise (not every size x size "
-                "combination), and are rarer branches of the same tree, so "
-                "may be noisier (less converged) than first-action nodes at "
-                "the same iteration budget."
-            ),
-            "spots": spots,
+
+    if not pending:
+        print("ALL DONE", flush=True)
+        return
+
+    # 盤ごとに完全に独立した CFRSolver インスタンスで学習するので、プロセスを
+    # 分けて並列に解いても結果は1枚ずつ順番に解いた場合とビット単位で同じになる
+    # （学習ループの中身を並列化するのとは違い、数値を一切変えない高速化）。
+    max_workers = int(os.environ.get("SOLVER_WORKERS", os.cpu_count() or 1))
+    max_workers = max(1, min(max_workers, len(pending)))
+    print(
+        f"solving {len(pending)} board(s) across {max_workers} worker process(es)...",
+        flush=True,
+    )
+
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(solve_board, spot_id, board): spot_id
+            for spot_id, board in pending
         }
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=False, indent=2)
-        print(f"[{spot_id}] wrote partial {out_path} ({len(spots)} spots)", flush=True)
-        # 盤ごとにアップロードする（1 回の実行が長時間に及ぶため、タイムアウトや
-        # メンテナンス中断で打ち切られても、そこまでの盤の結果を失わないように）。
-        _maybe_upload(out_path)
+        for future in as_completed(futures):
+            spot_id = futures[future]
+            spots.append(future.result())
+            with open(out_path, "w", encoding="utf-8") as f:
+                json.dump(_build_payload(spots), f, ensure_ascii=False, indent=2)
+            print(f"[{spot_id}] wrote partial {out_path} ({len(spots)} spots)", flush=True)
+            # 盤ごとにアップロードする（1 回の実行が長時間に及ぶため、タイムアウトや
+            # メンテナンス中断で打ち切られても、そこまでの盤の結果を失わないように）。
+            _maybe_upload(out_path)
     print("ALL DONE", flush=True)
 
 
