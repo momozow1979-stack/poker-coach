@@ -1,6 +1,7 @@
 import '../../../core/errors/friendly_error.dart';
 
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -172,11 +173,17 @@ class SupabaseAuthGateway implements AuthGateway {
   }
 
   String _linkOrSignInMessage(AuthException error) {
+    // サーバー側の設定不備（運営側の対応待ち）。原因（サービス名・設定画面の
+    // 場所など内部情報）は利用者に見せず、開発者向けログにだけ残す。
+    if (error.code == 'manual_linking_disabled') {
+      _logInternalOnly(
+        'linkIdentity failed: manual_linking_disabled '
+        '(Supabase Authentication Settings → Allow manual linking が無効)',
+      );
+      return 'ただいまGoogleログインでの引き継ぎをご利用いただけません。'
+          '時間をおいて、もう一度お試しください。';
+    }
     return switch (error.code) {
-      'manual_linking_disabled' =>
-        'Supabase側で「Googleアカウントを今のデータに追加する」設定'
-            '（Authentication → Settings → Allow manual linking）が'
-            '有効になっていません。有効にしてから、もう一度お試しください。',
       'identity_already_exists' =>
         'このGoogleアカウントは既に別のデータと紐づいています。'
             'この端末の記録とは別のアカウントとして扱われるため、'
@@ -186,7 +193,7 @@ class SupabaseAuthGateway implements AuthGateway {
         offline:
             'いまネットワークに接続できていません。'
             '通信できる場所で、もう一度お試しください。',
-        fallback: 'Googleログインを開始できませんでした（${error.message}）。',
+        fallback: 'Googleログインを開始できませんでした。時間をおいて、もう一度お試しください。',
       ),
     };
   }
@@ -220,11 +227,12 @@ class SupabaseAuthGateway implements AuthGateway {
         status == '401' ||
         status == '422';
     if (disabled) {
-      return AuthFailure(
-        'Supabase 側で匿名サインインが有効になっていない可能性があります'
-        '（${error.message}）。'
-        'Supabase ダッシュボードの Authentication → Sign In / Providers → '
-        'Anonymous sign-ins を有効にしてください。',
+      _logInternalOnly(
+        'anonymous sign-in failed: anonymous_provider_disabled '
+        '(${error.message})',
+      );
+      return const AuthFailure(
+        'ただいまご利用を開始できません。時間をおいて、もう一度お試しください。',
         isAnonymousSignInDisabled: true,
       );
     }
@@ -250,7 +258,7 @@ class SupabaseAuthGateway implements AuthGateway {
       'email_exists' ||
       'user_already_exists' => 'このメールアドレスは既に登録されています。「ログイン」から入ってください。',
       'weak_password' => 'パスワードが弱すぎます。6文字以上で設定してください。',
-      'validation_failed' => '入力内容を確認してください（${error.message}）。',
+      'validation_failed' => '入力内容を確認してください。',
       _ => friendlyErrorMessage(
         error.message,
         offline:
@@ -273,5 +281,11 @@ class SupabaseAuthGateway implements AuthGateway {
         fallback: 'ログインできませんでした。時間をおいて、もう一度お試しください。',
       ),
     };
+  }
+
+  /// バックエンドのサービス名・設定画面の場所など、利用者に見せてはいけない
+  /// 情報はここにだけ残す（開発者コンソールのログにのみ出る。UI には出ない）。
+  void _logInternalOnly(String message) {
+    developer.log(message, name: 'SupabaseAuthGateway');
   }
 }
