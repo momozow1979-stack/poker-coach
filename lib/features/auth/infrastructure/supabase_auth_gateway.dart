@@ -30,6 +30,25 @@ class SupabaseAuthGateway implements AuthGateway {
   /// Redirect URLs にこのURLを追加する必要がある。
   static const _mobileRedirectUrl = 'io.pokercoach.app://login-callback';
 
+  /// Web でOAuthの戻り先として使うURL。
+  ///
+  /// 以前は `redirectTo` を渡さず Supabase 側の「Site URL」設定に任せていたが、
+  /// それだと（原因不明だが）`identity_already_exists` のようなエラー発生時に
+  /// `poker-coach` のパスが付かない URL へ飛ばされ、GitHub Pages の404ページに
+  /// 着地して Flutter アプリ自体が起動しない（＝エラーをアプリ側で一切拾えない）
+  /// 不具合を確認した。ダッシュボード設定に頼らず、必ずこのURLへ戻すよう
+  /// 明示的に指定する。`Uri.base` から動的に求め、クエリ・フラグメント
+  /// （GoRouter のハッシュルート）は含めない。
+  static String get _webRedirectUrl {
+    final uri = Uri.base;
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.host,
+      port: uri.port,
+      path: uri.path,
+    ).toString();
+  }
+
   @override
   AuthFailure? get lastFailure => _lastFailure;
 
@@ -139,17 +158,16 @@ class SupabaseAuthGateway implements AuthGateway {
       if (isAnonymous) {
         await _client.auth.linkIdentity(
           OAuthProvider.google,
-          redirectTo: kIsWeb ? null : _mobileRedirectUrl,
+          redirectTo: kIsWeb ? _webRedirectUrl : _mobileRedirectUrl,
         );
       } else {
-        // Web はデフォルト（現在のページに戻る）に任せ、モバイルだけカスタム
-        // スキームで戻す。ブラウザ／外部アプリを開くだけで、この呼び出し自体は
+        // ブラウザ／外部アプリを開くだけで、この呼び出し自体は
         // 成功か失敗（起動できたか）しか分からない——実際のサインインは
         // ユーザーがGoogle側の操作を終えてこのアプリに戻ってきたときに
         // [changes]（`onAuthStateChange` 経由）で分かる。
         await _client.auth.signInWithOAuth(
           OAuthProvider.google,
-          redirectTo: kIsWeb ? null : _mobileRedirectUrl,
+          redirectTo: kIsWeb ? _webRedirectUrl : _mobileRedirectUrl,
         );
       }
       _lastFailure = null;
