@@ -84,7 +84,10 @@ from cfr_solver.cfr import CFRSolver
 from cfr_solver.games.postflop_subgame import PostflopSubgame
 from cfr_solver.poker.cards import DECK, card_str, parse_card, rank_of, suit_of
 
-ITERATIONS = 12_000_000
+# SOLVER_ITERATIONS を指定すると、本番と全く同じコードのまま安い試し解きが
+# できる（本番用の既定値 12,000,000 はまだ実機で検証していない — 盤面ごとの
+# 実測コストを見てから確定する）。
+ITERATIONS = int(os.environ.get("SOLVER_ITERATIONS", "12000000"))
 MAX_WAGERS_PER_ROUND = 2  # 1 bet + 1 raise per street (capped at one raise)
 BET_FRACTIONS = (1 / 3, 1 / 2, 2 / 3, 1.5)  # 1/3, 1/2, 2/3 pot, overbet
 
