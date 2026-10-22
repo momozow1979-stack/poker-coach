@@ -33,6 +33,13 @@ class JsonLearningStore implements LocalLearningStore {
   static const _reviewsKey = 'learning.reviews.v1';
   static const _ownerKey = 'learning.owner_id.v1';
 
+  /// [clear] で消される直前の「まだサーバーに送れていない」記録の退避先。
+  ///
+  /// 認証が意図せず切り替わった（例: ログイン処理の途中で別の匿名セッションに
+  /// なってしまった）場合でも、未送信の記録を黙って消さないための安全網。
+  /// 通常の画面表示では読まない（[loadRecord] の対象外）。
+  static const _archivedUnsyncedKey = 'learning.archived_unsynced.v1';
+
   static const defaultMaxAttempts = 5000;
   static const defaultMaxReviews = 300;
 
@@ -201,10 +208,40 @@ class JsonLearningStore implements LocalLearningStore {
 
   @override
   Future<void> clear() async {
+    await _archiveUnsynced();
     _attempts = {};
     _reviews = [];
     await _store.remove(_attemptsKey);
     await _store.remove(_reviewsKey);
+  }
+
+  /// まだサーバーに送れていない記録だけを、消す前に退避する。
+  Future<void> _archiveUnsynced() async {
+    final pendingAttemptsList = await pendingAttempts();
+    final pendingReviewsList = await pendingReviews();
+    if (pendingAttemptsList.isEmpty && pendingReviewsList.isEmpty) return;
+
+    final ownerId = await _store.getString(_ownerKey);
+    final archivedAt = DateTime.now().toIso8601String();
+    final existing =
+        await _store.getStringList(_archivedUnsyncedKey) ?? const [];
+    await _store.setStringList(_archivedUnsyncedKey, [
+      ...existing,
+      for (final stored in pendingAttemptsList)
+        jsonEncode({
+          'type': 'attempt',
+          'previousOwnerId': ownerId,
+          'archivedAt': archivedAt,
+          ...LearningJson.attemptToJson(stored.attempt),
+        }),
+      for (final stored in pendingReviewsList)
+        jsonEncode({
+          'type': 'review',
+          'previousOwnerId': ownerId,
+          'archivedAt': archivedAt,
+          ...LearningJson.reviewToJson(stored.review),
+        }),
+    ]);
   }
 
   Future<void> _flushAttempts() async {

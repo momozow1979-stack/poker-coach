@@ -116,7 +116,12 @@ class _RangePageState extends ConsumerState<RangePage> {
               ),
             ),
             const SizedBox(height: AppSpacing.lg),
-            AspectRatio(aspectRatio: 1, child: _grid(heatmap, vsMap)),
+            // マス目は画面幅に合わせて縮むため、拡大して見られるようにする
+            // （タップ領域 44px の要件は周囲の操作ボタン側で担保する）。
+            InteractiveViewer(
+              maxScale: 4,
+              child: AspectRatio(aspectRatio: 1, child: _grid(heatmap, vsMap)),
+            ),
             const SizedBox(height: AppSpacing.lg),
             _legend(legendPositions),
             const SizedBox(height: AppSpacing.md),
