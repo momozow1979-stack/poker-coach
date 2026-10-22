@@ -33,6 +33,6 @@ jobs:
           echo "HTTP $code"
           echo "response body: $resp"
           if [ "$code" -ge 400 ]; then
-            echo "::error::Supabase への ping が失敗しました（HTTP $code）。プロジェクトが休止・削除されていないか確認してください。"
+            echo "::error::Supabase への ping が失敗しました（HTTP $code）。response=$resp"
             exit 1
           fi
