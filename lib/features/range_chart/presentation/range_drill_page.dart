@@ -107,7 +107,12 @@ class _RangeDrillPageState extends ConsumerState<RangeDrillPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
                 child: Center(
-                  child: AspectRatio(aspectRatio: 1, child: _grid(repo)),
+                  // マス目は画面幅に合わせて縮むため、拡大して見られるようにする
+                  // （タップ領域 44px の要件は周囲の操作ボタン側で担保する）。
+                  child: InteractiveViewer(
+                    maxScale: 4,
+                    child: AspectRatio(aspectRatio: 1, child: _grid(repo)),
+                  ),
                 ),
               ),
             ),

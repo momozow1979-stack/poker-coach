@@ -165,6 +165,48 @@ void main() {
       expect((await store.loadRecord()).attempts, isEmpty);
     });
 
+    test(
+      'clear しても、まだ送信していない記録は退避されて消えない（意図しないアカウント切り替わり対策）',
+      () async {
+        final storage = InMemoryKeyValueStore();
+        final store = JsonLearningStore(storage);
+        await store.setOwnerId('user-a');
+        await store.saveAttempt(
+          StoredAttempt(
+            attempt: fakeAttempt(quizId: 'synced', answeredAt: today),
+            synced: true,
+          ),
+        );
+        await store.saveAttempt(
+          StoredAttempt(
+            attempt: fakeAttempt(quizId: 'pending', answeredAt: today),
+            synced: false,
+          ),
+        );
+        await store.saveReview(
+          StoredReview(
+            review: fakeReview(id: 'pending-review', createdAt: today),
+            synced: false,
+          ),
+        );
+
+        await store.clear();
+
+        // 画面に出る履歴は（送信済みぶんも含めて）新しい持ち主のぶんに入れ替わる。
+        expect((await store.loadRecord()).attempts, isEmpty);
+        expect((await store.loadRecord()).reviews, isEmpty);
+
+        // ただし未送信だった2件は、復旧できるようどこかに残っている。
+        final archived =
+            await storage.getStringList('learning.archived_unsynced.v1');
+        expect(archived, isNotNull);
+        expect(archived, hasLength(2));
+        expect(archived!.join(), contains('pending'));
+        expect(archived.join(), contains('pending-review'));
+        expect(archived.join(), contains('user-a'));
+      },
+    );
+
     test('壊れた行があっても、残りの履歴は読める', () async {
       final storage = InMemoryKeyValueStore();
       final store = JsonLearningStore(storage);

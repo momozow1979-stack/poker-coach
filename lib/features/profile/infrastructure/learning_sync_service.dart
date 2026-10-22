@@ -184,7 +184,10 @@ class LearningSyncService {
   /// ローカルデータの持ち主を確認する。
   ///
   /// 匿名 → メール登録の昇格では user_id が変わらないので、そのまま引き継がれる。
-  /// 別アカウントでログインしたときだけローカルを捨てて取り直す。
+  /// 別アカウントでログインしたとき（意図しない匿名セッションの切り替わりも含む）は
+  /// ローカルの表示を新しい持ち主のぶんに入れ替える。ただし、まだサーバーに
+  /// 送れていない記録は `local.clear()` 内で黙って消さず退避される
+  /// （[JsonLearningStore._archiveUnsynced] 参照）。
   Future<void> _adoptOwner(AppUser user) async {
     final owner = await local.ownerId();
     if (owner == user.id) return;
