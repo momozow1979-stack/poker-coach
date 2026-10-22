@@ -122,6 +122,12 @@ class FakeAuthGateway implements AuthGateway {
   /// false のとき、Supabase 側で Anonymous sign-ins が無効な状態を再現する。
   bool anonymousSignInEnabled;
 
+  /// true のとき、次の [signInWithGoogle] は「そのGoogleアカウントは既に
+  /// 別アカウントに紐づいている」失敗を再現する（実際には `onAuthStateChange`
+  /// 経由で届くが、呼び出し元から見た結果は同じなので [signInWithGoogle] の
+  /// 例外として再現する）。[signInWithGoogleDirectly] は成功する。
+  bool simulateIdentityAlreadyLinkedOnce = false;
+
   final _controller = StreamController<AppUser?>.broadcast();
   AppUser? _user;
   AuthFailure? _failure;
@@ -170,6 +176,15 @@ class FakeAuthGateway implements AuthGateway {
 
   @override
   Future<void> signInWithGoogle() async {
+    if (simulateIdentityAlreadyLinkedOnce) {
+      simulateIdentityAlreadyLinkedOnce = false;
+      final failure = const AuthFailure(
+        'このGoogleアカウントは既に別のアカウントのデータと紐づいています。',
+        isIdentityAlreadyLinked: true,
+      );
+      _failure = failure;
+      throw failure;
+    }
     _emit(
       AppUser(
         id: 'google-${++_counter}',
@@ -178,6 +193,9 @@ class FakeAuthGateway implements AuthGateway {
       ),
     );
   }
+
+  @override
+  Future<void> signInWithGoogleDirectly() => signInWithGoogle();
 
   @override
   Future<void> signOut() async {
