@@ -392,7 +392,14 @@ def main() -> None:
         flush=True,
     )
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+    # max_tasks_per_child=1: 1 盤面ごとにワーカープロセスを使い捨てる。
+    # CFRSolver は盤面が進むほど情報集合が増え続け（頭打ちにならない）メモリを
+    # 使い切るため、同じプロセスで複数盤面を回すとメモリが前の盤面ぶん
+    # 残ったまま積み上がり、終盤でコンテナのメモリ上限を超えて
+    # BrokenProcessPool で落ちる（実機で2回再現・確認済み）。
+    with ProcessPoolExecutor(
+        max_workers=max_workers, max_tasks_per_child=1
+    ) as executor:
         futures = {
             executor.submit(solve_board, spot_id, board): spot_id
             for spot_id, board in pending
