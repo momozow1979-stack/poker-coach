@@ -4,13 +4,23 @@ name: Supabase keepalive
 # 自動的に一時停止（pause）される。GCP のソルバー実行とは無関係に、
 # Supabase 側だけで定期的に軽いリクエストを送って休止を防ぐ。
 #
-# PostgREST のルートエンドポイント（OpenAPI スキーマを返すだけ）に
-# apikey 付きで GET するだけで、どのテーブルの行も読まない・RLS にも
-# 依存しない最小のリクエスト。
+# GoTrue（Supabase Auth）のヘルスチェックエンドポイント（/auth/v1/health）に
+# GET するだけの最小のリクエスト。テーブルアクセスは無く RLS にも依存しない。
+#
+# 以前は PostgREST のルートエンドポイント（OpenAPI スキーマ）に publishable
+# キーで GET していたが、Supabase 側の仕様変更でそのエンドポイントが
+# secret キー必須になった（"Secret API key required" エラー）。secret キーは
+# AGENTS.md のルールで絶対に使わない（クライアントはおろか CI にも置かない）
+# ため、このエンドポイントに切り替えた。
+#
+# このプロジェクトの Kong ゲートウェイは、鍵が要らないはずのこのエンドポイント
+# にも apikey ヘッダーを要求する設定になっている（"No API key found in
+# request" エラーで判明）。publishable キー（sb_publishable_...）は公開前提の
+# 鍵なので AGENTS.md のルールには抵触しない。
 #
 # 別プロジェクトを指したいときは pages.yml と同じく
 #   Settings → Secrets and variables → Actions → Variables
-# に SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY を作れば上書きされる。
+# に SUPABASE_URL を作れば上書きされる。
 on:
   schedule:
     - cron: '17 3 * * *' # 毎日 UTC 3:17（JST 12:17 ごろ）
@@ -23,13 +33,16 @@ jobs:
       SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://rfxcovghfifmagnbjayl.supabase.co' }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_CzNFlmiqxeZU5XLxsU285A_fF7-5bJ3' }}
     steps:
-      - name: Ping Supabase REST endpoint
+      - name: Ping Supabase Auth health endpoint
         run: |
-          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+          body=$(curl -sS -w "\n%{http_code}" \
             -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
-            "$SUPABASE_URL/rest/v1/")
+            "$SUPABASE_URL/auth/v1/health")
+          code=$(echo "$body" | tail -n1)
+          resp=$(echo "$body" | sed '$d')
           echo "HTTP $code"
+          echo "response body: $resp"
           if [ "$code" -ge 400 ]; then
-            echo "::error::Supabase への ping が失敗しました（HTTP $code）。プロジェクトが休止・削除されていないか確認してください。"
+            echo "::error::Supabase への ping が失敗しました（HTTP $code）。response=$resp"
             exit 1
           fi
