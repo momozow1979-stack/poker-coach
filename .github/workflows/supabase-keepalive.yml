@@ -25,10 +25,13 @@ jobs:
     steps:
       - name: Ping Supabase REST endpoint
         run: |
-          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+          body=$(curl -sS -w "\n%{http_code}" \
             -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
             "$SUPABASE_URL/rest/v1/")
+          code=$(echo "$body" | tail -n1)
+          resp=$(echo "$body" | sed '$d')
           echo "HTTP $code"
+          echo "response body: $resp"
           if [ "$code" -ge 400 ]; then
             echo "::error::Supabase への ping が失敗しました（HTTP $code）。プロジェクトが休止・削除されていないか確認してください。"
             exit 1
