@@ -22,10 +22,15 @@ class AppUser {
   bool get isRegistered => !isAnonymous && email != null;
 
   /// 画面に出す状態ラベル。
+  ///
+  /// 匿名でもサーバーには保存される（[SyncStatusLine] 参照）。
+  /// 「この端末のみ」と書くと保存状況の表示と矛盾するため、未登録である
+  /// こと（＝メール・Google未登録なので、この端末以外からは戻れない）
+  /// だけを表す文言にする。
   String get statusLabel {
     if (isRegistered) return email!;
     if (pendingEmail != null) return '$pendingEmail（確認メール待ち）';
-    return 'ゲスト（この端末のみ）';
+    return 'ゲスト（未登録）';
   }
 }
 

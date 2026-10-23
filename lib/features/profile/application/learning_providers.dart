@@ -152,7 +152,7 @@ class LearningSyncController extends Notifier<SyncStatus> {
     if (!_service.isRemoteEnabled) {
       state = state.copyWith(
         phase: SyncPhase.offline,
-        message: 'Supabase に接続していないため、この端末にだけ保存しています。',
+        message: 'サーバーに接続していないため、この端末にだけ保存しています。',
       );
       return;
     }

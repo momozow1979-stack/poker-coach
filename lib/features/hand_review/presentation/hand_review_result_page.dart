@@ -222,7 +222,7 @@ class _ResultBody extends StatelessWidget {
         const SizedBox(height: AppSpacing.lg),
         const Text(
           'この結果はアプリ内のローカル解析によるものです。'
-          'Supabase Edge Function 接続後は、同じ表示のままAIの出力に切り替わります。',
+          'サーバー接続後は、同じ表示のままAIの出力に切り替わります。',
           style: TextStyle(
             fontSize: 11,
             height: 1.6,

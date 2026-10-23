@@ -110,7 +110,7 @@ class LearningSyncService {
         status: SyncStatus(
           phase: SyncPhase.offline,
           pendingCount: await pendingCount(),
-          message: 'Supabase に接続していないため、この端末にだけ保存しています。',
+          message: 'サーバーに接続していないため、この端末にだけ保存しています。',
         ),
         record: await local.loadRecord(),
       );
