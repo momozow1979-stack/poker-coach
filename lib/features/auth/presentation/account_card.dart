@@ -221,7 +221,7 @@ class _SyncStatusLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, color) = switch (status.phase) {
       SyncPhase.synced when status.pendingCount == 0 => (
-        'Supabase に保存済み',
+        'サーバーに保存済み',
         AppColors.success,
       ),
       SyncPhase.syncing => ('同期中…', AppColors.info),

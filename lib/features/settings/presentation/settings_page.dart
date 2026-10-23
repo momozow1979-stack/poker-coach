@@ -26,7 +26,7 @@ class SettingsPage extends StatelessWidget {
                   ),
                   const SizedBox(height: AppSpacing.sm),
                   const Text(
-                    '学習履歴はまず端末に保存し、通信できるタイミングで Supabase へ同期します。'
+                    '学習履歴はまず端末に保存し、通信できるタイミングでサーバーへ同期します。'
                     '圏外でもクイズは解けて、オンラインに戻ったときにまとめて送られます。'
                     'メールアドレスを登録すると、別の端末でも同じ履歴を続けられます。',
                     style: TextStyle(
