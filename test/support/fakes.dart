@@ -190,6 +190,7 @@ class FakeAuthGateway implements AuthGateway {
         id: 'google-${++_counter}',
         isAnonymous: false,
         email: 'google-user-$_counter@example.com',
+        isGoogleLinked: true,
       ),
     );
   }

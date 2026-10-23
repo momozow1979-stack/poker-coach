@@ -257,11 +257,22 @@ class SupabaseAuthGateway implements AuthGateway {
   AppUser? _map(User? user) {
     if (user == null) return null;
     final email = user.email;
+    final googleIdentity = user.identities?.cast<UserIdentity?>().firstWhere(
+      (identity) => identity?.provider == 'google',
+      orElse: () => null,
+    );
+    final avatarUrl =
+        googleIdentity?.identityData?['avatar_url'] as String? ??
+        googleIdentity?.identityData?['picture'] as String? ??
+        user.userMetadata?['avatar_url'] as String? ??
+        user.userMetadata?['picture'] as String?;
     return AppUser(
       id: user.id,
       isAnonymous: user.isAnonymous,
       email: (email == null || email.isEmpty) ? null : email,
       pendingEmail: user.newEmail,
+      isGoogleLinked: googleIdentity != null,
+      avatarUrl: avatarUrl,
     );
   }
 
