@@ -8,6 +8,8 @@ class AppUser {
     required this.isAnonymous,
     this.email,
     this.pendingEmail,
+    this.isGoogleLinked = false,
+    this.avatarUrl,
   });
 
   final String id;
@@ -18,6 +20,12 @@ class AppUser {
 
   /// 確認メール待ちのアドレス。確認が済むと [email] に移る。
   final String? pendingEmail;
+
+  /// Googleアカウントが連携済みか（ログイン手段がGoogleかどうか）。
+  final bool isGoogleLinked;
+
+  /// Googleのプロフィール画像URL（連携済みのときだけ入る）。
+  final String? avatarUrl;
 
   bool get isRegistered => !isAnonymous && email != null;
 

@@ -88,17 +88,23 @@ class _AccountCardState extends ConsumerState<AccountCard> {
         children: [
           Row(
             children: [
-              Icon(
-                user == null
-                    ? Icons.cloud_off_rounded
-                    : (user.isRegistered
-                          ? Icons.verified_user_rounded
-                          : Icons.person_outline_rounded),
-                size: 18,
-                color: user?.isRegistered == true
-                    ? AppColors.success
-                    : AppColors.textMuted,
-              ),
+              if (user?.isGoogleLinked == true && user?.avatarUrl != null)
+                CircleAvatar(
+                  radius: 9,
+                  backgroundImage: NetworkImage(user!.avatarUrl!),
+                )
+              else
+                Icon(
+                  user == null
+                      ? Icons.cloud_off_rounded
+                      : (user.isRegistered
+                            ? Icons.verified_user_rounded
+                            : Icons.person_outline_rounded),
+                  size: 18,
+                  color: user?.isRegistered == true
+                      ? AppColors.success
+                      : AppColors.textMuted,
+                ),
               const SizedBox(width: AppSpacing.sm),
               const Text(
                 'アカウント',
@@ -107,12 +113,27 @@ class _AccountCardState extends ConsumerState<AccountCard> {
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
-          Text(
-            user?.statusLabel ?? 'サインインしていません',
-            style: const TextStyle(
-              fontSize: 13,
-              color: AppColors.textSecondary,
-            ),
+          Row(
+            children: [
+              Flexible(
+                child: Text(
+                  user?.statusLabel ?? 'サインインしていません',
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ),
+              if (user?.isGoogleLinked == true) ...[
+                const SizedBox(width: AppSpacing.xs),
+                const Icon(
+                  Icons.g_mobiledata_rounded,
+                  size: 18,
+                  color: AppColors.textMuted,
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: AppSpacing.sm),
           _SyncStatusLine(status: sync),
