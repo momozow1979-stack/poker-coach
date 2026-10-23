@@ -105,4 +105,38 @@ void main() {
     expect(find.text('メールアドレス'), findsOneWidget);
     expect(find.text('登録する'), findsOneWidget);
   });
+
+  testWidgets('Googleアカウントが既に別アカウントに紐づいているとき、そのまま入り直すボタンが出る', (tester) async {
+    final auth = FakeAuthGateway()..simulateIdentityAlreadyLinkedOnce = true;
+    addTearDown(auth.dispose);
+
+    await _pumpProfile(
+      tester,
+      ProviderScope(
+        overrides: [
+          keyValueStoreProvider.overrideWithValue(
+            await onboardingCompletedKeyValueStore(),
+          ),
+          authGatewayProvider.overrideWithValue(auth),
+          remoteLearningStoreProvider.overrideWithValue(
+            FakeRemoteLearningStore(),
+          ),
+        ],
+        child: const AiPokerCoachApp(),
+      ),
+    );
+
+    await _scrollTo(tester, find.text('Googleでログイン'));
+    await tester.tap(find.text('Googleでログイン'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('このGoogleアカウントは既に別のアカウントのデータと紐づいています。'), findsOneWidget);
+    expect(find.text('そのGoogleアカウントでログイン'), findsOneWidget);
+
+    await tester.tap(find.text('そのGoogleアカウントでログイン'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('そのGoogleアカウントでログイン'), findsNothing);
+    expect(auth.currentUser?.isRegistered, isTrue);
+  });
 }

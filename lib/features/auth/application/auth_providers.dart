@@ -59,6 +59,11 @@ class AccountController extends Notifier<AppUser?> {
   /// この場では返らない。実際のサインインは [changes] で分かる）。
   Future<void> signInWithGoogle() => _gateway.signInWithGoogle();
 
+  /// [lastFailure].isIdentityAlreadyLinked のときに呼ぶ。そのGoogleアカウントが
+  /// 既に持っているアカウントへ、そのままサインインし直す。
+  Future<void> signInWithGoogleDirectly() =>
+      _gateway.signInWithGoogleDirectly();
+
   Future<void> signOut() async {
     await _gateway.signOut();
     state = _gateway.currentUser;

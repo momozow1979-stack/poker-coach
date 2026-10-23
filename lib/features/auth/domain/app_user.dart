@@ -31,12 +31,23 @@ class AppUser {
 
 /// 認証まわりの失敗。UI にそのまま出せる日本語メッセージを持つ。
 class AuthFailure implements Exception {
-  const AuthFailure(this.message, {this.isAnonymousSignInDisabled = false});
+  const AuthFailure(
+    this.message, {
+    this.isAnonymousSignInDisabled = false,
+    this.isIdentityAlreadyLinked = false,
+  });
 
   final String message;
 
   /// Supabase 側で Anonymous sign-ins が無効になっている疑いがあるか。
   final bool isAnonymousSignInDisabled;
+
+  /// そのGoogleアカウントが既に別のユーザーに紐づいている（＝今の端末の
+  /// 匿名アカウントへは追加登録できない）失敗か。この場合、ユーザーが
+  /// 本当にやりたいのは「そのGoogleアカウントの持つデータへ戻ること」
+  /// なので、UI側で [AuthGateway.signInWithGoogleDirectly] を呼べる
+  /// ボタンを出す。
+  final bool isIdentityAlreadyLinked;
 
   @override
   String toString() => 'AuthFailure: $message';

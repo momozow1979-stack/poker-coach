@@ -52,9 +52,19 @@ class SupabaseAuthGateway implements AuthGateway {
   @override
   AuthFailure? get lastFailure => _lastFailure;
 
+  /// `identity_already_exists` のような、Google側の操作を終えてこのアプリに
+  /// 戻ってきたタイミングで判明する失敗は、`linkIdentity`/`signInWithOAuth`
+  /// の呼び出し自体（＝同期的な例外）ではなく、`onAuthStateChange` の
+  /// エラーとして届く（supabase_flutter が `notifyException` で流す）。
+  /// ここで拾って [_lastFailure] に反映しないと、黙って握り潰されて
+  /// 画面に一切出ない（実機で確認済みのバグ）。
   @override
-  Stream<AppUser?> get changes =>
-      _client.auth.onAuthStateChange.map((event) => _map(event.session?.user));
+  Stream<AppUser?> get changes => _client.auth.onAuthStateChange
+      .map((event) => _map(event.session?.user))
+      .handleError((Object error, StackTrace stackTrace) {
+        if (error is! AuthException) throw error;
+        _lastFailure = _toLinkOrSignInFailure(error);
+      });
 
   @override
   AppUser? get currentUser => _map(_client.auth.currentUser);
@@ -142,7 +152,7 @@ class SupabaseAuthGateway implements AuthGateway {
   }
 
   @override
-  Future<void> signInWithGoogle() async {
+  Future<void> signInWithGoogle() {
     // 匿名セッション中は「サインイン」ではなく「リンク」にする。
     //
     // signInWithOAuth は常に新規／既存の別アカウントへの切り替えとして扱われ、
@@ -152,27 +162,40 @@ class SupabaseAuthGateway implements AuthGateway {
     //
     // Supabase 側で Authentication → Settings → 「Allow manual linking」
     // を有効にしていないと、linkIdentity は manual_linking_disabled で失敗する。
+    // そのGoogleアカウントが既に別ユーザーに紐づいている場合は
+    // identity_already_exists になる（[signInWithGoogleDirectly] 参照）。
     final isAnonymous = _client.auth.currentUser?.isAnonymous ?? false;
+    return _performGoogleOAuth(
+      () => isAnonymous
+          ? _client.auth.linkIdentity(
+              OAuthProvider.google,
+              redirectTo: kIsWeb ? _webRedirectUrl : _mobileRedirectUrl,
+            )
+          : _client.auth.signInWithOAuth(
+              OAuthProvider.google,
+              redirectTo: kIsWeb ? _webRedirectUrl : _mobileRedirectUrl,
+            ),
+    );
+  }
 
+  @override
+  Future<void> signInWithGoogleDirectly() => _performGoogleOAuth(
+    () => _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: kIsWeb ? _webRedirectUrl : _mobileRedirectUrl,
+    ),
+  );
+
+  /// ブラウザ／外部アプリを開くだけで、この呼び出し自体は
+  /// 成功か失敗（起動できたか）しか分からない——実際のサインインは
+  /// ユーザーがGoogle側の操作を終えてこのアプリに戻ってきたときに
+  /// [changes]（`onAuthStateChange` 経由）で分かる。
+  Future<void> _performGoogleOAuth(Future<void> Function() start) async {
     try {
-      if (isAnonymous) {
-        await _client.auth.linkIdentity(
-          OAuthProvider.google,
-          redirectTo: kIsWeb ? _webRedirectUrl : _mobileRedirectUrl,
-        );
-      } else {
-        // ブラウザ／外部アプリを開くだけで、この呼び出し自体は
-        // 成功か失敗（起動できたか）しか分からない——実際のサインインは
-        // ユーザーがGoogle側の操作を終えてこのアプリに戻ってきたときに
-        // [changes]（`onAuthStateChange` 経由）で分かる。
-        await _client.auth.signInWithOAuth(
-          OAuthProvider.google,
-          redirectTo: kIsWeb ? _webRedirectUrl : _mobileRedirectUrl,
-        );
-      }
+      await start();
       _lastFailure = null;
     } on AuthException catch (error) {
-      final failure = AuthFailure(_linkOrSignInMessage(error));
+      final failure = _toLinkOrSignInFailure(error);
       _lastFailure = failure;
       throw failure;
     } catch (error) {
@@ -190,6 +213,11 @@ class SupabaseAuthGateway implements AuthGateway {
     }
   }
 
+  AuthFailure _toLinkOrSignInFailure(AuthException error) => AuthFailure(
+    _linkOrSignInMessage(error),
+    isIdentityAlreadyLinked: error.code == 'identity_already_exists',
+  );
+
   String _linkOrSignInMessage(AuthException error) {
     // サーバー側の設定不備（運営側の対応待ち）。原因（サービス名・設定画面の
     // 場所など内部情報）は利用者に見せず、開発者向けログにだけ残す。
@@ -203,9 +231,9 @@ class SupabaseAuthGateway implements AuthGateway {
     }
     return switch (error.code) {
       'identity_already_exists' =>
-        'このGoogleアカウントは既に別のデータと紐づいています。'
-            'この端末の記録とは別のアカウントとして扱われるため、'
-            'いったんログアウトしてから、そのGoogleアカウントでログインし直してください。',
+        'このGoogleアカウントは既に別のアカウントのデータと紐づいています。'
+            '下のボタンから、そのアカウントにそのままサインインできます'
+            '（この端末の今の記録は上書きされませんが、自動では統合されません）。',
       _ => friendlyErrorMessage(
         error.message,
         offline:

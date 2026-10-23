@@ -43,6 +43,15 @@ abstract class AuthGateway {
   /// 投げる。
   Future<void> signInWithGoogle();
 
+  /// 既に別アカウントに紐づいているGoogleアカウントへ、そのまま
+  /// サインインし直す（[signInWithGoogle] が anonymous ゆえに
+  /// 常にリンクを試みてしまう問題の回避策）。
+  ///
+  /// 今の端末が匿名セッションかどうかに関わらず、常に既存アカウントへの
+  /// 切り替えとして扱う。[AuthFailure.isIdentityAlreadyLinked] が
+  /// 立ったときに、UI からこちらを呼ぶ想定。
+  Future<void> signInWithGoogleDirectly();
+
   /// サインアウトし、匿名セッションを取り直す。
   Future<void> signOut();
 }
@@ -75,6 +84,10 @@ class OfflineAuthGateway implements AuthGateway {
 
   @override
   Future<void> signInWithGoogle() async =>
+      throw const AuthFailure('オフラインのためログインできません。');
+
+  @override
+  Future<void> signInWithGoogleDirectly() async =>
       throw const AuthFailure('オフラインのためログインできません。');
 
   @override
