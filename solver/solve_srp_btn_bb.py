@@ -369,7 +369,58 @@ def _build_payload(spots: list[dict]) -> dict:
     }
 
 
+def _run_as_cloud_run_task(task_index: int) -> None:
+    """1 Cloud Run タスク(コンテナ) = 1 盤、という native なタスク並列モード。
+
+    なぜこのモードが要るか: 以前は1コンテナ内で`ProcessPoolExecutor`を使い、
+    `SOLVER_WORKERS`個のOSプロセスで複数盤を同時に学習していた。これは
+    「1コンテナのメモリ上限(例: 32GiB)を、同時に動く盤の数で分け合う」
+    設計のため、同時実行数を上げるほど1盤あたりの使えるメモリが減る。
+    実機検証(2026-10-27)で、反復数1万・盤8枚でWORKERS=8は
+    BrokenProcessPoolでクラッシュし、WORKERS=4は成功した——8プロセス分の
+    メモリ合計がコンテナの上限を超えたとみられる。本番の1200万反復では
+    盤あたりの必要メモリがさらに増える可能性があり、WORKERS=4でも
+    安全とは限らない。
+
+    この関数は、Cloud Run Jobsの`--tasks N`機能(1タスク=独立したコンテナ
+    インスタンス)を使い、盤ごとに**専用のコンテナ・専用のメモリ上限**を
+    割り当てる。これなら同時に動く盤の数を増やしても、1盤あたりの
+    使えるメモリは変わらない(他の盤と取り合わない)。
+    """
+    if task_index < 0 or task_index >= len(BOARDS):
+        raise ValueError(
+            f"CLOUD_RUN_TASK_INDEX={task_index} is out of range for "
+            f"{len(BOARDS)} board(s); --tasks must equal len(BOARDS)"
+        )
+    spot_id, board = BOARDS[task_index]
+    parts_prefix = os.environ.get("PARTS_GCS_PREFIX")
+    if not parts_prefix or not parts_prefix.startswith("gs://"):
+        raise RuntimeError(
+            "PARTS_GCS_PREFIX (gs://bucket/prefix/) is required in "
+            "Cloud Run task mode so each task writes its own spot file "
+            "without colliding with the other 7 tasks."
+        )
+
+    if _spot_part_exists(parts_prefix, spot_id):
+        print(f"[{spot_id}] part already exists in {parts_prefix}, skipping", flush=True)
+        return
+
+    spot = solve_board(spot_id, board)
+    _upload_spot_part(spot, parts_prefix, spot_id)
+    print(f"[{spot_id}] uploaded part to {parts_prefix}", flush=True)
+
+
 def main() -> None:
+    task_index_env = os.environ.get("CLOUD_RUN_TASK_INDEX")
+    if task_index_env is not None:
+        # Cloud Run Jobsのネイティブなタスク並列(`--tasks N`)で起動された場合:
+        # このコンテナは BOARDS のうち1枚だけを担当する。詳細は
+        # `_run_as_cloud_run_task` のdocstring参照。
+        _run_as_cloud_run_task(int(task_index_env))
+        return
+
+    # 以下は旧来の「1コンテナ内でProcessPoolExecutorを使い、SOLVER_WORKERS個の
+    # OSプロセスで複数盤を同時に解く」モード(ローカル実行・小規模検証向けに残す)。
     out_path = "solved_srp_btn_bb.json"
     spots = _download_existing(out_path)
     done_ids = {s["id"] for s in spots}
@@ -397,6 +448,10 @@ def main() -> None:
     # 使い切るため、同じプロセスで複数盤面を回すとメモリが前の盤面ぶん
     # 残ったまま積み上がり、終盤でコンテナのメモリ上限を超えて
     # BrokenProcessPool で落ちる（実機で2回再現・確認済み）。
+    # 【重要】これでも、同時実行数(SOLVER_WORKERS)が多いと「コンテナ1つの
+    # メモリ上限を同時に動く盤の数で分け合う」ことになり、本番規模では
+    # クラッシュしうる(実機で確認済み、2026-10-27)。本番はこのモードではなく
+    # `_run_as_cloud_run_task`(盤ごとに専用コンテナ)を使うこと。
     with ProcessPoolExecutor(
         max_workers=max_workers, max_tasks_per_child=1
     ) as executor:
@@ -431,6 +486,33 @@ def _maybe_upload(path: str) -> None:
     client = storage.Client()
     client.bucket(bucket_name).blob(blob_name).upload_from_filename(path)
     print(f"uploaded {path} -> {uri}", flush=True)
+
+
+def _spot_part_exists(parts_prefix: str, spot_id: str) -> bool:
+    """Cloud Run タスクモード用: 盤ごとのパート(`{spot_id}.json`)が既に
+    アップロード済みか確認する(タスクの再試行で二重に学習しないため)。"""
+    from google.cloud import storage  # type: ignore
+
+    bucket_name, _, prefix = parts_prefix[len("gs://") :].partition("/")
+    prefix = prefix.rstrip("/")
+    blob_name = f"{prefix}/{spot_id}.json" if prefix else f"{spot_id}.json"
+    client = storage.Client()
+    return client.bucket(bucket_name).blob(blob_name).exists()
+
+
+def _upload_spot_part(spot: dict, parts_prefix: str, spot_id: str) -> None:
+    """Cloud Run タスクモード用: このタスクが解いた1盤分の結果を、他のタスクと
+    衝突しない専用のパスにアップロードする(`solved_srp_btn_bb.json`全体を
+    複数コンテナが同時に書き換えようとする競合を避けるため)。"""
+    from google.cloud import storage  # type: ignore
+
+    bucket_name, _, prefix = parts_prefix[len("gs://") :].partition("/")
+    prefix = prefix.rstrip("/")
+    blob_name = f"{prefix}/{spot_id}.json" if prefix else f"{spot_id}.json"
+    client = storage.Client()
+    client.bucket(bucket_name).blob(blob_name).upload_from_string(
+        json.dumps(spot, ensure_ascii=False), content_type="application/json"
+    )
 
 
 def _download_existing(out_path: str) -> list[dict]:
