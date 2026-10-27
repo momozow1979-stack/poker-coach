@@ -277,7 +277,7 @@ def _street_nodes(
     return out
 
 
-def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
+def _build_game(board_cards: tuple[str, ...]) -> tuple[PostflopSubgame, list[int]]:
     board_ids = [parse_card(c) for c in board_cards]
     game = PostflopSubgame(
         board_ids,
@@ -288,23 +288,17 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
     )
     game.hero_combos = sorted(game.hero_combos)
     game.villain_combos = sorted(game.villain_combos)
+    return game, board_ids
 
-    solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
-    print(
-        f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
-        f"ip(BTN)={len(game.villain_combos)} :: training {ITERATIONS:,}...",
-        flush=True,
-    )
-    t0 = time.time()
-    solver.train_external_sampling(ITERATIONS)
-    elapsed = time.time() - t0
-    avg = solver.average_strategy()
-    print(
-        f"[{spot_id}] trained in {elapsed / 60:.1f} min, "
-        f"{solver.num_information_sets:,} info sets",
-        flush=True,
-    )
 
+def _readout_payload(
+    spot_id: str,
+    board_cards: tuple[str, ...],
+    board_ids: list[int],
+    game: PostflopSubgame,
+    avg: dict,
+    iterations: int,
+) -> dict:
     board3 = tuple(board_ids)
     flop_nodes = _street_nodes(game, avg, board3, "", "", "")
 
@@ -330,11 +324,109 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
     return {
         "id": spot_id,
         "board": list(board_cards),
-        "iterations": ITERATIONS,
+        "iterations": iterations,
         "flop": flop_nodes,
         "turns": turns,
         "rivers": rivers,
     }
+
+
+def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
+    game, board_ids = _build_game(board_cards)
+    solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
+    print(
+        f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
+        f"ip(BTN)={len(game.villain_combos)} :: training {ITERATIONS:,}...",
+        flush=True,
+    )
+    t0 = time.time()
+    solver.train_external_sampling(ITERATIONS)
+    elapsed = time.time() - t0
+    avg = solver.average_strategy()
+    print(
+        f"[{spot_id}] trained in {elapsed / 60:.1f} min, "
+        f"{solver.num_information_sets:,} info sets",
+        flush=True,
+    )
+    return _readout_payload(spot_id, board_cards, board_ids, game, avg, ITERATIONS)
+
+
+def _rss_mb() -> float:
+    """現在のプロセスの生涯ピークRSS(MB)。このリポジトリの標準測定手法
+    (`resource.getrusage(...).ru_maxrss`、BENCHMARKS.md参照)——cgroupの
+    「現在の使用量」ではなく生涯ピークを見る。cgroup環境では減少しない。"""
+    import resource
+
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+
+def run_single_board_checkpointed(
+    spot_id: str,
+    board_cards: tuple[str, ...],
+    checkpoint_path: str,
+    target_iterations: int,
+    checkpoint_every: int,
+    out_path: str,
+) -> None:
+    """VM上で1盤だけを、チャンクに分けてチェックポイントしながら学習する。
+
+    なぜこれが要るか: Cloud Run Jobsでは「盤ごとに専用コンテナ(最大32GB)」
+    にしても、2026-10-27の実機検証で**1盤だけで32GB超**になりクラッシュした
+    (10万反復時点、1万反復では約5.8GBだった)。本番の1200万反復でどこまで
+    メモリが増えるかは未知数で、Cloud Run Jobsは実行が落ちたら手ぶらで
+    終わる(チェックポイント・リサイズができない)ため、上限を一度外した
+    環境で**チェックポイントを取りながら**進め、メモリ使用量を実測し、
+    必要ならマシンを止めて大きいメモリに付け替えて再開できるようにする。
+
+    `CFRSolver.save()`/`load()`(Stage S6でアトミック化済み、BENCHMARKS.md
+    参照)で、chunk学習のたびにチェックポイントを書き出す。既存の
+    チェックポイントがあれば自動再開する。
+    """
+    game, board_ids = _build_game(board_cards)
+
+    if os.path.exists(checkpoint_path):
+        solver = CFRSolver.load(checkpoint_path, game)
+        done = solver._sampled_iterations_trained
+        print(
+            f"[{spot_id}] resumed from {checkpoint_path}: "
+            f"{done:,}/{target_iterations:,} iterations, "
+            f"{solver.num_information_sets:,} info sets, "
+            f"RSS={_rss_mb():,.1f} MB",
+            flush=True,
+        )
+    else:
+        solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
+        done = 0
+        print(
+            f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
+            f"ip(BTN)={len(game.villain_combos)} :: training "
+            f"{target_iterations:,} (checkpointed every {checkpoint_every:,})...",
+            flush=True,
+        )
+
+    t_start = time.time()
+    while done < target_iterations:
+        chunk = min(checkpoint_every, target_iterations - done)
+        t0 = time.time()
+        solver.train_external_sampling(chunk)
+        done += chunk
+        elapsed_chunk = time.time() - t0
+        solver.save(checkpoint_path)
+        print(
+            f"[{spot_id}] done={done:,}/{target_iterations:,} "
+            f"({100 * done / target_iterations:.1f}%), "
+            f"info_sets={solver.num_information_sets:,}, "
+            f"RSS={_rss_mb():,.1f} MB, "
+            f"chunk_took={elapsed_chunk / 60:.1f} min, "
+            f"total_elapsed={((time.time() - t_start) / 3600):.2f} h",
+            flush=True,
+        )
+
+    avg = solver.average_strategy()
+    payload = _readout_payload(spot_id, board_cards, board_ids, game, avg, target_iterations)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    print(f"[{spot_id}] ALL DONE, wrote {out_path}", flush=True)
 
 
 def _build_payload(spots: list[dict]) -> dict:
@@ -411,6 +503,26 @@ def _run_as_cloud_run_task(task_index: int) -> None:
 
 
 def main() -> None:
+    single_board_id = os.environ.get("SINGLE_BOARD_ID")
+    if single_board_id is not None:
+        # GCE VM向け: 1盤だけをチェックポイントしながら学習するモード。
+        # 詳細は `run_single_board_checkpointed` のdocstring参照。
+        board_by_id = dict(BOARDS)
+        if single_board_id not in board_by_id:
+            raise ValueError(f"unknown SINGLE_BOARD_ID={single_board_id!r}, must be one of {list(board_by_id)}")
+        checkpoint_path = os.environ.get("CHECKPOINT_PATH", f"{single_board_id}.cfrsave")
+        out_path = os.environ.get("OUT_PATH", f"{single_board_id}.json")
+        checkpoint_every = int(os.environ.get("CHECKPOINT_EVERY", "200000"))
+        run_single_board_checkpointed(
+            single_board_id,
+            board_by_id[single_board_id],
+            checkpoint_path,
+            ITERATIONS,
+            checkpoint_every,
+            out_path,
+        )
+        return
+
     task_index_env = os.environ.get("CLOUD_RUN_TASK_INDEX")
     if task_index_env is not None:
         # Cloud Run Jobsのネイティブなタスク並列(`--tasks N`)で起動された場合:
