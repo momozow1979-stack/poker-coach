@@ -91,6 +91,15 @@ ITERATIONS = int(os.environ.get("SOLVER_ITERATIONS", "12000000"))
 MAX_WAGERS_PER_ROUND = 2  # 1 bet + 1 raise per street (capped at one raise)
 BET_FRACTIONS = (1 / 3, 1 / 2, 2 / 3, 1.5)  # 1/3, 1/2, 2/3 pot, overbet
 
+# 情報集合の爆発を抑えるための近似バケット化(PostflopSubgame参照、実機検証
+# 2026-10-27〜11-04: 素の実装は40万反復で1盤あたり約55GBに達しクラッシュ、
+# この2つのバケットを両方有効にすると同じ反復数で約75〜82%の情報集合削減を
+# ローカル小規模実測で確認済み)。既定でON——12,000,000反復に実際に到達する
+# ためのもので、無効化は比較・デバッグ目的のみ。**近似であり厳密解ではない
+# ことを、エクスポートの note フィールドに必ず明記する**(AGENTS.md rule 1)。
+HAND_STRENGTH_BUCKET = os.environ.get("HAND_STRENGTH_BUCKET", "1") == "1"
+BOARD_TEXTURE_BUCKET = os.environ.get("BOARD_TEXTURE_BUCKET", "1") == "1"
+
 # このアプリの BTN オープン / BB コール（vs BTN）レンジ（純粋部分）。
 # BTN_OPEN は range_definitions.dart の BTN オープン（raise のみ、mixed は含まない）と一致させる。
 BTN_OPEN = (
@@ -285,6 +294,8 @@ def _build_game(board_cards: tuple[str, ...]) -> tuple[PostflopSubgame, list[int
         villain_range_notation=BTN_OPEN,  # IP: acts last every street
         bet_fractions=BET_FRACTIONS,
         max_wagers_per_round=MAX_WAGERS_PER_ROUND,
+        hand_strength_bucket=HAND_STRENGTH_BUCKET,
+        board_texture_bucket=BOARD_TEXTURE_BUCKET,
     )
     game.hero_combos = sorted(game.hero_combos)
     game.villain_combos = sorted(game.villain_combos)
@@ -456,6 +467,25 @@ def _build_payload(spots: list[dict]) -> dict:
             "combination), and are rarer branches of the same tree, so "
             "may be noisier (less converged) than first-action nodes at "
             "the same iteration budget."
+            + (
+                " TRAINING itself (not just this readout) used "
+                "hand_strength_bucket=True: the solver's own hole cards "
+                "were abstracted to (hand category, top kicker) against "
+                "the board rather than tracked as the exact 2 cards — a "
+                "real approximation (see PostflopSubgame docs), needed to "
+                "keep memory bounded at this iteration count."
+                if HAND_STRENGTH_BUCKET
+                else ""
+            )
+            + (
+                " TRAINING also used board_texture_bucket=True: each "
+                "dealt turn/river card was abstracted to whether it paired "
+                "the board / advanced a flush, rather than tracked as the "
+                "exact card — also a real approximation, for the same "
+                "reason."
+                if BOARD_TEXTURE_BUCKET
+                else ""
+            )
         ),
         "spots": spots,
     }
