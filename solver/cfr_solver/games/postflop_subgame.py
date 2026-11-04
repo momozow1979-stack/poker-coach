@@ -47,7 +47,7 @@ from functools import lru_cache
 
 from cfr_solver import _native
 from cfr_solver.games.game import Action, Game, History
-from cfr_solver.poker.cards import DECK, rank_of, suit_of
+from cfr_solver.poker.cards import DECK, evaluate_best_hand, rank_of, suit_of
 from cfr_solver.poker.combos import Combo, range_combos
 from cfr_solver.poker.range_notation import expand as expand_range
 
@@ -204,6 +204,36 @@ def _canonicalize_cards(
     return tuple(rank_of(c) * 4 + suit_map[suit_of(c)] for c in cards)
 
 
+@lru_cache(maxsize=None)
+def _hand_strength_bucket(own_combo: tuple[int, ...], board: tuple[int, ...]) -> tuple[int, int]:
+    """A coarse hand-strength signal — this hand's category (high card ..
+    straight flush) and top kicker rank, evaluated against the current
+    board (`evaluate_best_hand`, already the hot-path evaluator used at
+    showdown) — used in place of the exact 2 hole cards when
+    `hand_strength_bucket=True`.
+
+    **Unlike `_canonical_suit_map`, this IS a real approximation, not an
+    exact symmetry reduction.** Two different combos that make the same
+    category with the same top kicker collapse onto the same CFR node even
+    though their true equity can differ (e.g. two top-pair hands with the
+    same kicker but different side cards, or a made hand vs a draw that
+    happens to share a category/kicker on an earlier street). This trades
+    precision for a much larger cut in information-set count than suit
+    isomorphism alone achieved in practice (measured 2026-10-27/-30, see
+    `BENCHMARKS.md`: suit isomorphism alone gave 0%-5.5% reduction across
+    real production boards, far short of what reaching 12M iterations
+    needs). AGENTS.md rule 1 (never present an approximate number as exact)
+    means any export produced with this enabled must say so in its "note"
+    field — this is the same honesty obligation `solve_srp_btn_bb.py`
+    already applies to "approximate solve ... at the stated iterations".
+
+    Opt-in, off by default, so existing exact-key fixtures/tests are
+    untouched.
+    """
+    category, *kickers = evaluate_best_hand(list(own_combo) + list(board))
+    return (category, kickers[0] if kickers else -1)
+
+
 def _payoffs_from_fold(total_contrib: list[float], folder: int) -> list[float]:
     pot = sum(total_contrib)
     winner = 1 - folder
@@ -222,6 +252,11 @@ class PostflopSubgame(Game):
     building each information-set key (see `_canonical_suit_map`'s
     docstring) — an exact, lossless symmetry reduction, off by default so
     existing fixtures/tests keep their frozen raw-card keys unchanged.
+
+    `hand_strength_bucket=True` additionally collapses the exact 2 hole
+    cards to (hand category, top kicker) against the current board (see
+    `_hand_strength_bucket`'s docstring) — unlike `suit_isomorphism`, this
+    IS a real approximation, not a lossless reduction; also off by default.
     """
 
     def __init__(
@@ -234,6 +269,7 @@ class PostflopSubgame(Game):
         bet_fractions: tuple[float, ...] = (1 / 3, 1 / 2, 2 / 3, 1.5),
         max_wagers_per_round: int = 1,
         suit_isomorphism: bool = False,
+        hand_strength_bucket: bool = False,
     ) -> None:
         if len(flop_board) != 3:
             raise ValueError("PostflopSubgame expects exactly a 3-card flop board")
@@ -251,6 +287,7 @@ class PostflopSubgame(Game):
         self.bet_fractions = bet_fractions
         self.max_wagers_per_round = max_wagers_per_round
         self.suit_isomorphism = suit_isomorphism
+        self.hand_strength_bucket = hand_strength_bucket
         self._equity_cache = _native.EquityCache()
 
     @property
@@ -398,6 +435,17 @@ class PostflopSubgame(Game):
         own_combo = hero_combo if player == 0 else villain_combo
         for c in (*own_combo, *board):
             assert 0 <= c <= 51, f"card id {c} out of range 0..51 — key encoding assumes 2 digits"
+        if self.hand_strength_bucket:
+            # See `_hand_strength_bucket`'s docstring: a REAL approximation
+            # (unlike suit isomorphism below) — collapses the exact 2 hole
+            # cards down to (hand category, top kicker) against the current
+            # board. Suit canonicalization of the board still applies
+            # separately below if also enabled (hand category/kicker are
+            # suit-invariant either way, so the order doesn't matter).
+            category, kicker = _hand_strength_bucket(own_combo, board)
+            combo_digits = f"b{category}{kicker + 1:02d}"
+        else:
+            combo_digits = None
         if self.suit_isomorphism:
             # See `_canonical_suit_map`'s docstring: merges strategically
             # identical suit-permuted deals into one CFR node (exact, not an
@@ -412,6 +460,7 @@ class PostflopSubgame(Game):
         # this same dealt combo), so this reuses the formatted digit string
         # instead of re-running `str.join`/`f"{c:02d}"` from scratch each
         # time (see module-level docstring above `_card_digits`).
-        combo_digits = _card_digits(own_combo)
+        if combo_digits is None:
+            combo_digits = _card_digits(own_combo)
         board_digits = _card_digits(board)
         return f"{combo_digits}{board_digits}|{flop_a}|{turn_a}|{river_a}"
