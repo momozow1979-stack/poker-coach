@@ -47,7 +47,7 @@ from functools import lru_cache
 
 from cfr_solver import _native
 from cfr_solver.games.game import Action, Game, History
-from cfr_solver.poker.cards import DECK
+from cfr_solver.poker.cards import DECK, rank_of, suit_of
 from cfr_solver.poker.combos import Combo, range_combos
 from cfr_solver.poker.range_notation import expand as expand_range
 
@@ -152,6 +152,58 @@ def _card_digits(cards: tuple[int, ...]) -> str:
     return "".join(f"{c:02d}" for c in cards)
 
 
+@lru_cache(maxsize=None)
+def _canonical_suit_map(visible: tuple[int, ...]) -> tuple[int, int, int, int]:
+    """Suit isomorphism: a deterministic relabeling of the 4 suits, computed
+    purely from the cards visible to ONE player at one information set (their
+    own hole cards + the board — never the opponent's hidden cards, which
+    this player can't see and whose identity can't legally factor into their
+    own strategy). `cards.py`'s module docstring already states "suit
+    identity only matters for flushes/blockers, never displayed": two deals
+    related by a global suit permutation (e.g. swap every heart and diamond,
+    everywhere, consistently) are strategically identical — every
+    not-yet-dealt card is still drawn uniformly over the remaining deck, and
+    `evaluate_best_hand` only cares about rank matches and same-suit counts,
+    never which of the 4 labels a suit happens to have. Relabeling suits to
+    a canonical order before building the information-set key merges these
+    genuinely-identical situations into one shared CFR node instead of
+    training each one as if it were different — an EXACT symmetry
+    reduction, not the card-bucketing approximation `games/flop_subgame.py`
+    explicitly disclaims (no hand is ever grouped with a *different* hand;
+    only the meaningless suit label is normalized away). Hole-card
+    suitedness and flush blockers remain fully distinguished, because the
+    map is a bijection: two cards that share a suit before canonicalization
+    still share a suit after it, and two cards of different suits still map
+    to different canonical suits.
+
+    Why this matters in practice: a real production run on GCP (2026-10-27,
+    see `BENCHMARKS.md`) found this game's information-set count growing
+    with no sign of plateauing anywhere near the target iteration count —
+    exactly the kind of blow-up suit isomorphism exists to prevent, and the
+    standard, lossless reduction production solvers (the kind `docs/` already
+    compares this project's output against) rely on.
+
+    `visible` must be exactly `(*own_combo, *board)` for ONE player (never
+    both players' hole cards mixed together). Returns a 4-tuple: `result[old
+    _suit] = canonical_suit`.
+    """
+
+    def signature(s: int) -> tuple[int, ...]:
+        return tuple(sorted((rank_of(c) for c in visible if suit_of(c) == s), reverse=True))
+
+    order = sorted(range(4), key=lambda s: (len(signature(s)), signature(s)), reverse=True)
+    canonical = [0, 0, 0, 0]
+    for canon_suit, old_suit in enumerate(order):
+        canonical[old_suit] = canon_suit
+    return (canonical[0], canonical[1], canonical[2], canonical[3])
+
+
+def _canonicalize_cards(
+    cards: tuple[int, ...], suit_map: tuple[int, int, int, int]
+) -> tuple[int, ...]:
+    return tuple(rank_of(c) * 4 + suit_map[suit_of(c)] for c in cards)
+
+
 def _payoffs_from_fold(total_contrib: list[float], folder: int) -> list[float]:
     pot = sum(total_contrib)
     winner = 1 - folder
@@ -165,6 +217,11 @@ class PostflopSubgame(Game):
     """Player 0 ("hero") acts first on every street. This is a real
     positional fact, not an arbitrary simplification — see the module
     docstring's note on assigning the out-of-position player to player 0.
+
+    `suit_isomorphism=True` relabels suits to a canonical order before
+    building each information-set key (see `_canonical_suit_map`'s
+    docstring) — an exact, lossless symmetry reduction, off by default so
+    existing fixtures/tests keep their frozen raw-card keys unchanged.
     """
 
     def __init__(
@@ -176,6 +233,7 @@ class PostflopSubgame(Game):
         preflop_contrib: tuple[float, float] = (2.5, 2.5),
         bet_fractions: tuple[float, ...] = (1 / 3, 1 / 2, 2 / 3, 1.5),
         max_wagers_per_round: int = 1,
+        suit_isomorphism: bool = False,
     ) -> None:
         if len(flop_board) != 3:
             raise ValueError("PostflopSubgame expects exactly a 3-card flop board")
@@ -192,6 +250,7 @@ class PostflopSubgame(Game):
         self.preflop_contrib = preflop_contrib
         self.bet_fractions = bet_fractions
         self.max_wagers_per_round = max_wagers_per_round
+        self.suit_isomorphism = suit_isomorphism
         self._equity_cache = _native.EquityCache()
 
     @property
@@ -339,6 +398,14 @@ class PostflopSubgame(Game):
         own_combo = hero_combo if player == 0 else villain_combo
         for c in (*own_combo, *board):
             assert 0 <= c <= 51, f"card id {c} out of range 0..51 — key encoding assumes 2 digits"
+        if self.suit_isomorphism:
+            # See `_canonical_suit_map`'s docstring: merges strategically
+            # identical suit-permuted deals into one CFR node (exact, not an
+            # approximation) — computed from this player's own visible cards
+            # only, never the opponent's.
+            suit_map = _canonical_suit_map((*own_combo, *board))
+            own_combo = _canonicalize_cards(own_combo, suit_map)
+            board = _canonicalize_cards(board, suit_map)
         # `_card_digits` is `lru_cache`d: the same `own_combo` and the same
         # `board` each recur across many information-set-key calls (every
         # other combo pair sharing this board, every later street reusing
