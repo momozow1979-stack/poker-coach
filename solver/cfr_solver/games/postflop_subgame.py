@@ -43,6 +43,7 @@ exported frequency models the wrong player acting first on every street.
 
 from __future__ import annotations
 
+from collections import Counter
 from functools import lru_cache
 
 from cfr_solver import _native
@@ -234,6 +235,52 @@ def _hand_strength_bucket(own_combo: tuple[int, ...], board: tuple[int, ...]) ->
     return (category, kickers[0] if kickers else -1)
 
 
+@lru_cache(maxsize=None)
+def _card_texture_delta(new_card: int, prior_board: tuple[int, ...]) -> tuple[int, int]:
+    """How one newly-dealt board card (turn, or river) changes the BOARD's
+    texture relative to the board before it — independent of either
+    player's hole cards. Two flags: `(pairs_board, advances_flush)`.
+
+    This exists for the same reason `_hand_strength_bucket` does (a real
+    approximation, see that function's docstring for the honesty
+    obligation), but targets the OTHER dimension of this game's
+    information-set blow-up: `hand_strength_bucket` only compresses the 2
+    hole cards, so a fixed flop still gets a fresh, fully-distinct
+    information set for every one of the ~1,892 possible (turn, river) card
+    pairs the training walk samples — the user's own framing: "pairs the
+    board or not, advances a flush or not" is exactly the board-level
+    analogue of `_hand_strength_bucket`'s "made a hand or not" for hole
+    cards, and is already the same kind of texture classification
+    `solve_srp_btn_bb.py`'s own readout uses to pick representative
+    turn/river cards (`_blank_card`/`_overcard`/`_texture_change_card`) —
+    this just applies that idea to every card the TRAINING walk sees,
+    not only the few representative ones read out afterward.
+    """
+    prior_ranks = {rank_of(c) for c in prior_board}
+    pairs_board = 1 if rank_of(new_card) in prior_ranks else 0
+    suit_counts = Counter(suit_of(c) for c in prior_board)
+    dominant_suit, dominant_count = (
+        suit_counts.most_common(1)[0] if suit_counts else (None, 0)
+    )
+    advances_flush = 1 if dominant_count >= 2 and suit_of(new_card) == dominant_suit else 0
+    return (pairs_board, advances_flush)
+
+
+def _board_texture_key(board: tuple[int, ...]) -> str:
+    """The flop's 3 cards stay literal (always the same single fixed flop
+    within one `solve_board()` call — no multiplicity to compress there);
+    the turn and river (if dealt) are each replaced by their
+    `_card_texture_delta` relative to the board as it stood before them."""
+    flop_digits = _card_digits(board[:3])
+    parts = [flop_digits]
+    prior = board[:3]
+    for extra in board[3:]:
+        pairs, flush = _card_texture_delta(extra, prior)
+        parts.append(f"t{pairs}{flush}")
+        prior = prior + (extra,)
+    return "".join(parts)
+
+
 def _payoffs_from_fold(total_contrib: list[float], folder: int) -> list[float]:
     pot = sum(total_contrib)
     winner = 1 - folder
@@ -257,6 +304,13 @@ class PostflopSubgame(Game):
     cards to (hand category, top kicker) against the current board (see
     `_hand_strength_bucket`'s docstring) — unlike `suit_isomorphism`, this
     IS a real approximation, not a lossless reduction; also off by default.
+
+    `board_texture_bucket=True` is the board-side analogue: each dealt
+    turn/river card is replaced by its texture delta (pairs the board? /
+    advances a flush?) relative to the board before it, instead of its
+    exact identity (see `_board_texture_key`'s docstring). Also a real
+    approximation, also off by default, and supersedes `suit_isomorphism`'s
+    board canonicalization when both are enabled.
     """
 
     def __init__(
@@ -270,6 +324,7 @@ class PostflopSubgame(Game):
         max_wagers_per_round: int = 1,
         suit_isomorphism: bool = False,
         hand_strength_bucket: bool = False,
+        board_texture_bucket: bool = False,
     ) -> None:
         if len(flop_board) != 3:
             raise ValueError("PostflopSubgame expects exactly a 3-card flop board")
@@ -288,6 +343,7 @@ class PostflopSubgame(Game):
         self.max_wagers_per_round = max_wagers_per_round
         self.suit_isomorphism = suit_isomorphism
         self.hand_strength_bucket = hand_strength_bucket
+        self.board_texture_bucket = board_texture_bucket
         self._equity_cache = _native.EquityCache()
 
     @property
@@ -446,14 +502,26 @@ class PostflopSubgame(Game):
             combo_digits = f"b{category}{kicker + 1:02d}"
         else:
             combo_digits = None
-        if self.suit_isomorphism:
+        if self.board_texture_bucket:
+            # See `_board_texture_key`'s docstring: a REAL approximation,
+            # the board-side analogue of `hand_strength_bucket` — replaces
+            # each dealt turn/river card with its texture delta instead of
+            # its exact identity. Supersedes `suit_isomorphism`'s board
+            # canonicalization when both are on (the delta already discards
+            # exact suit identity for turn/river; the flop's 3 cards stay
+            # literal either way, and suit-canonicalizing a single fixed
+            # flop has nothing to merge it with within one solve).
+            board_digits = _board_texture_key(board)
+        elif self.suit_isomorphism:
             # See `_canonical_suit_map`'s docstring: merges strategically
             # identical suit-permuted deals into one CFR node (exact, not an
             # approximation) — computed from this player's own visible cards
             # only, never the opponent's.
             suit_map = _canonical_suit_map((*own_combo, *board))
-            own_combo = _canonicalize_cards(own_combo, suit_map)
-            board = _canonicalize_cards(board, suit_map)
+            own_combo = _canonicalize_cards(own_combo, suit_map) if combo_digits is None else own_combo
+            board_digits = _card_digits(_canonicalize_cards(board, suit_map))
+        else:
+            board_digits = None
         # `_card_digits` is `lru_cache`d: the same `own_combo` and the same
         # `board` each recur across many information-set-key calls (every
         # other combo pair sharing this board, every later street reusing
@@ -462,5 +530,6 @@ class PostflopSubgame(Game):
         # time (see module-level docstring above `_card_digits`).
         if combo_digits is None:
             combo_digits = _card_digits(own_combo)
-        board_digits = _card_digits(board)
+        if board_digits is None:
+            board_digits = _card_digits(board)
         return f"{combo_digits}{board_digits}|{flop_a}|{turn_a}|{river_a}"
