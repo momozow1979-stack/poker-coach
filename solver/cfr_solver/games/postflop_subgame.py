@@ -230,7 +230,22 @@ def _hand_strength_bucket(own_combo: tuple[int, ...], board: tuple[int, ...]) ->
 
     Opt-in, off by default, so existing exact-key fixtures/tests are
     untouched.
+
+    `own_combo` and `board` can legitimately share a card here even though
+    that is impossible in a real deal: `solve_srp_btn_bb.py`'s readout
+    plugs ONE representative turn/river card in per spot and re-evaluates
+    EVERY combo against it, including combos that happen to hold that same
+    card (a conflict a single representative choice can't avoid against
+    hundreds of combos at once). The pre-bucketing raw-digit key handled
+    this silently (the resulting key just never matched a real, trained
+    one and was skipped in `_bucket`); `evaluate_best_hand` instead raises
+    `KeyError` on the resulting impossible rank-multiset (confirmed on a
+    real production run, 2026-11-05/06 — see `BENCHMARKS.md`). Guard the
+    same way: return a sentinel `(-1, -1)` (no real category is ever
+    negative) that is equally guaranteed to never match a trained key.
     """
+    if set(own_combo) & set(board):
+        return (-1, -1)
     category, *kickers = evaluate_best_hand(list(own_combo) + list(board))
     return (category, kickers[0] if kickers else -1)
 

@@ -10,7 +10,7 @@ every distinction (it deliberately does not).
 
 from __future__ import annotations
 
-from cfr_solver.games.postflop_subgame import PostflopSubgame
+from cfr_solver.games.postflop_subgame import PostflopSubgame, _hand_strength_bucket
 from cfr_solver.poker.cards import evaluate_best_hand, parse_card
 
 
@@ -98,3 +98,25 @@ def test_combinable_with_suit_isomorphism() -> None:
     category, *kickers = evaluate_best_hand(list(combo) + list(board))
     expected_kicker = kickers[0] if kickers else -1
     assert key.startswith(f"b{category}{expected_kicker + 1:02d}")
+
+
+def test_card_shared_with_board_returns_sentinel_not_a_crash() -> None:
+    """Regression test for a real production crash (2026-11-05/06, see
+    BENCHMARKS.md): `solve_srp_btn_bb.py`'s readout plugs in a single
+    representative turn/river card per spot and re-evaluates every combo
+    against it, including combos that happen to hold that exact card (an
+    impossible real deal, but unavoidable for a readout querying hundreds
+    of combos against one fixed representative card). `evaluate_best_hand`
+    raises `KeyError` on the resulting duplicate-card hand; the bucket must
+    instead return a sentinel that can never match a real trained key."""
+    board = (parse_card("2h"), parse_card("7d"), parse_card("Qs"))
+    combo_sharing_board_card = (parse_card("Qs"), parse_card("Kc"))  # Qs is also on the board
+    assert _hand_strength_bucket(combo_sharing_board_card, board) == (-1, -1)
+
+    game = PostflopSubgame(
+        list(board), hero_range_notation="22+", villain_range_notation="22+", hand_strength_bucket=True
+    )
+    villain = game.villain_combos[0]
+    # must not raise
+    key = game.information_set_key((combo_sharing_board_card, villain, board, "", "", ""), player=0)
+    assert key.startswith("b-100")  # category=-1, (kicker=-1)+1 formatted as 2 digits -> "00"
