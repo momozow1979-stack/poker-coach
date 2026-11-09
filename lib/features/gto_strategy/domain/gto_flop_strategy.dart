@@ -49,8 +49,7 @@ class GtoFlopSpot {
   /// 「ベットサイズ問わず何かしらベットする頻度」＝チェック以外の合計へ畳み込む。
   factory GtoFlopSpot.fromJson(Map<String, dynamic> json) {
     final flop = json['flop'] as Map<String, dynamic>? ?? const {};
-    final classes =
-        flop['oop_first'] as Map<String, dynamic>? ?? const {};
+    final classes = flop['oop_first'] as Map<String, dynamic>? ?? const {};
     return GtoFlopSpot(
       id: json['id'] as String,
       board: PlayingCard.parseAll((json['board'] as List).cast<String>()),

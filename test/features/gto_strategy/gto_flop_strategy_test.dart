@@ -11,7 +11,14 @@ Map<String, dynamic> _rawSpot() => {
   'flop': {
     'oop_first': {
       'AA': {'x': 0.1, '1': 0.2, '2': 0.3, '3': 0.25, '4': 0.15, 'combos': 6},
-      '72o': {'x': 0.9, '1': 0.05, '2': 0.03, '3': 0.01, '4': 0.01, 'combos': 9},
+      '72o': {
+        'x': 0.9,
+        '1': 0.05,
+        '2': 0.03,
+        '3': 0.01,
+        '4': 0.01,
+        'combos': 9,
+      },
     },
   },
   'turns': <String, dynamic>{},
@@ -41,9 +48,6 @@ void main() {
 
   test('spots が無い/型が違う場合は空のリストになる', () {
     expect(GtoFlopStrategy.fromJson(const {}).spots, isEmpty);
-    expect(
-      GtoFlopStrategy.fromJson({'spots': 'not-a-list'}).spots,
-      isEmpty,
-    );
+    expect(GtoFlopStrategy.fromJson({'spots': 'not-a-list'}).spots, isEmpty);
   });
 }
