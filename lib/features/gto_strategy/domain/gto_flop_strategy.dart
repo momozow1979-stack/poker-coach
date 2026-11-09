@@ -42,16 +42,30 @@ class GtoFlopSpot {
   /// [code] のベット頻度。データが無ければ null。
   double? betFor(String code) => betByCode[code];
 
+  /// `solver/solve_srp_btn_bb.py` の出力は、フロップ最初の意思決定ノードを
+  /// `flop.oop_first` に持つ（PR #87 でターン・リバー・レイズ対応に拡張された
+  /// スキーマ。チェック(`'x'`)と4段階のベットサイズ(`'1'`〜`'4'`)の頻度が別々に
+  /// 入っているため、この画面（c-bet するか/しないかの二値ヒートマップ）向けに
+  /// 「ベットサイズ問わず何かしらベットする頻度」＝チェック以外の合計へ畳み込む。
   factory GtoFlopSpot.fromJson(Map<String, dynamic> json) {
-    final classes = json['classes'] as Map<String, dynamic>? ?? const {};
+    final flop = json['flop'] as Map<String, dynamic>? ?? const {};
+    final classes = flop['oop_first'] as Map<String, dynamic>? ?? const {};
     return GtoFlopSpot(
       id: json['id'] as String,
       board: PlayingCard.parseAll((json['board'] as List).cast<String>()),
       betByCode: {
         for (final entry in classes.entries)
-          entry.key: ((entry.value as Map<String, dynamic>)['bet'] as num)
-              .toDouble(),
+          entry.key: _totalBetFrequency(entry.value as Map<String, dynamic>),
       },
     );
+  }
+
+  static double _totalBetFrequency(Map<String, dynamic> row) {
+    var total = 0.0;
+    for (final entry in row.entries) {
+      if (entry.key == 'combos' || entry.key == 'x') continue;
+      total += (entry.value as num).toDouble();
+    }
+    return total;
   }
 }

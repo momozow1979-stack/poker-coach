@@ -43,11 +43,12 @@ exported frequency models the wrong player acting first on every street.
 
 from __future__ import annotations
 
+from collections import Counter
 from functools import lru_cache
 
 from cfr_solver import _native
 from cfr_solver.games.game import Action, Game, History
-from cfr_solver.poker.cards import DECK
+from cfr_solver.poker.cards import DECK, evaluate_best_hand, rank_of, suit_of
 from cfr_solver.poker.combos import Combo, range_combos
 from cfr_solver.poker.range_notation import expand as expand_range
 
@@ -152,6 +153,149 @@ def _card_digits(cards: tuple[int, ...]) -> str:
     return "".join(f"{c:02d}" for c in cards)
 
 
+@lru_cache(maxsize=None)
+def _canonical_suit_map(visible: tuple[int, ...]) -> tuple[int, int, int, int]:
+    """Suit isomorphism: a deterministic relabeling of the 4 suits, computed
+    purely from the cards visible to ONE player at one information set (their
+    own hole cards + the board — never the opponent's hidden cards, which
+    this player can't see and whose identity can't legally factor into their
+    own strategy). `cards.py`'s module docstring already states "suit
+    identity only matters for flushes/blockers, never displayed": two deals
+    related by a global suit permutation (e.g. swap every heart and diamond,
+    everywhere, consistently) are strategically identical — every
+    not-yet-dealt card is still drawn uniformly over the remaining deck, and
+    `evaluate_best_hand` only cares about rank matches and same-suit counts,
+    never which of the 4 labels a suit happens to have. Relabeling suits to
+    a canonical order before building the information-set key merges these
+    genuinely-identical situations into one shared CFR node instead of
+    training each one as if it were different — an EXACT symmetry
+    reduction, not the card-bucketing approximation `games/flop_subgame.py`
+    explicitly disclaims (no hand is ever grouped with a *different* hand;
+    only the meaningless suit label is normalized away). Hole-card
+    suitedness and flush blockers remain fully distinguished, because the
+    map is a bijection: two cards that share a suit before canonicalization
+    still share a suit after it, and two cards of different suits still map
+    to different canonical suits.
+
+    Why this matters in practice: a real production run on GCP (2026-10-27,
+    see `BENCHMARKS.md`) found this game's information-set count growing
+    with no sign of plateauing anywhere near the target iteration count —
+    exactly the kind of blow-up suit isomorphism exists to prevent, and the
+    standard, lossless reduction production solvers (the kind `docs/` already
+    compares this project's output against) rely on.
+
+    `visible` must be exactly `(*own_combo, *board)` for ONE player (never
+    both players' hole cards mixed together). Returns a 4-tuple: `result[old
+    _suit] = canonical_suit`.
+    """
+
+    def signature(s: int) -> tuple[int, ...]:
+        return tuple(sorted((rank_of(c) for c in visible if suit_of(c) == s), reverse=True))
+
+    order = sorted(range(4), key=lambda s: (len(signature(s)), signature(s)), reverse=True)
+    canonical = [0, 0, 0, 0]
+    for canon_suit, old_suit in enumerate(order):
+        canonical[old_suit] = canon_suit
+    return (canonical[0], canonical[1], canonical[2], canonical[3])
+
+
+def _canonicalize_cards(
+    cards: tuple[int, ...], suit_map: tuple[int, int, int, int]
+) -> tuple[int, ...]:
+    return tuple(rank_of(c) * 4 + suit_map[suit_of(c)] for c in cards)
+
+
+@lru_cache(maxsize=None)
+def _hand_strength_bucket(own_combo: tuple[int, ...], board: tuple[int, ...]) -> tuple[int, int]:
+    """A coarse hand-strength signal — this hand's category (high card ..
+    straight flush) and top kicker rank, evaluated against the current
+    board (`evaluate_best_hand`, already the hot-path evaluator used at
+    showdown) — used in place of the exact 2 hole cards when
+    `hand_strength_bucket=True`.
+
+    **Unlike `_canonical_suit_map`, this IS a real approximation, not an
+    exact symmetry reduction.** Two different combos that make the same
+    category with the same top kicker collapse onto the same CFR node even
+    though their true equity can differ (e.g. two top-pair hands with the
+    same kicker but different side cards, or a made hand vs a draw that
+    happens to share a category/kicker on an earlier street). This trades
+    precision for a much larger cut in information-set count than suit
+    isomorphism alone achieved in practice (measured 2026-10-27/-30, see
+    `BENCHMARKS.md`: suit isomorphism alone gave 0%-5.5% reduction across
+    real production boards, far short of what reaching 12M iterations
+    needs). AGENTS.md rule 1 (never present an approximate number as exact)
+    means any export produced with this enabled must say so in its "note"
+    field — this is the same honesty obligation `solve_srp_btn_bb.py`
+    already applies to "approximate solve ... at the stated iterations".
+
+    Opt-in, off by default, so existing exact-key fixtures/tests are
+    untouched.
+
+    `own_combo` and `board` can legitimately share a card here even though
+    that is impossible in a real deal: `solve_srp_btn_bb.py`'s readout
+    plugs ONE representative turn/river card in per spot and re-evaluates
+    EVERY combo against it, including combos that happen to hold that same
+    card (a conflict a single representative choice can't avoid against
+    hundreds of combos at once). The pre-bucketing raw-digit key handled
+    this silently (the resulting key just never matched a real, trained
+    one and was skipped in `_bucket`); `evaluate_best_hand` instead raises
+    `KeyError` on the resulting impossible rank-multiset (confirmed on a
+    real production run, 2026-11-05/06 — see `BENCHMARKS.md`). Guard the
+    same way: return a sentinel `(-1, -1)` (no real category is ever
+    negative) that is equally guaranteed to never match a trained key.
+    """
+    if set(own_combo) & set(board):
+        return (-1, -1)
+    category, *kickers = evaluate_best_hand(list(own_combo) + list(board))
+    return (category, kickers[0] if kickers else -1)
+
+
+@lru_cache(maxsize=None)
+def _card_texture_delta(new_card: int, prior_board: tuple[int, ...]) -> tuple[int, int]:
+    """How one newly-dealt board card (turn, or river) changes the BOARD's
+    texture relative to the board before it — independent of either
+    player's hole cards. Two flags: `(pairs_board, advances_flush)`.
+
+    This exists for the same reason `_hand_strength_bucket` does (a real
+    approximation, see that function's docstring for the honesty
+    obligation), but targets the OTHER dimension of this game's
+    information-set blow-up: `hand_strength_bucket` only compresses the 2
+    hole cards, so a fixed flop still gets a fresh, fully-distinct
+    information set for every one of the ~1,892 possible (turn, river) card
+    pairs the training walk samples — the user's own framing: "pairs the
+    board or not, advances a flush or not" is exactly the board-level
+    analogue of `_hand_strength_bucket`'s "made a hand or not" for hole
+    cards, and is already the same kind of texture classification
+    `solve_srp_btn_bb.py`'s own readout uses to pick representative
+    turn/river cards (`_blank_card`/`_overcard`/`_texture_change_card`) —
+    this just applies that idea to every card the TRAINING walk sees,
+    not only the few representative ones read out afterward.
+    """
+    prior_ranks = {rank_of(c) for c in prior_board}
+    pairs_board = 1 if rank_of(new_card) in prior_ranks else 0
+    suit_counts = Counter(suit_of(c) for c in prior_board)
+    dominant_suit, dominant_count = (
+        suit_counts.most_common(1)[0] if suit_counts else (None, 0)
+    )
+    advances_flush = 1 if dominant_count >= 2 and suit_of(new_card) == dominant_suit else 0
+    return (pairs_board, advances_flush)
+
+
+def _board_texture_key(board: tuple[int, ...]) -> str:
+    """The flop's 3 cards stay literal (always the same single fixed flop
+    within one `solve_board()` call — no multiplicity to compress there);
+    the turn and river (if dealt) are each replaced by their
+    `_card_texture_delta` relative to the board as it stood before them."""
+    flop_digits = _card_digits(board[:3])
+    parts = [flop_digits]
+    prior = board[:3]
+    for extra in board[3:]:
+        pairs, flush = _card_texture_delta(extra, prior)
+        parts.append(f"t{pairs}{flush}")
+        prior = prior + (extra,)
+    return "".join(parts)
+
+
 def _payoffs_from_fold(total_contrib: list[float], folder: int) -> list[float]:
     pot = sum(total_contrib)
     winner = 1 - folder
@@ -165,6 +309,23 @@ class PostflopSubgame(Game):
     """Player 0 ("hero") acts first on every street. This is a real
     positional fact, not an arbitrary simplification — see the module
     docstring's note on assigning the out-of-position player to player 0.
+
+    `suit_isomorphism=True` relabels suits to a canonical order before
+    building each information-set key (see `_canonical_suit_map`'s
+    docstring) — an exact, lossless symmetry reduction, off by default so
+    existing fixtures/tests keep their frozen raw-card keys unchanged.
+
+    `hand_strength_bucket=True` additionally collapses the exact 2 hole
+    cards to (hand category, top kicker) against the current board (see
+    `_hand_strength_bucket`'s docstring) — unlike `suit_isomorphism`, this
+    IS a real approximation, not a lossless reduction; also off by default.
+
+    `board_texture_bucket=True` is the board-side analogue: each dealt
+    turn/river card is replaced by its texture delta (pairs the board? /
+    advances a flush?) relative to the board before it, instead of its
+    exact identity (see `_board_texture_key`'s docstring). Also a real
+    approximation, also off by default, and supersedes `suit_isomorphism`'s
+    board canonicalization when both are enabled.
     """
 
     def __init__(
@@ -176,6 +337,9 @@ class PostflopSubgame(Game):
         preflop_contrib: tuple[float, float] = (2.5, 2.5),
         bet_fractions: tuple[float, ...] = (1 / 3, 1 / 2, 2 / 3, 1.5),
         max_wagers_per_round: int = 1,
+        suit_isomorphism: bool = False,
+        hand_strength_bucket: bool = False,
+        board_texture_bucket: bool = False,
     ) -> None:
         if len(flop_board) != 3:
             raise ValueError("PostflopSubgame expects exactly a 3-card flop board")
@@ -192,6 +356,9 @@ class PostflopSubgame(Game):
         self.preflop_contrib = preflop_contrib
         self.bet_fractions = bet_fractions
         self.max_wagers_per_round = max_wagers_per_round
+        self.suit_isomorphism = suit_isomorphism
+        self.hand_strength_bucket = hand_strength_bucket
+        self.board_texture_bucket = board_texture_bucket
         self._equity_cache = _native.EquityCache()
 
     @property
@@ -339,12 +506,45 @@ class PostflopSubgame(Game):
         own_combo = hero_combo if player == 0 else villain_combo
         for c in (*own_combo, *board):
             assert 0 <= c <= 51, f"card id {c} out of range 0..51 — key encoding assumes 2 digits"
+        if self.hand_strength_bucket:
+            # See `_hand_strength_bucket`'s docstring: a REAL approximation
+            # (unlike suit isomorphism below) — collapses the exact 2 hole
+            # cards down to (hand category, top kicker) against the current
+            # board. Suit canonicalization of the board still applies
+            # separately below if also enabled (hand category/kicker are
+            # suit-invariant either way, so the order doesn't matter).
+            category, kicker = _hand_strength_bucket(own_combo, board)
+            combo_digits = f"b{category}{kicker + 1:02d}"
+        else:
+            combo_digits = None
+        if self.board_texture_bucket:
+            # See `_board_texture_key`'s docstring: a REAL approximation,
+            # the board-side analogue of `hand_strength_bucket` — replaces
+            # each dealt turn/river card with its texture delta instead of
+            # its exact identity. Supersedes `suit_isomorphism`'s board
+            # canonicalization when both are on (the delta already discards
+            # exact suit identity for turn/river; the flop's 3 cards stay
+            # literal either way, and suit-canonicalizing a single fixed
+            # flop has nothing to merge it with within one solve).
+            board_digits = _board_texture_key(board)
+        elif self.suit_isomorphism:
+            # See `_canonical_suit_map`'s docstring: merges strategically
+            # identical suit-permuted deals into one CFR node (exact, not an
+            # approximation) — computed from this player's own visible cards
+            # only, never the opponent's.
+            suit_map = _canonical_suit_map((*own_combo, *board))
+            own_combo = _canonicalize_cards(own_combo, suit_map) if combo_digits is None else own_combo
+            board_digits = _card_digits(_canonicalize_cards(board, suit_map))
+        else:
+            board_digits = None
         # `_card_digits` is `lru_cache`d: the same `own_combo` and the same
         # `board` each recur across many information-set-key calls (every
         # other combo pair sharing this board, every later street reusing
         # this same dealt combo), so this reuses the formatted digit string
         # instead of re-running `str.join`/`f"{c:02d}"` from scratch each
         # time (see module-level docstring above `_card_digits`).
-        combo_digits = _card_digits(own_combo)
-        board_digits = _card_digits(board)
+        if combo_digits is None:
+            combo_digits = _card_digits(own_combo)
+        if board_digits is None:
+            board_digits = _card_digits(board)
         return f"{combo_digits}{board_digits}|{flop_a}|{turn_a}|{river_a}"

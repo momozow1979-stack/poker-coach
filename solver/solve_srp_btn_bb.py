@@ -91,6 +91,15 @@ ITERATIONS = int(os.environ.get("SOLVER_ITERATIONS", "12000000"))
 MAX_WAGERS_PER_ROUND = 2  # 1 bet + 1 raise per street (capped at one raise)
 BET_FRACTIONS = (1 / 3, 1 / 2, 2 / 3, 1.5)  # 1/3, 1/2, 2/3 pot, overbet
 
+# 情報集合の爆発を抑えるための近似バケット化(PostflopSubgame参照、実機検証
+# 2026-10-27〜11-04: 素の実装は40万反復で1盤あたり約55GBに達しクラッシュ、
+# この2つのバケットを両方有効にすると同じ反復数で約75〜82%の情報集合削減を
+# ローカル小規模実測で確認済み)。既定でON——12,000,000反復に実際に到達する
+# ためのもので、無効化は比較・デバッグ目的のみ。**近似であり厳密解ではない
+# ことを、エクスポートの note フィールドに必ず明記する**(AGENTS.md rule 1)。
+HAND_STRENGTH_BUCKET = os.environ.get("HAND_STRENGTH_BUCKET", "1") == "1"
+BOARD_TEXTURE_BUCKET = os.environ.get("BOARD_TEXTURE_BUCKET", "1") == "1"
+
 # このアプリの BTN オープン / BB コール（vs BTN）レンジ（純粋部分）。
 # BTN_OPEN は range_definitions.dart の BTN オープン（raise のみ、mixed は含まない）と一致させる。
 BTN_OPEN = (
@@ -277,7 +286,7 @@ def _street_nodes(
     return out
 
 
-def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
+def _build_game(board_cards: tuple[str, ...]) -> tuple[PostflopSubgame, list[int]]:
     board_ids = [parse_card(c) for c in board_cards]
     game = PostflopSubgame(
         board_ids,
@@ -285,26 +294,22 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
         villain_range_notation=BTN_OPEN,  # IP: acts last every street
         bet_fractions=BET_FRACTIONS,
         max_wagers_per_round=MAX_WAGERS_PER_ROUND,
+        hand_strength_bucket=HAND_STRENGTH_BUCKET,
+        board_texture_bucket=BOARD_TEXTURE_BUCKET,
     )
     game.hero_combos = sorted(game.hero_combos)
     game.villain_combos = sorted(game.villain_combos)
+    return game, board_ids
 
-    solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
-    print(
-        f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
-        f"ip(BTN)={len(game.villain_combos)} :: training {ITERATIONS:,}...",
-        flush=True,
-    )
-    t0 = time.time()
-    solver.train_external_sampling(ITERATIONS)
-    elapsed = time.time() - t0
-    avg = solver.average_strategy()
-    print(
-        f"[{spot_id}] trained in {elapsed / 60:.1f} min, "
-        f"{solver.num_information_sets:,} info sets",
-        flush=True,
-    )
 
+def _readout_payload(
+    spot_id: str,
+    board_cards: tuple[str, ...],
+    board_ids: list[int],
+    game: PostflopSubgame,
+    avg: dict,
+    iterations: int,
+) -> dict:
     board3 = tuple(board_ids)
     flop_nodes = _street_nodes(game, avg, board3, "", "", "")
 
@@ -330,11 +335,109 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
     return {
         "id": spot_id,
         "board": list(board_cards),
-        "iterations": ITERATIONS,
+        "iterations": iterations,
         "flop": flop_nodes,
         "turns": turns,
         "rivers": rivers,
     }
+
+
+def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
+    game, board_ids = _build_game(board_cards)
+    solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
+    print(
+        f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
+        f"ip(BTN)={len(game.villain_combos)} :: training {ITERATIONS:,}...",
+        flush=True,
+    )
+    t0 = time.time()
+    solver.train_external_sampling(ITERATIONS)
+    elapsed = time.time() - t0
+    avg = solver.average_strategy()
+    print(
+        f"[{spot_id}] trained in {elapsed / 60:.1f} min, "
+        f"{solver.num_information_sets:,} info sets",
+        flush=True,
+    )
+    return _readout_payload(spot_id, board_cards, board_ids, game, avg, ITERATIONS)
+
+
+def _rss_mb() -> float:
+    """現在のプロセスの生涯ピークRSS(MB)。このリポジトリの標準測定手法
+    (`resource.getrusage(...).ru_maxrss`、BENCHMARKS.md参照)——cgroupの
+    「現在の使用量」ではなく生涯ピークを見る。cgroup環境では減少しない。"""
+    import resource
+
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+
+def run_single_board_checkpointed(
+    spot_id: str,
+    board_cards: tuple[str, ...],
+    checkpoint_path: str,
+    target_iterations: int,
+    checkpoint_every: int,
+    out_path: str,
+) -> None:
+    """VM上で1盤だけを、チャンクに分けてチェックポイントしながら学習する。
+
+    なぜこれが要るか: Cloud Run Jobsでは「盤ごとに専用コンテナ(最大32GB)」
+    にしても、2026-10-27の実機検証で**1盤だけで32GB超**になりクラッシュした
+    (10万反復時点、1万反復では約5.8GBだった)。本番の1200万反復でどこまで
+    メモリが増えるかは未知数で、Cloud Run Jobsは実行が落ちたら手ぶらで
+    終わる(チェックポイント・リサイズができない)ため、上限を一度外した
+    環境で**チェックポイントを取りながら**進め、メモリ使用量を実測し、
+    必要ならマシンを止めて大きいメモリに付け替えて再開できるようにする。
+
+    `CFRSolver.save()`/`load()`(Stage S6でアトミック化済み、BENCHMARKS.md
+    参照)で、chunk学習のたびにチェックポイントを書き出す。既存の
+    チェックポイントがあれば自動再開する。
+    """
+    game, board_ids = _build_game(board_cards)
+
+    if os.path.exists(checkpoint_path):
+        solver = CFRSolver.load(checkpoint_path, game)
+        done = solver._sampled_iterations_trained
+        print(
+            f"[{spot_id}] resumed from {checkpoint_path}: "
+            f"{done:,}/{target_iterations:,} iterations, "
+            f"{solver.num_information_sets:,} info sets, "
+            f"RSS={_rss_mb():,.1f} MB",
+            flush=True,
+        )
+    else:
+        solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
+        done = 0
+        print(
+            f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
+            f"ip(BTN)={len(game.villain_combos)} :: training "
+            f"{target_iterations:,} (checkpointed every {checkpoint_every:,})...",
+            flush=True,
+        )
+
+    t_start = time.time()
+    while done < target_iterations:
+        chunk = min(checkpoint_every, target_iterations - done)
+        t0 = time.time()
+        solver.train_external_sampling(chunk)
+        done += chunk
+        elapsed_chunk = time.time() - t0
+        solver.save(checkpoint_path)
+        print(
+            f"[{spot_id}] done={done:,}/{target_iterations:,} "
+            f"({100 * done / target_iterations:.1f}%), "
+            f"info_sets={solver.num_information_sets:,}, "
+            f"RSS={_rss_mb():,.1f} MB, "
+            f"chunk_took={elapsed_chunk / 60:.1f} min, "
+            f"total_elapsed={((time.time() - t_start) / 3600):.2f} h",
+            flush=True,
+        )
+
+    avg = solver.average_strategy()
+    payload = _readout_payload(spot_id, board_cards, board_ids, game, avg, target_iterations)
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+    print(f"[{spot_id}] ALL DONE, wrote {out_path}", flush=True)
 
 
 def _build_payload(spots: list[dict]) -> dict:
@@ -364,12 +467,102 @@ def _build_payload(spots: list[dict]) -> dict:
             "combination), and are rarer branches of the same tree, so "
             "may be noisier (less converged) than first-action nodes at "
             "the same iteration budget."
+            + (
+                " TRAINING itself (not just this readout) used "
+                "hand_strength_bucket=True: the solver's own hole cards "
+                "were abstracted to (hand category, top kicker) against "
+                "the board rather than tracked as the exact 2 cards — a "
+                "real approximation (see PostflopSubgame docs), needed to "
+                "keep memory bounded at this iteration count."
+                if HAND_STRENGTH_BUCKET
+                else ""
+            )
+            + (
+                " TRAINING also used board_texture_bucket=True: each "
+                "dealt turn/river card was abstracted to whether it paired "
+                "the board / advanced a flush, rather than tracked as the "
+                "exact card — also a real approximation, for the same "
+                "reason."
+                if BOARD_TEXTURE_BUCKET
+                else ""
+            )
         ),
         "spots": spots,
     }
 
 
+def _run_as_cloud_run_task(task_index: int) -> None:
+    """1 Cloud Run タスク(コンテナ) = 1 盤、という native なタスク並列モード。
+
+    なぜこのモードが要るか: 以前は1コンテナ内で`ProcessPoolExecutor`を使い、
+    `SOLVER_WORKERS`個のOSプロセスで複数盤を同時に学習していた。これは
+    「1コンテナのメモリ上限(例: 32GiB)を、同時に動く盤の数で分け合う」
+    設計のため、同時実行数を上げるほど1盤あたりの使えるメモリが減る。
+    実機検証(2026-10-27)で、反復数1万・盤8枚でWORKERS=8は
+    BrokenProcessPoolでクラッシュし、WORKERS=4は成功した——8プロセス分の
+    メモリ合計がコンテナの上限を超えたとみられる。本番の1200万反復では
+    盤あたりの必要メモリがさらに増える可能性があり、WORKERS=4でも
+    安全とは限らない。
+
+    この関数は、Cloud Run Jobsの`--tasks N`機能(1タスク=独立したコンテナ
+    インスタンス)を使い、盤ごとに**専用のコンテナ・専用のメモリ上限**を
+    割り当てる。これなら同時に動く盤の数を増やしても、1盤あたりの
+    使えるメモリは変わらない(他の盤と取り合わない)。
+    """
+    if task_index < 0 or task_index >= len(BOARDS):
+        raise ValueError(
+            f"CLOUD_RUN_TASK_INDEX={task_index} is out of range for "
+            f"{len(BOARDS)} board(s); --tasks must equal len(BOARDS)"
+        )
+    spot_id, board = BOARDS[task_index]
+    parts_prefix = os.environ.get("PARTS_GCS_PREFIX")
+    if not parts_prefix or not parts_prefix.startswith("gs://"):
+        raise RuntimeError(
+            "PARTS_GCS_PREFIX (gs://bucket/prefix/) is required in "
+            "Cloud Run task mode so each task writes its own spot file "
+            "without colliding with the other 7 tasks."
+        )
+
+    if _spot_part_exists(parts_prefix, spot_id):
+        print(f"[{spot_id}] part already exists in {parts_prefix}, skipping", flush=True)
+        return
+
+    spot = solve_board(spot_id, board)
+    _upload_spot_part(spot, parts_prefix, spot_id)
+    print(f"[{spot_id}] uploaded part to {parts_prefix}", flush=True)
+
+
 def main() -> None:
+    single_board_id = os.environ.get("SINGLE_BOARD_ID")
+    if single_board_id is not None:
+        # GCE VM向け: 1盤だけをチェックポイントしながら学習するモード。
+        # 詳細は `run_single_board_checkpointed` のdocstring参照。
+        board_by_id = dict(BOARDS)
+        if single_board_id not in board_by_id:
+            raise ValueError(f"unknown SINGLE_BOARD_ID={single_board_id!r}, must be one of {list(board_by_id)}")
+        checkpoint_path = os.environ.get("CHECKPOINT_PATH", f"{single_board_id}.cfrsave")
+        out_path = os.environ.get("OUT_PATH", f"{single_board_id}.json")
+        checkpoint_every = int(os.environ.get("CHECKPOINT_EVERY", "200000"))
+        run_single_board_checkpointed(
+            single_board_id,
+            board_by_id[single_board_id],
+            checkpoint_path,
+            ITERATIONS,
+            checkpoint_every,
+            out_path,
+        )
+        return
+
+    task_index_env = os.environ.get("CLOUD_RUN_TASK_INDEX")
+    if task_index_env is not None:
+        # Cloud Run Jobsのネイティブなタスク並列(`--tasks N`)で起動された場合:
+        # このコンテナは BOARDS のうち1枚だけを担当する。詳細は
+        # `_run_as_cloud_run_task` のdocstring参照。
+        _run_as_cloud_run_task(int(task_index_env))
+        return
+
+    # 以下は旧来の「1コンテナ内でProcessPoolExecutorを使い、SOLVER_WORKERS個の
+    # OSプロセスで複数盤を同時に解く」モード(ローカル実行・小規模検証向けに残す)。
     out_path = "solved_srp_btn_bb.json"
     spots = _download_existing(out_path)
     done_ids = {s["id"] for s in spots}
@@ -397,6 +590,10 @@ def main() -> None:
     # 使い切るため、同じプロセスで複数盤面を回すとメモリが前の盤面ぶん
     # 残ったまま積み上がり、終盤でコンテナのメモリ上限を超えて
     # BrokenProcessPool で落ちる（実機で2回再現・確認済み）。
+    # 【重要】これでも、同時実行数(SOLVER_WORKERS)が多いと「コンテナ1つの
+    # メモリ上限を同時に動く盤の数で分け合う」ことになり、本番規模では
+    # クラッシュしうる(実機で確認済み、2026-10-27)。本番はこのモードではなく
+    # `_run_as_cloud_run_task`(盤ごとに専用コンテナ)を使うこと。
     with ProcessPoolExecutor(
         max_workers=max_workers, max_tasks_per_child=1
     ) as executor:
@@ -431,6 +628,33 @@ def _maybe_upload(path: str) -> None:
     client = storage.Client()
     client.bucket(bucket_name).blob(blob_name).upload_from_filename(path)
     print(f"uploaded {path} -> {uri}", flush=True)
+
+
+def _spot_part_exists(parts_prefix: str, spot_id: str) -> bool:
+    """Cloud Run タスクモード用: 盤ごとのパート(`{spot_id}.json`)が既に
+    アップロード済みか確認する(タスクの再試行で二重に学習しないため)。"""
+    from google.cloud import storage  # type: ignore
+
+    bucket_name, _, prefix = parts_prefix[len("gs://") :].partition("/")
+    prefix = prefix.rstrip("/")
+    blob_name = f"{prefix}/{spot_id}.json" if prefix else f"{spot_id}.json"
+    client = storage.Client()
+    return client.bucket(bucket_name).blob(blob_name).exists()
+
+
+def _upload_spot_part(spot: dict, parts_prefix: str, spot_id: str) -> None:
+    """Cloud Run タスクモード用: このタスクが解いた1盤分の結果を、他のタスクと
+    衝突しない専用のパスにアップロードする(`solved_srp_btn_bb.json`全体を
+    複数コンテナが同時に書き換えようとする競合を避けるため)。"""
+    from google.cloud import storage  # type: ignore
+
+    bucket_name, _, prefix = parts_prefix[len("gs://") :].partition("/")
+    prefix = prefix.rstrip("/")
+    blob_name = f"{prefix}/{spot_id}.json" if prefix else f"{spot_id}.json"
+    client = storage.Client()
+    client.bucket(bucket_name).blob(blob_name).upload_from_string(
+        json.dumps(spot, ensure_ascii=False), content_type="application/json"
+    )
 
 
 def _download_existing(out_path: str) -> list[dict]:
