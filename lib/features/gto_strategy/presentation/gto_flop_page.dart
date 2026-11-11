@@ -16,6 +16,12 @@ const Color _betColor = Color(0xFF059669);
 /// チェック寄りを表す色。
 const Color _checkColor = Color(0xFF64748B);
 
+const _streetLabels = ['フロップ', 'ターン', 'リバー'];
+
+const _turnBucketLabels = {'blank': 'ブランク', 'over': 'オーバー', 'texture': '変化'};
+
+const _riverBucketLabels = {'blank': 'ブランク', 'scare': 'スケア'};
+
 /// ソルバーで学習したフロップの c-bet 戦略ビューア（13×13 ヒートマップ）。
 class GtoFlopPage extends ConsumerStatefulWidget {
   const GtoFlopPage({super.key});
@@ -26,6 +32,9 @@ class GtoFlopPage extends ConsumerStatefulWidget {
 
 class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
   int _selected = 0;
+  int _street = 0;
+  String? _turnBucket;
+  String? _riverBucket;
 
   @override
   Widget build(BuildContext context) {
@@ -41,6 +50,42 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
             if (strategy.spots.isEmpty) return const SizedBox.shrink();
             final index = _selected.clamp(0, strategy.spots.length - 1);
             final spot = strategy.spots[index];
+
+            final turnKeys = spot.turns.keys.toList();
+            final turnBucket = turnKeys.isEmpty
+                ? null
+                : (turnKeys.contains(_turnBucket)
+                      ? _turnBucket!
+                      : turnKeys.first);
+            final riverKeys = turnBucket == null
+                ? const <String>[]
+                : (spot.rivers[turnBucket]?.keys.toList() ?? const []);
+            final riverBucket = riverKeys.isEmpty
+                ? null
+                : (riverKeys.contains(_riverBucket)
+                      ? _riverBucket!
+                      : riverKeys.first);
+
+            final double? Function(String) betFor;
+            final displayedBoard = [...spot.board];
+            if (_street == 0) {
+              betFor = spot.betFor;
+            } else {
+              final turnNode = turnBucket == null
+                  ? null
+                  : spot.turns[turnBucket];
+              if (turnNode != null) displayedBoard.add(turnNode.card);
+              if (_street == 1 || turnNode == null) {
+                betFor = turnNode?.betFor ?? (_) => null;
+              } else {
+                final riverNode = riverBucket == null
+                    ? null
+                    : spot.rivers[turnBucket]?[riverBucket];
+                if (riverNode != null) displayedBoard.add(riverNode.card);
+                betFor = riverNode?.betFor ?? (_) => null;
+              }
+            }
+
             return ListView(
               padding: const EdgeInsets.fromLTRB(
                 AppSpacing.lg,
@@ -50,8 +95,41 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
               ),
               children: [
                 _boardSelector(strategy, index),
-                const SizedBox(height: AppSpacing.lg),
-                AspectRatio(aspectRatio: 1, child: _grid(spot)),
+                const SizedBox(height: AppSpacing.md),
+                _streetTabs(),
+                if (_street >= 1 && turnKeys.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _turnBucketSelector(spot, turnKeys, turnBucket!),
+                ],
+                if (_street == 2 && riverKeys.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _riverBucketSelector(
+                    spot,
+                    turnBucket!,
+                    riverKeys,
+                    riverBucket!,
+                  ),
+                ],
+                if (_street >= 1) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  _streetDisclosure(),
+                ],
+                const SizedBox(height: AppSpacing.md),
+                Row(
+                  children: [
+                    const Text(
+                      'ボード',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                    const SizedBox(width: AppSpacing.sm),
+                    _boardLabel(displayedBoard, onDark: false),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                AspectRatio(aspectRatio: 1, child: _grid(betFor)),
                 const SizedBox(height: AppSpacing.lg),
                 _legend(),
               ],
@@ -72,7 +150,12 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
         itemBuilder: (context, i) {
           final isSel = i == selected;
           return GestureDetector(
-            onTap: () => setState(() => _selected = i),
+            onTap: () => setState(() {
+              _selected = i;
+              _street = 0;
+              _turnBucket = null;
+              _riverBucket = null;
+            }),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14),
               alignment: Alignment.center,
@@ -87,6 +170,152 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _streetTabs() {
+    return Row(
+      children: [
+        for (var i = 0; i < _streetLabels.length; i++)
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() {
+                _street = i;
+                if (i == 0) {
+                  _turnBucket = null;
+                  _riverBucket = null;
+                } else if (i == 1) {
+                  _riverBucket = null;
+                }
+              }),
+              child: Container(
+                margin: EdgeInsets.only(
+                  right: i < _streetLabels.length - 1 ? AppSpacing.sm : 0,
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: _street == i ? AppColors.accent : AppColors.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: _street == i ? AppColors.accent : AppColors.border,
+                  ),
+                ),
+                child: Text(
+                  _streetLabels[i],
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: _street == i ? Colors.white : AppColors.textPrimary,
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _turnBucketSelector(
+    GtoFlopSpot spot,
+    List<String> keys,
+    String selected,
+  ) {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: keys.length,
+        separatorBuilder: (context, i) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (context, i) {
+          final key = keys[i];
+          final node = spot.turns[key]!;
+          final isSel = key == selected;
+          return GestureDetector(
+            onTap: () => setState(() {
+              _turnBucket = key;
+              _riverBucket = null;
+            }),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSel ? AppColors.accent : AppColors.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: isSel ? AppColors.accent : AppColors.border,
+                ),
+              ),
+              child: Text(
+                '${_turnBucketLabels[key] ?? key} ${node.card.display}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isSel ? Colors.white : AppColors.textPrimary,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _riverBucketSelector(
+    GtoFlopSpot spot,
+    String turnBucket,
+    List<String> keys,
+    String selected,
+  ) {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: keys.length,
+        separatorBuilder: (context, i) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (context, i) {
+          final key = keys[i];
+          final node = spot.rivers[turnBucket]![key]!;
+          final isSel = key == selected;
+          return GestureDetector(
+            onTap: () => setState(() => _riverBucket = key),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSel ? AppColors.accent : AppColors.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: isSel ? AppColors.accent : AppColors.border,
+                ),
+              ),
+              child: Text(
+                '${_riverBucketLabels[key] ?? key} ${node.card.display}',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isSel ? Colors.white : AppColors.textPrimary,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _streetDisclosure() {
+    final through = _street == 2 ? 'フロップ・ターン' : 'フロップ';
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        '$throughでチェックが続いた場合の戦略です。代表的なカード1枚だけを'
+        '抜き出した近似のため、実際に起こりうる全てのカードを網羅してはいません。',
+        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
       ),
     );
   }
@@ -115,7 +344,7 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
     );
   }
 
-  Widget _grid(GtoFlopSpot spot) {
+  Widget _grid(double? Function(String code) betFor) {
     return Column(
       children: [
         for (var row = 0; row < 13; row++)
@@ -123,7 +352,9 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
             child: Row(
               children: [
                 for (var col = 0; col < 13; col++)
-                  Expanded(child: _cell(StartingHand.fromGrid(row, col), spot)),
+                  Expanded(
+                    child: _cell(StartingHand.fromGrid(row, col), betFor),
+                  ),
               ],
             ),
           ),
@@ -131,8 +362,8 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
     );
   }
 
-  Widget _cell(StartingHand hand, GtoFlopSpot spot) {
-    final bet = spot.betFor(hand.code);
+  Widget _cell(StartingHand hand, double? Function(String code) betFor) {
+    final bet = betFor(hand.code);
     final Color bg;
     if (bet == null) {
       bg = AppColors.rangeFold;

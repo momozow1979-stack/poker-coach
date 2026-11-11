@@ -13,6 +13,28 @@ GtoFlopStrategy _fixture() => GtoFlopStrategy(
       id: 'a_high_dry',
       board: PlayingCard.parseAll(const ['As', '7d', '2c']),
       betByCode: const {'AA': 0.92, 'KK': 0.8, '72o': 0.05, 'JTs': 0.5},
+      turns: {
+        'blank': GtoStreetNode(
+          card: PlayingCard.parse('3s'),
+          betByCode: const {'AA': 0.7},
+        ),
+        'over': GtoStreetNode(
+          card: PlayingCard.parse('Ks'),
+          betByCode: const {'AA': 0.6},
+        ),
+      },
+      rivers: {
+        'blank': {
+          'blank': GtoStreetNode(
+            card: PlayingCard.parse('4h'),
+            betByCode: const {'AA': 0.55},
+          ),
+          'scare': GtoStreetNode(
+            card: PlayingCard.parse('Kd'),
+            betByCode: const {'AA': 0.65},
+          ),
+        },
+      },
     ),
     GtoFlopSpot(
       id: 'paired',
@@ -62,5 +84,60 @@ void main() {
     expect(find.text('ベット'), findsWidgets);
     expect(find.text('92%'), findsOneWidget);
     expect(find.text('8%'), findsOneWidget);
+  });
+
+  testWidgets('ターンタブに切り替えるとターンの頻度とディスクロージャーが出る', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pump(tester);
+
+    await tester.tap(find.text('ターン'));
+    await tester.pumpAndSettle();
+
+    // フロップでチェックが続いた場合のみ、という開示が出る。
+    expect(find.textContaining('チェックが続いた場合'), findsOneWidget);
+    // デフォルトの'blank'バケット（3s）での頻度に切り替わる。
+    await tester.tap(find.text('AA').first);
+    await tester.pumpAndSettle();
+    expect(find.text('70%'), findsOneWidget);
+  });
+
+  testWidgets('リバーのバケットを切り替えると頻度が変わる', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pump(tester);
+
+    await tester.tap(find.text('リバー'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('フロップ・ターンでチェックが続いた場合'), findsOneWidget);
+
+    await tester.tap(find.text('スケア K♦'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AA').first);
+    await tester.pumpAndSettle();
+    expect(find.text('65%'), findsOneWidget);
+  });
+
+  testWidgets('ターン/リバーのデータが無いスポットでも落ちない', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pump(tester);
+
+    // 2番目(paired)にはturns/riversが無い。board チップは1枚ずつ別の
+    // Text になっているので、paired 固有のカード 'J♦' でタップする。
+    await tester.tap(find.text('J♦'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('ターン'));
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
   });
 }

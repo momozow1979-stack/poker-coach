@@ -25,6 +25,57 @@ Map<String, dynamic> _rawSpot() => {
   'rivers': <String, dynamic>{},
 };
 
+/// ターン・リバーを含む実スキーマの最小再現。`turns.blank.nodes.oop_first` に
+/// フロップと同じ形のハンドクラス別頻度が入り、`rivers` はターンのバケット
+/// （`'blank'`）→ リバーのバケット（`'blank'`/`'scare'`）の二重構造になる。
+Map<String, dynamic> _rawSpotWithStreets() => {
+  ..._rawSpot(),
+  'turns': {
+    'blank': {
+      'card': '3s',
+      'nodes': {
+        'oop_first': {
+          'AA': {'x': 0.2, '1': 0.3, '2': 0.2, '3': 0.2, '4': 0.1, 'combos': 6},
+        },
+      },
+    },
+  },
+  'rivers': {
+    'blank': {
+      'blank': {
+        'card': '4h',
+        'nodes': {
+          'oop_first': {
+            'AA': {
+              'x': 0.1,
+              '1': 0.3,
+              '2': 0.3,
+              '3': 0.2,
+              '4': 0.1,
+              'combos': 6,
+            },
+          },
+        },
+      },
+      'scare': {
+        'card': 'Kd',
+        'nodes': {
+          'oop_first': {
+            'AA': {
+              'x': 0.4,
+              '1': 0.2,
+              '2': 0.2,
+              '3': 0.1,
+              '4': 0.1,
+              'combos': 6,
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
 void main() {
   test('GtoFlopSpot.fromJson は flop.oop_first のベットサイズ合計を読む', () {
     final spot = GtoFlopSpot.fromJson(_rawSpot());
@@ -49,5 +100,32 @@ void main() {
   test('spots が無い/型が違う場合は空のリストになる', () {
     expect(GtoFlopStrategy.fromJson(const {}).spots, isEmpty);
     expect(GtoFlopStrategy.fromJson({'spots': 'not-a-list'}).spots, isEmpty);
+  });
+
+  test('GtoFlopSpot.fromJson は turns/rivers の代表カードと頻度を読む', () {
+    final spot = GtoFlopSpot.fromJson(_rawSpotWithStreets());
+
+    expect(spot.turns.keys, ['blank']);
+    final turnNode = spot.turns['blank']!;
+    expect(turnNode.card.code, '3s');
+    expect(turnNode.betFor('AA'), closeTo(0.8, 1e-9));
+
+    expect(spot.rivers.keys, ['blank']);
+    expect(spot.rivers['blank']!.keys, ['blank', 'scare']);
+
+    final riverBlank = spot.rivers['blank']!['blank']!;
+    expect(riverBlank.card.code, '4h');
+    expect(riverBlank.betFor('AA'), closeTo(0.9, 1e-9));
+
+    final riverScare = spot.rivers['blank']!['scare']!;
+    expect(riverScare.card.code, 'Kd');
+    expect(riverScare.betFor('AA'), closeTo(0.6, 1e-9));
+  });
+
+  test('turns/rivers が無い場合は空のMapになる', () {
+    final spot = GtoFlopSpot.fromJson(_rawSpot());
+
+    expect(spot.turns, isEmpty);
+    expect(spot.rivers, isEmpty);
   });
 }
