@@ -12,26 +12,76 @@ GtoFlopStrategy _fixture() => GtoFlopStrategy(
     GtoFlopSpot(
       id: 'a_high_dry',
       board: PlayingCard.parseAll(const ['As', '7d', '2c']),
-      betByCode: const {'AA': 0.92, 'KK': 0.8, '72o': 0.05, 'JTs': 0.5},
+      nodes: {
+        'oop_first': const GtoActionNode(
+          passiveAction: 'x',
+          frequencies: {
+            'AA': {'x': 0.08, '2': 0.92},
+            'KK': {'x': 0.2, '2': 0.8},
+            '72o': {'x': 0.95, '2': 0.05},
+            'JTs': {'x': 0.5, '2': 0.5},
+          },
+        ),
+        'ip_vs_bet_2': const GtoActionNode(
+          passiveAction: 'f',
+          frequencies: {
+            'AA': {'f': 0.05, 'c': 0.75, '2': 0.2},
+          },
+        ),
+        'oop_vs_raise': const GtoActionNode(
+          passiveAction: 'f',
+          frequencies: {
+            'AA': {'f': 0.1, 'c': 0.9},
+          },
+        ),
+      },
       turns: {
         'blank': GtoStreetNode(
           card: PlayingCard.parse('3s'),
-          betByCode: const {'AA': 0.7},
+          nodes: const {
+            'oop_first': GtoActionNode(
+              passiveAction: 'x',
+              frequencies: {
+                'AA': {'x': 0.3, '2': 0.7},
+              },
+            ),
+          },
         ),
         'over': GtoStreetNode(
           card: PlayingCard.parse('Ks'),
-          betByCode: const {'AA': 0.6},
+          nodes: const {
+            'oop_first': GtoActionNode(
+              passiveAction: 'x',
+              frequencies: {
+                'AA': {'x': 0.4, '2': 0.6},
+              },
+            ),
+          },
         ),
       },
       rivers: {
         'blank': {
           'blank': GtoStreetNode(
             card: PlayingCard.parse('4h'),
-            betByCode: const {'AA': 0.55},
+            nodes: const {
+              'oop_first': GtoActionNode(
+                passiveAction: 'x',
+                frequencies: {
+                  'AA': {'x': 0.45, '2': 0.55},
+                },
+              ),
+            },
           ),
           'scare': GtoStreetNode(
             card: PlayingCard.parse('Kd'),
-            betByCode: const {'AA': 0.65},
+            nodes: const {
+              'oop_first': GtoActionNode(
+                passiveAction: 'x',
+                frequencies: {
+                  'AA': {'x': 0.35, '2': 0.65},
+                },
+              ),
+            },
           ),
         },
       },
@@ -39,7 +89,15 @@ GtoFlopStrategy _fixture() => GtoFlopStrategy(
     GtoFlopSpot(
       id: 'paired',
       board: PlayingCard.parseAll(const ['Jd', 'Jc', '6s']),
-      betByCode: const {'AA': 0.4, 'AKs': 0.6},
+      nodes: {
+        'oop_first': const GtoActionNode(
+          passiveAction: 'x',
+          frequencies: {
+            'AA': {'x': 0.6, '2': 0.4},
+            'AKs': {'x': 0.4, '2': 0.6},
+          },
+        ),
+      },
     ),
   ],
 );
@@ -80,10 +138,53 @@ void main() {
     await tester.tap(find.text('AA').first);
     await tester.pumpAndSettle();
 
-    // 「ベット」「チェック」は凡例にもあるので複数。頻度%はシート固有。
-    expect(find.text('ベット'), findsWidgets);
+    // 凡例の「チェック」「ベット」に加え、明細シートの行にも出る。
+    expect(find.text('ベット 1/2'), findsOneWidget);
     expect(find.text('92%'), findsOneWidget);
     expect(find.text('8%'), findsOneWidget);
+  });
+
+  testWidgets('ノードを facing-bet 系に切り替えるとフォールド/コール内訳が出る', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pump(tester);
+
+    await tester.tap(find.text('IP vs 1/2ベット'));
+    await tester.pumpAndSettle();
+
+    // facing-bet ノードでは凡例が「フォールド/コール＋レイズ」に変わる。
+    expect(find.text('フォールド'), findsWidgets);
+    expect(find.text('コール＋レイズ'), findsOneWidget);
+
+    await tester.tap(find.text('AA').first);
+    await tester.pumpAndSettle();
+
+    // 明細シートは f/c/各ベットサイズをそれぞれ別の行として表示する。
+    expect(find.text('5%'), findsOneWidget); // フォールド
+    expect(find.text('75%'), findsOneWidget); // コール
+    expect(find.text('20%'), findsOneWidget); // レイズ(1/2ポット)
+  });
+
+  testWidgets('レイズに直面したノードには代表例のみという開示が出る', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pump(tester);
+
+    await tester.tap(find.text('OOP vs レイズ'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('代表例のみ'), findsOneWidget);
+
+    await tester.tap(find.text('AA').first);
+    await tester.pumpAndSettle();
+
+    // facing-raise ノードは f/c のみ。コール(0.9)がそのまま出る。
+    expect(find.text('90%'), findsOneWidget);
+    expect(find.text('10%'), findsOneWidget);
   });
 
   testWidgets('ターンタブに切り替えるとターンの頻度とディスクロージャーが出る', (tester) async {

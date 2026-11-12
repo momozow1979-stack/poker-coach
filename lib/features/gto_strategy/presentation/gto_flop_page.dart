@@ -10,10 +10,10 @@ import '../../range_chart/presentation/widgets/range_cell.dart';
 import '../application/gto_flop_providers.dart';
 import '../domain/gto_flop_strategy.dart';
 
-/// ベット寄り（＝c-bet 頻度が高い）を表す色。
+/// 積極的な行動（ベット／コール＋レイズ）を表す色。
 const Color _betColor = Color(0xFF059669);
 
-/// チェック寄りを表す色。
+/// おとなしい行動（チェック／フォールド）を表す色。
 const Color _checkColor = Color(0xFF64748B);
 
 const _streetLabels = ['フロップ', 'ターン', 'リバー'];
@@ -22,7 +22,94 @@ const _turnBucketLabels = {'blank': 'ブランク', 'over': 'オーバー', 'tex
 
 const _riverBucketLabels = {'blank': 'ブランク', 'scare': 'スケア'};
 
-/// ソルバーで学習したフロップの c-bet 戦略ビューア（13×13 ヒートマップ）。
+/// 1つの意思決定ノードの、チップ表示用ラベルと説明文。
+class _NodeMeta {
+  const _NodeMeta(
+    this.chipLabel,
+    this.description, {
+    this.isRaiseAnchor = false,
+  });
+
+  final String chipLabel;
+  final String description;
+
+  /// レイズに直面した場面は、`solve_srp_btn_bb.py` が全サイズの組み合わせを
+  /// 網羅せず「1/2ポットのベット→1/2ポットのレイズ」という1パターンだけを
+  /// 代表例として読み出している（docstring参照）。これを画面上で開示する。
+  final bool isRaiseAnchor;
+}
+
+/// `solve_srp_btn_bb.py`（`_STREET_NODES`）が実際に読み出した意思決定ノードの
+/// 一覧。フロップ・ターン・リバーいずれの街でも同じ12種類が揃っている。
+const _nodeOrder = [
+  'oop_first',
+  'ip_vs_check',
+  'ip_vs_bet_1',
+  'ip_vs_bet_2',
+  'ip_vs_bet_3',
+  'ip_vs_bet_4',
+  'oop_vs_checkbet_1',
+  'oop_vs_checkbet_2',
+  'oop_vs_checkbet_3',
+  'oop_vs_checkbet_4',
+  'oop_vs_raise',
+  'ip_vs_raise_after_check',
+];
+
+const _nodeMeta = {
+  'oop_first': _NodeMeta('OOP 最初の手番', 'チェックするか、ベットするか（OOPの最初の判断）。'),
+  'ip_vs_check': _NodeMeta('IP チェック後', 'OOPがチェックした後、IPがチェックするかベットするか。'),
+  'ip_vs_bet_1': _NodeMeta(
+    'IP vs 1/3ベット',
+    'OOPが1/3ポットでベットした後、IPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'ip_vs_bet_2': _NodeMeta(
+    'IP vs 1/2ベット',
+    'OOPが1/2ポットでベットした後、IPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'ip_vs_bet_3': _NodeMeta(
+    'IP vs 2/3ベット',
+    'OOPが2/3ポットでベットした後、IPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'ip_vs_bet_4': _NodeMeta(
+    'IP vs オーバーベット',
+    'OOPがオーバーベット（1.5倍ポット）した後、IPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'oop_vs_checkbet_1': _NodeMeta(
+    'OOP vs 1/3（チェック後）',
+    'OOPのチェック後、IPが1/3ポットでベットした。OOPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'oop_vs_checkbet_2': _NodeMeta(
+    'OOP vs 1/2（チェック後）',
+    'OOPのチェック後、IPが1/2ポットでベットした。OOPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'oop_vs_checkbet_3': _NodeMeta(
+    'OOP vs 2/3（チェック後）',
+    'OOPのチェック後、IPが2/3ポットでベットした。OOPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'oop_vs_checkbet_4': _NodeMeta(
+    'OOP vs オーバー（チェック後）',
+    'OOPのチェック後、IPがオーバーベットした。OOPがフォールド/コール/レイズのどれを選ぶか。',
+  ),
+  'oop_vs_raise': _NodeMeta(
+    'OOP vs レイズ',
+    'OOPが1/2ポットでベットし、IPが1/2ポットでレイズしてきた代表例のみ。'
+        '他のベット/レイズサイズの組み合わせは読み出していない。',
+    isRaiseAnchor: true,
+  ),
+  'ip_vs_raise_after_check': _NodeMeta(
+    'IP vs レイズ（チェック後）',
+    'OOPがチェックし、IPが1/2ポットでベット、OOPが1/2ポットでレイズしてきた代表例のみ。'
+        '他のベット/レイズサイズの組み合わせは読み出していない。',
+    isRaiseAnchor: true,
+  ),
+};
+
+/// ソルバーで学習したフロップ以降の戦略ビューア（13×13 ヒートマップ）。
+///
+/// フロップ／ターン／リバーの各街について、ソルバーが実際に読み出した
+/// 意思決定ノード（OOPの最初の手番から、各サイズのベットに直面した応答、
+/// レイズに直面した代表例まで）を全て選んで見られる。
 class GtoFlopPage extends ConsumerStatefulWidget {
   const GtoFlopPage({super.key});
 
@@ -35,6 +122,7 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
   int _street = 0;
   String? _turnBucket;
   String? _riverBucket;
+  String? _nodeKey;
 
   @override
   Widget build(BuildContext context) {
@@ -66,25 +154,33 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
                       ? _riverBucket!
                       : riverKeys.first);
 
-            final double? Function(String) betFor;
             final displayedBoard = [...spot.board];
+            final Map<String, GtoActionNode> currentNodes;
             if (_street == 0) {
-              betFor = spot.betFor;
+              currentNodes = spot.nodes;
             } else {
               final turnNode = turnBucket == null
                   ? null
                   : spot.turns[turnBucket];
               if (turnNode != null) displayedBoard.add(turnNode.card);
               if (_street == 1 || turnNode == null) {
-                betFor = turnNode?.betFor ?? (_) => null;
+                currentNodes = turnNode?.nodes ?? const {};
               } else {
                 final riverNode = riverBucket == null
                     ? null
                     : spot.rivers[turnBucket]?[riverBucket];
                 if (riverNode != null) displayedBoard.add(riverNode.card);
-                betFor = riverNode?.betFor ?? (_) => null;
+                currentNodes = riverNode?.nodes ?? const {};
               }
             }
+
+            final nodeKeys = _nodeOrder
+                .where(currentNodes.containsKey)
+                .toList();
+            final nodeKey = nodeKeys.isEmpty
+                ? null
+                : (nodeKeys.contains(_nodeKey) ? _nodeKey! : nodeKeys.first);
+            final currentNode = nodeKey == null ? null : currentNodes[nodeKey];
 
             return ListView(
               padding: const EdgeInsets.fromLTRB(
@@ -114,6 +210,12 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
                   const SizedBox(height: AppSpacing.sm),
                   _streetDisclosure(),
                 ],
+                if (nodeKeys.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  _nodeSelector(nodeKeys, nodeKey!),
+                  const SizedBox(height: AppSpacing.sm),
+                  _nodeDescription(nodeKey),
+                ],
                 const SizedBox(height: AppSpacing.md),
                 Row(
                   children: [
@@ -129,9 +231,9 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.sm),
-                AspectRatio(aspectRatio: 1, child: _grid(betFor)),
+                AspectRatio(aspectRatio: 1, child: _grid(currentNode)),
                 const SizedBox(height: AppSpacing.lg),
-                _legend(),
+                _legend(currentNode),
               ],
             );
           },
@@ -155,6 +257,7 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
               _street = 0;
               _turnBucket = null;
               _riverBucket = null;
+              _nodeKey = null;
             }),
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -182,6 +285,7 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
             child: GestureDetector(
               onTap: () => setState(() {
                 _street = i;
+                _nodeKey = null;
                 if (i == 0) {
                   _turnBucket = null;
                   _riverBucket = null;
@@ -320,6 +424,55 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
     );
   }
 
+  Widget _nodeSelector(List<String> keys, String selected) {
+    return Wrap(
+      spacing: AppSpacing.sm,
+      runSpacing: AppSpacing.sm,
+      children: [
+        for (final key in keys)
+          GestureDetector(
+            onTap: () => setState(() => _nodeKey = key),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: key == selected ? AppColors.accent : AppColors.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: key == selected ? AppColors.accent : AppColors.border,
+                ),
+              ),
+              child: Text(
+                _nodeMeta[key]?.chipLabel ?? key,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: key == selected ? Colors.white : AppColors.textPrimary,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _nodeDescription(String nodeKey) {
+    final meta = _nodeMeta[nodeKey];
+    if (meta == null) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      decoration: BoxDecoration(
+        color: meta.isRaiseAnchor
+            ? AppColors.warning.withValues(alpha: 0.12)
+            : AppColors.surfaceHigh,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        meta.description,
+        style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
+      ),
+    );
+  }
+
   Widget _boardLabel(List<PlayingCard> board, {required bool onDark}) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -344,7 +497,7 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
     );
   }
 
-  Widget _grid(double? Function(String code) betFor) {
+  Widget _grid(GtoActionNode? node) {
     return Column(
       children: [
         for (var row = 0; row < 13; row++)
@@ -352,9 +505,7 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
             child: Row(
               children: [
                 for (var col = 0; col < 13; col++)
-                  Expanded(
-                    child: _cell(StartingHand.fromGrid(row, col), betFor),
-                  ),
+                  Expanded(child: _cell(StartingHand.fromGrid(row, col), node)),
               ],
             ),
           ),
@@ -362,25 +513,35 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
     );
   }
 
-  Widget _cell(StartingHand hand, double? Function(String code) betFor) {
-    final bet = betFor(hand.code);
+  Widget _cell(StartingHand hand, GtoActionNode? node) {
+    final aggression = node?.aggressionFor(hand.code);
     final Color bg;
-    if (bet == null) {
+    if (aggression == null) {
       bg = AppColors.rangeFold;
     } else {
-      bg = Color.lerp(_checkColor, _betColor, bet)!;
+      bg = Color.lerp(_checkColor, _betColor, aggression)!;
     }
     return RangeCell(
       code: hand.code,
       topColor: bg,
       bottomColor: bg,
-      textColor: bet == null ? AppColors.textMuted : Colors.white,
-      onTap: bet == null ? null : () => _showDetail(hand, bet),
+      textColor: aggression == null ? AppColors.textMuted : Colors.white,
+      onTap: aggression == null ? null : () => _showDetail(hand, node!),
     );
   }
 
-  void _showDetail(StartingHand hand, double bet) {
-    final betPct = (bet * 100).round();
+  void _showDetail(StartingHand hand, GtoActionNode node) {
+    final row = node.actionsFor(hand.code);
+    if (row == null) return;
+    final isBetType = node.passiveAction == 'x';
+    final order = isBetType
+        ? const ['x', '1', '2', '3', '4']
+        : const ['f', 'c', '1', '2', '3', '4'];
+    final sizeWord = isBetType ? 'ベット' : 'レイズ';
+    final entries = [
+      for (final key in order)
+        if (row.containsKey(key)) MapEntry(key, row[key]!),
+    ];
     showModalBottomSheet<void>(
       context: context,
       builder: (_) => Padding(
@@ -394,20 +555,46 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
             ),
             const SizedBox(height: AppSpacing.md),
-            _bar('ベット', betPct, _betColor),
-            const SizedBox(height: AppSpacing.sm),
-            _bar('チェック', 100 - betPct, _checkColor),
+            for (final entry in entries) ...[
+              _bar(
+                _actionLabel(entry.key, sizeWord),
+                (entry.value * 100).round(),
+                entry.key == node.passiveAction ? _checkColor : _betColor,
+              ),
+              const SizedBox(height: AppSpacing.sm),
+            ],
           ],
         ),
       ),
     );
   }
 
+  String _actionLabel(String key, String sizeWord) {
+    switch (key) {
+      case 'x':
+        return 'チェック';
+      case 'f':
+        return 'フォールド';
+      case 'c':
+        return 'コール';
+      case '1':
+        return '$sizeWord 1/3';
+      case '2':
+        return '$sizeWord 1/2';
+      case '3':
+        return '$sizeWord 2/3';
+      case '4':
+        return '$sizeWordオーバー';
+      default:
+        return key;
+    }
+  }
+
   Widget _bar(String label, int pct, Color color) {
     return Row(
       children: [
         SizedBox(
-          width: 64,
+          width: 88,
           child: Text(
             label,
             style: const TextStyle(fontWeight: FontWeight.w700),
@@ -440,13 +627,19 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
     );
   }
 
-  Widget _legend() {
+  Widget _legend(GtoActionNode? node) {
+    final isBetType = (node?.passiveAction ?? 'x') == 'x';
+    final passiveLabel = isBetType ? 'チェック' : 'フォールド';
+    final activeLabel = isBetType ? 'ベット' : 'コール＋レイズ';
     return AppCard(
       child: Row(
         children: [
-          const Text(
-            'チェック',
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          Text(
+            passiveLabel,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
           ),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
@@ -461,9 +654,12 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
             ),
           ),
           const SizedBox(width: AppSpacing.sm),
-          const Text(
-            'ベット',
-            style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+          Text(
+            activeLabel,
+            style: const TextStyle(
+              fontSize: 12,
+              color: AppColors.textSecondary,
+            ),
           ),
         ],
       ),
