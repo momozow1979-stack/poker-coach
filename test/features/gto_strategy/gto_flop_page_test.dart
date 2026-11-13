@@ -8,6 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 GtoFlopStrategy _fixture() => GtoFlopStrategy(
+  matchupId: 'btn_bb',
+  matchupLabel: 'BTN open vs BB call (single-raised pot)',
+  oopLabel: 'BB (defender)',
+  ipLabel: 'BTN (aggressor)',
   spots: [
     GtoFlopSpot(
       id: 'a_high_dry',
@@ -102,11 +106,37 @@ GtoFlopStrategy _fixture() => GtoFlopStrategy(
   ],
 );
 
-Future<void> _pump(WidgetTester tester) async {
+GtoFlopStrategy _fixtureSecondMatchup() => GtoFlopStrategy(
+  matchupId: 'hj_utg_6max',
+  matchupLabel: 'UTG open vs HJ call, 6max (single-raised pot)',
+  oopLabel: 'HJ (defender)',
+  ipLabel: 'UTG (aggressor)',
+  spots: [
+    GtoFlopSpot(
+      id: 'a_high_dry',
+      board: PlayingCard.parseAll(const ['As', '7d', '2c']),
+      nodes: const {
+        'oop_first': GtoActionNode(
+          passiveAction: 'x',
+          frequencies: {
+            'AA': {'x': 0.1, '2': 0.9},
+          },
+        ),
+      },
+    ),
+  ],
+);
+
+Future<void> _pump(
+  WidgetTester tester, {
+  List<GtoFlopStrategy>? catalog,
+}) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        gtoFlopStrategyProvider.overrideWith((ref) async => _fixture()),
+        gtoMatchupCatalogProvider.overrideWith(
+          (ref) async => catalog ?? [_fixture()],
+        ),
       ],
       child: MaterialApp(theme: AppTheme.light(), home: const GtoFlopPage()),
     ),
@@ -240,5 +270,24 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('マッチアップが複数あると切り替えチップが出て独立して状態が切り替わる', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.reset);
+
+    await _pump(tester, catalog: [_fixture(), _fixtureSecondMatchup()]);
+
+    // マッチアップが1つだけのときはチップ自体を出さない（既存のテスト群で確認済み）。
+    expect(find.text('BTN vs BB'), findsOneWidget);
+    expect(find.text('UTG vs HJ'), findsOneWidget);
+
+    await tester.tap(find.text('UTG vs HJ'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('AA').first);
+    await tester.pumpAndSettle();
+    expect(find.text('90%'), findsOneWidget);
   });
 }

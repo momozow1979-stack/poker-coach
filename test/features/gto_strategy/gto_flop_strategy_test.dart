@@ -134,6 +134,34 @@ void main() {
     expect(GtoFlopStrategy.fromJson({'spots': 'not-a-list'}).spots, isEmpty);
   });
 
+  test('GtoFlopStrategy.fromJson はマッチアップのメタ情報を読む', () {
+    final strategy = GtoFlopStrategy.fromJson({
+      'matchup_id': 'hj_utg_6max',
+      'matchup': 'UTG open vs HJ call, 6max (single-raised pot)',
+      'oop_position': 'HJ (defender)',
+      'ip_position': 'UTG (aggressor)',
+      'spots': [_rawSpot()],
+    });
+
+    expect(strategy.matchupId, 'hj_utg_6max');
+    expect(
+      strategy.matchupLabel,
+      'UTG open vs HJ call, 6max (single-raised pot)',
+    );
+    expect(strategy.oopLabel, 'HJ (defender)');
+    expect(strategy.ipLabel, 'UTG (aggressor)');
+    expect(strategy.shortLabel, 'UTG vs HJ');
+  });
+
+  test('matchup_id が無い古いエクスポートは btn_bb として扱う（後方互換）', () {
+    final strategy = GtoFlopStrategy.fromJson({
+      'spots': [_rawSpot()],
+    });
+
+    expect(strategy.matchupId, 'btn_bb');
+    expect(strategy.matchupLabel, '');
+  });
+
   test('GtoFlopSpot.fromJson は turns/rivers の代表カードと頻度を読む', () {
     final spot = GtoFlopSpot.fromJson(_rawSpotWithStreets());
 

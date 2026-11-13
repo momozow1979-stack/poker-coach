@@ -6,15 +6,47 @@ import '../../../shared/models/playing_card.dart';
 /// 読み込んだもの。各数値は `CFRSolver.average_strategy()` の読み出しを 169 の
 /// スターティングハンドクラスへ平均した行動頻度で、捏造・推測は無い。
 class GtoFlopStrategy {
-  const GtoFlopStrategy({required this.spots});
+  const GtoFlopStrategy({
+    required this.spots,
+    this.matchupId = 'btn_bb',
+    this.matchupLabel = '',
+    this.oopLabel = '',
+    this.ipLabel = '',
+  });
 
   final List<GtoFlopSpot> spots;
 
+  /// `solver/solve_srp_btn_bb.py` の `MATCHUPS` のキー（例: `'btn_bb'`）。
+  /// 統合前の古いエクスポート（本フィールド追加前）には無いため、
+  /// 後方互換として既定値は唯一の既存運用だった `'btn_bb'`。
+  final String matchupId;
+
+  /// 英語の説明文（例: `'BTN open vs BB call (single-raised pot)'`）。
+  final String matchupLabel;
+
+  /// OOP側のポジション表記（例: `'BB (defender)'`）。
+  final String oopLabel;
+
+  /// IP側のポジション表記（例: `'BTN (aggressor)'`）。
+  final String ipLabel;
+
   static const empty = GtoFlopStrategy(spots: []);
+
+  /// マッチアップ選択チップ用の短いラベル（例: `'BTN vs BB'`）。
+  /// [ipLabel] / [oopLabel] の `'(aggressor)'` 等の注記部分を落とすだけで、
+  /// 新しい文言を作ってはいない。
+  String get shortLabel {
+    String strip(String s) => s.split(' (').first;
+    return '${strip(ipLabel)} vs ${strip(oopLabel)}';
+  }
 
   factory GtoFlopStrategy.fromJson(Map<String, dynamic> json) {
     final rawSpots = json['spots'];
     return GtoFlopStrategy(
+      matchupId: json['matchup_id'] as String? ?? 'btn_bb',
+      matchupLabel: json['matchup'] as String? ?? '',
+      oopLabel: json['oop_position'] as String? ?? '',
+      ipLabel: json['ip_position'] as String? ?? '',
       spots: rawSpots is List
           ? [
               for (final spot in rawSpots)

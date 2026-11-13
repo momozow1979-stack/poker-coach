@@ -118,6 +118,7 @@ class GtoFlopPage extends ConsumerStatefulWidget {
 }
 
 class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
+  int _matchupIndex = 0;
   int _selected = 0;
   int _street = 0;
   String? _turnBucket;
@@ -126,7 +127,7 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(gtoFlopStrategyProvider);
+    final async = ref.watch(gtoMatchupCatalogProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('GTOフロップ戦略')),
       body: SafeArea(
@@ -134,7 +135,10 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
         child: async.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, stack) => const SizedBox.shrink(),
-          data: (strategy) {
+          data: (catalog) {
+            if (catalog.isEmpty) return const SizedBox.shrink();
+            final matchupIndex = _matchupIndex.clamp(0, catalog.length - 1);
+            final strategy = catalog[matchupIndex];
             if (strategy.spots.isEmpty) return const SizedBox.shrink();
             final index = _selected.clamp(0, strategy.spots.length - 1);
             final spot = strategy.spots[index];
@@ -190,6 +194,10 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
                 AppSpacing.xxl,
               ),
               children: [
+                if (catalog.length > 1) ...[
+                  _matchupSelector(catalog, matchupIndex),
+                  const SizedBox(height: AppSpacing.md),
+                ],
                 _boardSelector(strategy, index),
                 const SizedBox(height: AppSpacing.md),
                 _streetTabs(),
@@ -238,6 +246,52 @@ class _GtoFlopPageState extends ConsumerState<GtoFlopPage> {
             );
           },
         ),
+      ),
+    );
+  }
+
+  /// マッチアップ（例:「BTN vs BB」「UTG vs HJ」）を切り替えるチップ行。
+  /// 本番計算・統合が終わって [GtoFlopStrategy] が2つ以上揃うまでは
+  /// 呼び出し側（`build`）がそもそも描画しない。
+  Widget _matchupSelector(List<GtoFlopStrategy> catalog, int selected) {
+    return SizedBox(
+      height: 40,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: catalog.length,
+        separatorBuilder: (context, i) => const SizedBox(width: AppSpacing.sm),
+        itemBuilder: (context, i) {
+          final isSel = i == selected;
+          return GestureDetector(
+            onTap: () => setState(() {
+              _matchupIndex = i;
+              _selected = 0;
+              _street = 0;
+              _turnBucket = null;
+              _riverBucket = null;
+              _nodeKey = null;
+            }),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: isSel ? AppColors.accent : AppColors.surface,
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: isSel ? AppColors.accent : AppColors.border,
+                ),
+              ),
+              child: Text(
+                catalog[i].shortLabel,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: isSel ? Colors.white : AppColors.textPrimary,
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
