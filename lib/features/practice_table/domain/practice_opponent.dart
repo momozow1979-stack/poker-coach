@@ -66,11 +66,17 @@ class SimplePracticeOpponent implements PracticeOpponent {
       // （BTN が必ず先にオープンするため）が、念のためチェックにしておく。
       return const PracticeOpponentDecision(PokerActionType.check);
     }
+    // チップが足りないなどで上乗せできない場面は、コールにとどめる
+    // （選べない額を出すと、揃える額が変わらず同じやり取りが続いてしまう）。
+    if (_threeBetRange.contains(hand.code) &&
+        choices.choices.contains(PokerActionType.raise)) {
+      return PracticeOpponentDecision(
+        PokerActionType.raise,
+        sizeBb: choices.presetSizesBb.last,
+      );
+    }
     if (_threeBetRange.contains(hand.code)) {
-      final size = choices.presetSizesBb.isNotEmpty
-          ? choices.presetSizesBb.last
-          : choices.toCallBb * 3;
-      return PracticeOpponentDecision(PokerActionType.raise, sizeBb: size);
+      return const PracticeOpponentDecision(PokerActionType.call);
     }
     if (_callRange.contains(hand.code)) {
       return const PracticeOpponentDecision(PokerActionType.call);
@@ -113,7 +119,10 @@ class SimplePracticeOpponent implements PracticeOpponent {
         : PokerActionType.bet;
     final presets = choices.presetSizesBb;
     if (presets.isEmpty) {
-      return PracticeOpponentDecision(action, sizeBb: choices.toCallBb);
+      // 上乗せできる額が無い（チップが足りない等）: 受けるだけにする。
+      return PracticeOpponentDecision(
+        choices.facingBet ? PokerActionType.call : PokerActionType.check,
+      );
     }
     // プリセットのうち、狙った割合に一番近いものを選ぶ。
     final target = choices.potBb * fraction;
