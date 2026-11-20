@@ -186,17 +186,32 @@ abstract final class PracticeGradeExplainer {
       case PokerActionType.fold || PokerActionType.call:
         final req = required ?? 0;
         final isCall = option.action == PokerActionType.call;
-        if (equity >= req) {
+        // 勝率が 0% / 100% と表示される場面では「必要勝率が 0% を下回ったら」
+        // のような、起こりえない条件を書かないよう言い方を変える。
+        final shownPercent = (equity * 100).round();
+        final foldIsGood = !isCall && chosen.verdict == PracticeVerdict.good;
+        if (shownPercent == 0) {
+          reasons.add(
+            '相手が持っていそうな手すべてに対して、今のあなたの手はほとんど勝てません（勝率 $equityText）。'
+            '${isCall ? 'ベットの額に関係なく、コールは損です。' : (foldIsGood ? '降りるのが得です。' : 'コールは損です。')}',
+          );
+          ifChanged = 'もし相手が、あなたより弱い手でもこの額をベットしてくる相手なら、コールを考える余地が出てきます。';
+        } else if (shownPercent == 100) {
+          reasons.add(
+            'あなたの手は、相手が持っていそうな手すべてにほぼ勝っています（勝率 $equityText）。'
+            '${isCall ? 'コールで得をします。' : '降りる理由はありません。'}',
+          );
+          ifChanged = 'もし相手が、あなたより強い手でもこの額をベットしてくる相手なら、話が変わります。';
+        } else if (equity >= req) {
           reasons.add(
             '勝率 $equityText が必要勝率 ${_pct(req)} を上回っているので、'
             '${isCall ? 'コールで得をします。' : 'コールでも得ができ、降りると損です。'}',
           );
           ifChanged = 'もし相手のベットがもっと大きく、必要勝率が $equityText を超えていたら、降りる方が得になります。';
         } else {
-          final foldIsBest = !isCall && chosen.verdict == PracticeVerdict.good;
           reasons.add(
             '勝率 $equityText が必要勝率 ${_pct(req)} に届かないので、'
-            '${isCall ? 'コールし続けると長い目で見て損です。' : (foldIsBest ? '降りるのが得です。' : 'コールでは損です。')}',
+            '${isCall ? 'コールし続けると長い目で見て損です。' : (foldIsGood ? '降りるのが得です。' : 'コールでは損です。')}',
           );
           ifChanged = 'もし相手のベットがもっと小さく、必要勝率が $equityText を下回っていたら、コールが得になります。';
         }
@@ -218,14 +233,14 @@ abstract final class PracticeGradeExplainer {
         final called = bestBet.equityWhenCalled;
         if (chosen.verdict == PracticeVerdict.good) {
           reasons.add(
-            'ベット（${bestBet.option.label}）しても相手が降りるのは ${_pct(fold)}'
+            '${bestBet.option.label}しても相手が降りるのは ${_pct(fold)}'
             '${called != null ? '、コールされたときの勝率は ${_pct(called)}' : ''}。'
             'チェックしてこれ以上賭けずに見る（勝率 $equityText）方が得です。',
           );
           ifChanged = 'もし相手がもっと弱い手でも降りたりコールしたりする相手なら、ベットの方が得になります。';
         } else {
           reasons.add(
-            'ベット（${bestBet.option.label}）すると相手は ${_pct(fold)} 降ります'
+            '${bestBet.option.label}すると相手は ${_pct(fold)} 降ります'
             '${called != null ? '。コールされても勝率 ${_pct(called)} あります' : ''}。'
             'チェックはその得を逃しています。',
           );
@@ -248,6 +263,13 @@ abstract final class PracticeGradeExplainer {
           }
           if (called != null && called >= 0.5) {
             reasons.add('コールしてくる手に対しても勝率 ${_pct(called)} あり、ベットで価値を取れます。');
+          }
+          final safer = _smallerEquallyGood(grade, chosen);
+          if (safer != null) {
+            reasons.add(
+              '同じ得なら、${safer.option.label}のように賭ける額が小さい方が、'
+              '相手の打ち方を読み違えたときの損が小さくて済みます。',
+            );
           }
           ifChanged = profitableBluff
               ? 'もし相手の降りる割合が ${_pct(breakEven)} を下回る相手なら、このベットはやめた方がよくなります。'
@@ -292,6 +314,19 @@ abstract final class PracticeGradeExplainer {
           '※ この判定は、このAIの決まった打ち方に対する計算です。次のストリート以降の賭けは含めず、'
           'ここから先はこれ以上賭けずに最後まで見るものとして簡略化しています。',
     );
+  }
+
+  /// [chosen] と損得が同じで、新たに出す額がより小さい○の賭け。
+  static PracticeOptionGrade? _smallerEquallyGood(
+    PracticeDecisionGrade grade,
+    PracticeOptionGrade chosen,
+  ) {
+    for (final other in grade.goodOptions) {
+      if (!other.option.action.isAggressive) continue;
+      if (((other.evBb ?? 0) - (chosen.evBb ?? 0)).abs() > 1e-9) continue;
+      if ((other.heroAddBb ?? 0) < (chosen.heroAddBb ?? 0) - 1e-9) return other;
+    }
+    return null;
   }
 
   static PracticeOptionGrade? _bestAggressive(PracticeDecisionGrade grade) {

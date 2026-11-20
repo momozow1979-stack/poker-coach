@@ -164,14 +164,19 @@ class PracticeDecisionGrade {
     return null;
   }
 
-  /// ○ の選択肢（[GradingBasis.versusOpponent] では損得の良い順）。
+  /// ○ の選択肢（[GradingBasis.versusOpponent] では損得の良い順。損得が
+  /// 同じなら、新たに出す額が小さい = 読み違えたときの損が小さい順）。
   List<PracticeOptionGrade> get goodOptions {
     final good = [
       for (final grade in options)
         if (grade.verdict == PracticeVerdict.good) grade,
     ];
     if (basis == GradingBasis.versusOpponent) {
-      good.sort((a, b) => (b.evBb ?? 0).compareTo(a.evBb ?? 0));
+      good.sort((a, b) {
+        final byEv = (b.evBb ?? 0) - (a.evBb ?? 0);
+        if (byEv.abs() > 1e-9) return byEv > 0 ? 1 : -1;
+        return (a.heroAddBb ?? 0).compareTo(b.heroAddBb ?? 0);
+      });
     }
     return good;
   }
