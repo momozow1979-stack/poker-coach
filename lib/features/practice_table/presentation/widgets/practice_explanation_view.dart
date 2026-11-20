@@ -5,6 +5,7 @@ import '../../../../core/theme/app_spacing.dart';
 import '../../../../shared/models/playing_card.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../domain/grading/decision_grade.dart';
+import '../../domain/grading/decision_reason.dart';
 import '../../domain/grading/grade_explainer.dart';
 
 /// ○△× ごとの色。色だけに頼らないよう、必ず記号も一緒に出す。
@@ -26,10 +27,14 @@ class PracticeExplanationView extends StatelessWidget {
     required this.chosenLabel,
     required this.heroCards,
     required this.board,
+    this.reasonGrade,
   });
 
   final PracticeGradeExplanation explanation;
   final String chosenLabel;
+
+  /// 選んだ理由への判定（理由を聞かなかった判断では null）。
+  final ReasonGrade? reasonGrade;
 
   /// テーブルが隠れていても、手札とボードを見ながら読めるように出す。
   final List<PlayingCard> heroCards;
@@ -46,6 +51,10 @@ class PracticeExplanationView extends StatelessWidget {
           chosenLabel: chosenLabel,
           color: color,
         ),
+        if (reasonGrade != null) ...[
+          const SizedBox(height: AppSpacing.sm),
+          PracticeReasonView(grade: reasonGrade!),
+        ],
         const SizedBox(height: AppSpacing.sm),
         Text(
           'あなたの手札 ${_cardsText(heroCards)}'
@@ -90,6 +99,81 @@ class PracticeExplanationView extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 理由の○×と、その根拠。
+Color reasonVerdictColor(ReasonVerdict verdict) => switch (verdict) {
+  ReasonVerdict.correct => AppColors.success,
+  ReasonVerdict.wrong => AppColors.danger,
+  ReasonVerdict.unsure => AppColors.warning,
+};
+
+class PracticeReasonView extends StatelessWidget {
+  const PracticeReasonView({super.key, required this.grade});
+
+  final ReasonGrade grade;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = reasonVerdictColor(grade.verdict);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: color.withValues(alpha: 0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                grade.verdict.symbol,
+                style: TextStyle(
+                  fontSize: 20,
+                  height: 1.1,
+                  fontWeight: FontWeight.w900,
+                  color: color,
+                ),
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      grade.title,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: color,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'あなたの理由: ${grade.reason.label}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.xs),
+          Text(
+            grade.explanation,
+            style: const TextStyle(fontSize: 13, height: 1.5),
+          ),
+        ],
+      ),
     );
   }
 }

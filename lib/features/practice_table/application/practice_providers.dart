@@ -8,6 +8,7 @@ import '../../profile/application/learning_providers.dart'
     show keyValueStoreProvider;
 import '../domain/grading/decision_grade.dart';
 import '../domain/grading/decision_grader.dart';
+import '../domain/grading/decision_reason.dart';
 import '../domain/grading/grade_explainer.dart';
 import '../domain/grading/hand_reviewer.dart';
 import '../domain/practice_deck.dart';
@@ -50,6 +51,7 @@ final practiceHandReviewProvider = FutureProvider.autoDispose
       (ref, record) => PracticeHandReviewer.review(
         record.events,
         ref.watch(practiceGraderProvider),
+        reasons: record.heroReasons,
       ),
     );
 
@@ -59,11 +61,17 @@ class PracticeFeedback {
     required this.chosen,
     required this.grade,
     required this.explanation,
+    this.reason,
+    this.reasonGrade,
   });
 
   final PracticeOptionGrade chosen;
   final PracticeDecisionGrade grade;
   final PracticeGradeExplanation explanation;
+
+  /// 選んだ理由（聞かなかった場面では null）。
+  final DecisionReason? reason;
+  final ReasonGrade? reasonGrade;
 }
 
 /// ライブプレイのいまの状態。イベント列は [PracticeHandState.replay] へ
@@ -114,6 +122,9 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
   PracticeFeedback? _feedback;
   PracticeHandRecord? _finishedRecord;
 
+  /// このハンドでヒーローが選んだ理由（キーはその行動のイベント番号）。
+  final Map<int, DecisionReason> _reasons = {};
+
   /// 同じ判断の場面で何度やり直しても計算し直さないよう、
   /// イベント数をキーに覚えておく（新しいハンドで捨てる）。
   final Map<int, PracticeDecisionGrade?> _gradeCache = {};
@@ -130,6 +141,7 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
     _grading = false;
     _finishedRecord = null;
     _gradeCache.clear();
+    _reasons.clear();
     _publish(engine, thinking: false);
     unawaited(_driveOpponentIfNeeded(engine));
   }
@@ -144,14 +156,20 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
 
   /// ヒーローがボタンを押した。初心者モードではすぐには確定せず、
   /// 判定を出して [confirmFeedback] か [retryDecision] を待つ。
-  Future<void> heroAct(PokerActionType action, {double? sizeBb}) async {
+  ///
+  /// [reason] は、そのアクションを選んだ理由（聞かなかった場面では null）。
+  Future<void> heroAct(
+    PokerActionType action, {
+    double? sizeBb,
+    DecisionReason? reason,
+  }) async {
     final engine = _engine;
     if (engine == null || _feedback != null || _grading) return;
     final hand = PracticeHandState.replay(engine.events);
     if (!hand.isHeroTurn) return;
 
     if (_beginnerMode) {
-      final feedback = await _gradeChoice(engine, action, sizeBb);
+      final feedback = await _gradeChoice(engine, action, sizeBb, reason);
       // 計算の間に新しいハンドが始まっていたら、この判定は捨てる。
       if (!identical(_engine, engine)) return;
       if (feedback != null) {
@@ -161,7 +179,7 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
       }
       // 採点できない場面（想定外）は、ふつうに進める。
     }
-    await _applyHero(engine, action, sizeBb);
+    await _applyHero(engine, action, sizeBb, reason);
   }
 
   /// 判定を見たうえで、そのアクションで進める。
@@ -174,6 +192,7 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
       engine,
       feedback.chosen.option.action,
       feedback.chosen.option.sizeBb,
+      feedback.reason,
     );
   }
 
@@ -189,6 +208,7 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
     PracticeHandEngine engine,
     PokerActionType action,
     double? sizeBb,
+    DecisionReason? reason,
   ) async {
     final key = engine.events.length;
     if (!_gradeCache.containsKey(key)) {
@@ -208,6 +228,10 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
       chosen: chosen,
       grade: grade,
       explanation: PracticeGradeExplainer.explain(grade, chosen),
+      reason: reason,
+      reasonGrade: reason == null
+          ? null
+          : ReasonGrader.grade(grade, chosen, reason),
     );
   }
 
@@ -215,7 +239,9 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
     PracticeHandEngine engine,
     PokerActionType action,
     double? sizeBb,
+    DecisionReason? reason,
   ) async {
+    if (reason != null) _reasons[engine.events.length] = reason;
     engine.apply(Actor.hero, action, sizeBb: sizeBb);
     _publish(engine, thinking: false);
     await _driveOpponentIfNeeded(engine);
@@ -249,6 +275,7 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
       endedByFold: hand.endedByFold,
       winner: hand.winner,
       finalPotBb: hand.pot,
+      heroReasons: Map.of(_reasons),
     );
     await repository.save(record);
     ref.invalidate(practiceHistoryProvider);

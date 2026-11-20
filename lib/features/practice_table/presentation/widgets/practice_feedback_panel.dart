@@ -50,6 +50,7 @@ class PracticeFeedbackPanel extends StatelessWidget {
               child: PracticeExplanationView(
                 explanation: feedback.explanation,
                 chosenLabel: feedback.chosen.option.label,
+                reasonGrade: feedback.reasonGrade,
                 heroCards: heroCards,
                 board: board,
               ),

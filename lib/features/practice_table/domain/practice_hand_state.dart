@@ -51,6 +51,7 @@ class PracticeHandState {
     required this.actorToAct,
     required this.heroToCallBb,
     required this.villainToCallBb,
+    this.currentBetBb = 0,
     required this.isOver,
     required this.endedByFold,
     required this.winner,
@@ -78,6 +79,9 @@ class PracticeHandState {
   final double heroToCallBb;
   final double villainToCallBb;
 
+  /// このストリートで揃えるべき額（一番多く出している人の額）。
+  final double currentBetBb;
+
   final bool isOver;
   final bool endedByFold;
 
@@ -101,33 +105,48 @@ class PracticeHandState {
       actor == Actor.hero ? heroToCallBb : villainToCallBb;
 
   /// 次の行動者が選べる選択肢。行動できる番でなければ null。
+  ///
+  /// 手元のチップを超える額は選ばせない（全部出すならオールイン）。
+  /// コールするだけでチップが無くなるとき、相手がもうオールインしている
+  /// ときは、上乗せ（ベット / レイズ / オールイン）を出さない。
   PracticeActionChoices? get choices {
     final actor = actorToAct;
     if (actor == null) return null;
+    final other = actor == Actor.hero ? Actor.villain : Actor.hero;
     final toCall = toCallOf(actor);
     final facing = toCall > 0.0001;
+    final stack = stackOf(actor);
+    // その人が全部出したときの、このストリートでの合計額。
+    final allInTarget = currentBetBb - (facing ? toCall : 0) + stack;
+    final canAddMore = stack > toCall + 0.0001 && stackOf(other) > 0.0001;
+    final sizes = canAddMore
+        ? [
+            for (final size in PracticeBetSizing.presetsFor(
+              street: street,
+              potBb: pot,
+              facingBb: facing ? toCall : 0,
+            ))
+              if (size > currentBetBb + 0.0001 && size < allInTarget - 0.0001)
+                size,
+          ]
+        : const <double>[];
     return PracticeActionChoices(
       actor: actor,
       street: street,
       potBb: pot,
       toCallBb: facing ? toCall : 0,
-      choices: facing
-          ? const [
-              PokerActionType.fold,
-              PokerActionType.call,
-              PokerActionType.raise,
-              PokerActionType.allIn,
-            ]
-          : const [
-              PokerActionType.check,
-              PokerActionType.bet,
-              PokerActionType.allIn,
-            ],
-      presetSizesBb: PracticeBetSizing.presetsFor(
-        street: street,
-        potBb: pot,
-        facingBb: facing ? toCall : 0,
-      ),
+      choices: [
+        if (facing) ...[
+          PokerActionType.fold,
+          PokerActionType.call,
+          if (sizes.isNotEmpty) PokerActionType.raise,
+        ] else ...[
+          PokerActionType.check,
+          if (sizes.isNotEmpty) PokerActionType.bet,
+        ],
+        if (canAddMore) PokerActionType.allIn,
+      ],
+      presetSizesBb: sizes,
     );
   }
 
@@ -238,7 +257,16 @@ class _ReplayEngine {
     final settled = (_streetPut[actor] ?? 0) == (_streetPut[other] ?? 0);
     // ラウンドが閉じたら、行動者を空けておく。次のイベント
     // （BoardDealt か HandFinished）が状態を先に進める。
-    _actorToAct = (bothActed && settled) ? null : other;
+    // 相手のチップがもう無ければ（オールイン済み）、相手は何もできないので
+    // ラウンドを閉じる（残りのボードを配ってショーダウンへ）。
+    // 自分がオールインで足りない額をコールした（相手にもう払う額が無い）
+    // 場合も、相手に行動させずに閉じる。
+    final otherToCall = currentBet - (_streetPut[other] ?? 0);
+    final closed =
+        (bothActed && settled) ||
+        _stackOf(other) <= 0 ||
+        (_stackOf(actor) <= 0 && otherToCall <= 0.0001);
+    _actorToAct = closed ? null : other;
   }
 
   void _commit(Actor actor, double add) {
@@ -277,6 +305,7 @@ class _ReplayEngine {
       actorToAct: _actorToAct,
       heroToCallBb: currentBet - (_streetPut[Actor.hero] ?? 0),
       villainToCallBb: currentBet - (_streetPut[Actor.villain] ?? 0),
+      currentBetBb: currentBet,
       isOver: isOver,
       endedByFold: endedByFold,
       winner: winner,
