@@ -57,6 +57,36 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  testWidgets('通してプレイしたあと「振り返る」で、判断ごとの○△×をプレイバックで見られる', (tester) async {
+    await _pumpPage(tester);
+    await tester.tap(find.byType(Switch));
+    await tester.pump();
+    expect(find.textContaining('終わってから振り返ります'), findsOneWidget);
+
+    await tester.tap(find.text('レイズ 2.5'));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining('あなたの勝ち'), findsOneWidget);
+
+    await tester.tap(find.text('振り返る'));
+    await tester.pumpAndSettle();
+    expect(find.text('ふりかえり'), findsOneWidget);
+    // 採点が終わると、判断の一覧が出る。
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(find.text('あなたの判断'), findsOneWidget);
+    expect(find.text('○1'), findsOneWidget);
+
+    // 判断のチップを押すと、その場面に移動して判定と理由が出る。
+    await tester.tap(find.text('○ プリフロップ レイズ 2.5BB'));
+    await tester.pump();
+    expect(find.text('○ 良い選択です'), findsOneWidget);
+    expect(find.text('あなた レイズ 2.5BB'), findsOneWidget);
+
+    // 1 つ戻る（ヒーローの行動ではない場面）と、判定は消える。
+    await tester.tap(find.byTooltip('戻る'));
+    await tester.pump();
+    expect(find.text('○ 良い選択です'), findsNothing);
+  });
+
   testWidgets('初心者モードを切ると、選んだアクションがそのまま確定する', (tester) async {
     await _pumpPage(tester);
 
