@@ -172,9 +172,14 @@ abstract final class RangeGuidanceBuilder {
   }
 
   static String _gtoNote(RangeSpot spot, RangeEntry entry) {
+    // このレンジ表はソルバー系の公開資料を参考にした学習用の目安で、
+    // ハンドごとにソルバー出力と照合したものではない。「ソルバーでも〜」と
+    // 断定しない（AGENTS.md 原則1）。
     if (entry.action == RangeAction.fold) {
-      return 'ソルバーの解でも、${spot.heroPosition.label} のオープンレンジからは外れる領域です。'
-          '無理に広げるとレンジ全体の強さが落ちます。';
+      return 'このレンジ表では ${spot.heroPosition.label} から参加しない手です。'
+          'レンジ表はソルバー系の公開資料を参考にした学習用の目安で、'
+          '境目に近い手は、レーキ・スタック・相手の傾向によっては'
+          'ソルバーでも参加することがあります。';
     }
     if (entry.action == RangeAction.mixed) {
       final blend = entry.blend;
@@ -188,8 +193,9 @@ abstract final class RangeGuidanceBuilder {
       return 'ソルバーはこの種のハンドを一定の頻度で混ぜます。'
           'ここでは正確な頻度は表示せず「境界線上」とだけ扱っています。';
     }
-    return 'ソルバーの解でも ${spot.heroPosition.label} のレンジに含まれる領域です。'
-        'このアプリでは厳密な頻度ではなく、学習しやすい目安として表示しています。';
+    return 'このレンジ表では ${spot.heroPosition.label} から参加する手です。'
+        'レンジ表はソルバー系の公開資料を参考にした学習用の目安で、'
+        '厳密な頻度ではなく、覚えやすい形で表示しています。';
   }
 
   static String _practicalNote(RangeSpot spot, RangeEntry entry) {
