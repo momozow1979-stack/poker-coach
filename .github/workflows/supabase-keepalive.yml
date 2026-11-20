@@ -1,22 +1,29 @@
 name: Supabase keepalive
 
-# Supabase の無料プランは、7日間 API アクセスが無いとプロジェクトが
-# 自動的に一時停止（pause）される。GCP のソルバー実行とは無関係に、
-# Supabase 側だけで定期的に軽いリクエストを送って休止を防ぐ。
+# Supabase の無料プランは、直近 1 週間の「データベースの利用」が少ないと
+# プロジェクトを自動的に一時停止（pause）する（公式:
+# https://supabase.com/docs/guides/platform/free-project-pausing ）。
+# GCP のソルバー実行とは無関係に、毎日 1 回、実際にデータベースへ問い合わせて
+# 休止を防ぐ。
 #
-# GoTrue（Supabase Auth）のヘルスチェックエンドポイント（/auth/v1/health）に
-# GET するだけの最小のリクエスト。テーブルアクセスは無く RLS にも依存しない。
+# **過去の失敗（2026-10-30 に休止した原因）**: 以前のこのジョブは
+#   - 10/5〜10/22: PostgREST のルート（/rest/v1/、API の一覧を返すだけ）
+#   - 10/22〜:     Supabase Auth の死活確認（/auth/v1/health）
+# を叩いていた。どちらも「成功」を返すが、データベースのテーブルには一度も
+# 触れていない。ジョブは緑のまま、切り替えの約 1 週間後に休止した。
+# 「HTTP が成功した」ではなく「データベースが問い合わせを実行した」ことを
+# 確認しないと、同じことが起きる。
 #
-# 以前は PostgREST のルートエンドポイント（OpenAPI スキーマ）に publishable
-# キーで GET していたが、Supabase 側の仕様変更でそのエンドポイントが
-# secret キー必須になった（"Secret API key required" エラー）。secret キーは
-# AGENTS.md のルールで絶対に使わない（クライアントはおろか CI にも置かない）
-# ため、このエンドポイントに切り替えた。
+# いまは quizzes テーブルを publishable キーで 1 件だけ読む。RLS で
+# ログインユーザーにしか行を見せない設定なので、返ってくるのは空の配列
+# （`[]`）だが、問い合わせ自体は Postgres で実行される。行の中身は一切
+# 返らないので、公開キーで叩いても情報は漏れない。
+# 返事が JSON の配列（`[` で始まる）でなければ、データベースまで届いて
+# いないとみなして失敗させる。
 #
-# このプロジェクトの Kong ゲートウェイは、鍵が要らないはずのこのエンドポイント
-# にも apikey ヘッダーを要求する設定になっている（"No API key found in
-# request" エラーで判明）。publishable キー（sb_publishable_...）は公開前提の
-# 鍵なので AGENTS.md のルールには抵触しない。
+# secret キー（sb_secret_...）は AGENTS.md のルールで絶対に使わない。
+# publishable キー（sb_publishable_...）は公開前提の鍵なので問題ない。
+# このプロジェクトのゲートウェイは apikey ヘッダーを必須にしている。
 #
 # 別プロジェクトを指したいときは pages.yml と同じく
 #   Settings → Secrets and variables → Actions → Variables
@@ -33,16 +40,27 @@ jobs:
       SUPABASE_URL: ${{ vars.SUPABASE_URL || 'https://rfxcovghfifmagnbjayl.supabase.co' }}
       SUPABASE_PUBLISHABLE_KEY: ${{ vars.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_CzNFlmiqxeZU5XLxsU285A_fF7-5bJ3' }}
     steps:
-      - name: Ping Supabase Auth health endpoint
+      - name: Query the database (quizzes table, 1 row)
         run: |
-          body=$(curl -sS -w "\n%{http_code}" \
+          set -o pipefail
+          if ! body=$(curl -sS -w "\n%{http_code}" \
             -H "apikey: $SUPABASE_PUBLISHABLE_KEY" \
-            "$SUPABASE_URL/auth/v1/health")
+            "$SUPABASE_URL/rest/v1/quizzes?select=id&limit=1"); then
+            echo "::error::Supabase に接続できませんでした。プロジェクトが一時停止していないか、ダッシュボードで確認してください。"
+            exit 1
+          fi
           code=$(echo "$body" | tail -n1)
           resp=$(echo "$body" | sed '$d')
           echo "HTTP $code"
           echo "response body: $resp"
           if [ "$code" -ge 400 ]; then
-            echo "::error::Supabase への ping が失敗しました（HTTP $code）。response=$resp"
+            echo "::error::データベースへの問い合わせが失敗しました（HTTP $code）。response=$resp"
             exit 1
           fi
+          case "$resp" in
+            \[*) echo "データベースが問い合わせを実行しました。" ;;
+            *)
+              echo "::error::返事が JSON の配列ではありません。データベースまで届いていない可能性があります。response=$resp"
+              exit 1
+              ;;
+          esac
