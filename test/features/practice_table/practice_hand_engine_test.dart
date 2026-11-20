@@ -138,5 +138,30 @@ void main() {
       expect(choices.facingBet, isTrue); // BB の 1bb に直面
       expect(choices.presetSizesBb, [2.2, 2.5, 3.0]);
     });
+
+    test('相手のオールインに直面したら、フォールドかコールだけ（上乗せは出さない）', () {
+      final engine = PracticeHandEngine(deck: _deck());
+      engine.apply(Actor.hero, PokerActionType.raise, sizeBb: 2.5);
+      engine.apply(Actor.villain, PokerActionType.allIn);
+
+      final choices = engine.state.choices!;
+      expect(choices.choices, [PokerActionType.fold, PokerActionType.call]);
+      expect(choices.presetSizesBb, isEmpty);
+    });
+
+    test('手元のチップを超える額は候補に出さず、オールインだけ残す', () {
+      final engine = PracticeHandEngine(deck: _deck());
+      engine.apply(Actor.hero, PokerActionType.raise, sizeBb: 2.5);
+      // 90 への 3 ベット。4 ベットの目安（225・270BB）はスタックを超える。
+      engine.apply(Actor.villain, PokerActionType.raise, sizeBb: 90);
+
+      final choices = engine.state.choices!;
+      expect(choices.presetSizesBb, isEmpty);
+      expect(choices.choices, [
+        PokerActionType.fold,
+        PokerActionType.call,
+        PokerActionType.allIn,
+      ]);
+    });
   });
 }

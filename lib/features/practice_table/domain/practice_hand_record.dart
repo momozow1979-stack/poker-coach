@@ -4,6 +4,7 @@ import '../../../shared/models/position.dart';
 import '../../../shared/models/street.dart';
 import '../../../shared/models/table_type.dart';
 import '../../hand_review/domain/hand_flow.dart' show Actor;
+import 'grading/decision_reason.dart';
 import 'practice_event.dart';
 
 /// 保存済みの練習ハンド 1 件。イベント列をそのまま持つので、
@@ -16,6 +17,7 @@ class PracticeHandRecord {
     required this.endedByFold,
     required this.winner,
     required this.finalPotBb,
+    this.heroReasons = const {},
   });
 
   final String id;
@@ -26,6 +28,11 @@ class PracticeHandRecord {
   /// 勝者。分けなら null。
   final Actor? winner;
   final double finalPotBb;
+
+  /// ヒーローが選んだアクションの理由（キーはその [ActionOccurred] が
+  /// [events] の何番目か）。理由を聞かなかった判断と、理由の機能より前の
+  /// 記録には無い。
+  final Map<int, DecisionReason> heroReasons;
 
   /// 履歴一覧に出す短い見出し。
   String get title {
@@ -44,6 +51,11 @@ class PracticeHandRecord {
     'winner': winner?.name,
     'final_pot_bb': finalPotBb,
     'events': events.map(_eventToJson).toList(),
+    if (heroReasons.isNotEmpty)
+      'hero_reasons': {
+        for (final entry in heroReasons.entries)
+          '${entry.key}': entry.value.name,
+      },
   };
 
   factory PracticeHandRecord.fromJson(Map<String, dynamic> json) {
@@ -57,7 +69,19 @@ class PracticeHandRecord {
         for (final raw in json['events'] as List)
           _eventFromJson(raw as Map<String, dynamic>),
       ],
+      heroReasons: _reasonsFromJson(json['hero_reasons']),
     );
+  }
+
+  static Map<int, DecisionReason> _reasonsFromJson(Object? raw) {
+    if (raw is! Map) return const {};
+    final reasons = <int, DecisionReason>{};
+    for (final entry in raw.entries) {
+      final index = int.tryParse('${entry.key}');
+      final reason = DecisionReason.byName(entry.value as String?);
+      if (index != null && reason != null) reasons[index] = reason;
+    }
+    return reasons;
   }
 
   static Actor? _actorFromName(String? name) {

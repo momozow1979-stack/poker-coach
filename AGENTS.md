@@ -55,6 +55,8 @@
   `flt-semantics[role="button"]` にボタンの文言が入る。Playwright ではその要素の
   `getBoundingClientRect()` の中心を `page.mouse.click` で押せば、文言を手がかりに操作できる。
 - 練習テーブル（AI 対戦）の採点は `lib/features/practice_table/domain/grading/`。
+  選んだ理由（バリュー・ブラフ・ポットオッズなど）の判定は同じフォルダの `decision_reason.dart`。
+  理由は「計算した数字で真偽が決まる文」だけにすること（数字で確かめられない理由を足さない）。
   相手 AI の打ち方を変えたら、採点も同じ打ち方で計算されるので、
   `decision_grader_test.dart` の前提（どの手でベット・降りるか）を見直すこと。
 - **日本語フォントは Google Fonts のランタイム取得に頼らない。**

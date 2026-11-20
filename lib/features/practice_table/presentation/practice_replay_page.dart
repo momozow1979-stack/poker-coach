@@ -13,6 +13,7 @@ import '../domain/practice_event.dart';
 import '../domain/practice_hand_record.dart';
 import '../domain/practice_hand_state.dart';
 import 'widgets/practice_explanation_view.dart';
+import 'widgets/practice_hand_summary.dart';
 
 /// 保存済みの 1 ハンドを、イベントを 1 つずつ進めながら振り返る画面。
 ///
@@ -35,14 +36,30 @@ class _PracticeReplayPageState extends ConsumerState<PracticeReplayPage> {
   /// いま何個目までのイベントを反映しているか（最低 1 = HandDealt のみ）。
   int _cursor = 1;
 
+  /// 採点が終わったら、最初の判断の場面から見せる（一度だけ）。
+  bool _movedToFirstDecision = false;
+
   @override
   Widget build(BuildContext context) {
     final events = widget.record.events;
+    final review = ref.watch(practiceHandReviewProvider(widget.record));
+    final decisions = review.value?.decisions ?? const <ReviewedDecision>[];
+    if (!_movedToFirstDecision && review.hasValue) {
+      _movedToFirstDecision = true;
+      if (decisions.isNotEmpty) _cursor = decisions.first.eventIndex + 1;
+    }
     final visible = events.sublist(0, _cursor);
     final hand = PracticeHandState.replay(visible);
     final lastEvent = events[_cursor - 1];
-    final review = ref.watch(practiceHandReviewProvider(widget.record));
     final decisionHere = review.value?.atEvent(_cursor - 1);
+    ReviewedDecision? previousDecision;
+    ReviewedDecision? nextDecision;
+    for (final decision in decisions) {
+      if (decision.eventIndex < _cursor - 1) previousDecision = decision;
+      if (decision.eventIndex > _cursor - 1 && nextDecision == null) {
+        nextDecision = decision;
+      }
+    }
 
     return Scaffold(
       appBar: AppBar(title: const Text('ふりかえり')),
@@ -61,11 +78,21 @@ class _PracticeReplayPageState extends ConsumerState<PracticeReplayPage> {
                         'このハンドは採点できませんでした',
                         style: TextStyle(color: AppColors.textSecondary),
                       ),
-                      data: (value) => _ReviewSummary(
-                        review: value,
-                        currentEventIndex: _cursor - 1,
-                        onJump: (decision) =>
-                            setState(() => _cursor = decision.eventIndex + 1),
+                      data: (value) => Container(
+                        padding: const EdgeInsets.all(AppSpacing.md),
+                        decoration: BoxDecoration(
+                          color: AppColors.surface,
+                          borderRadius: BorderRadius.circular(
+                            AppSpacing.radiusSm,
+                          ),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: PracticeHandSummaryBody(
+                          review: value,
+                          currentEventIndex: _cursor - 1,
+                          onTapDecision: (decision) =>
+                              setState(() => _cursor = decision.eventIndex + 1),
+                        ),
                       ),
                     ),
                     const SizedBox(height: AppSpacing.md),
@@ -110,6 +137,7 @@ class _PracticeReplayPageState extends ConsumerState<PracticeReplayPage> {
                       PracticeExplanationView(
                         explanation: decisionHere.explanation,
                         chosenLabel: decisionHere.chosen.option.label,
+                        reasonGrade: decisionHere.reasonGrade,
                         heroCards: hand.heroCards,
                         board: hand.board,
                       ),
@@ -130,7 +158,23 @@ class _PracticeReplayPageState extends ConsumerState<PracticeReplayPage> {
                         : null,
                     icon: const Icon(Icons.chevron_left_rounded),
                   ),
+                  TextButton(
+                    onPressed: previousDecision == null
+                        ? null
+                        : () => setState(
+                            () => _cursor = previousDecision!.eventIndex + 1,
+                          ),
+                    child: const Text('前の判断'),
+                  ),
                   Text('$_cursor / ${events.length}'),
+                  TextButton(
+                    onPressed: nextDecision == null
+                        ? null
+                        : () => setState(
+                            () => _cursor = nextDecision!.eventIndex + 1,
+                          ),
+                    child: const Text('次の判断'),
+                  ),
                   IconButton(
                     tooltip: '進む',
                     onPressed: _cursor < events.length
@@ -191,124 +235,6 @@ class _GradingRow extends StatelessWidget {
         SizedBox(width: AppSpacing.sm),
         Text('採点中…', style: TextStyle(color: AppColors.textSecondary)),
       ],
-    );
-  }
-}
-
-/// 「あなたの判断」: ○△× の数と、判断ごとのチップ（押すとその場面へ）。
-class _ReviewSummary extends StatelessWidget {
-  const _ReviewSummary({
-    required this.review,
-    required this.currentEventIndex,
-    required this.onJump,
-  });
-
-  final PracticeHandReview review;
-  final int currentEventIndex;
-  final ValueChanged<ReviewedDecision> onJump;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Expanded(
-                child: Text(
-                  'あなたの判断',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-              ),
-              for (final verdict in PracticeVerdict.values)
-                Padding(
-                  padding: const EdgeInsets.only(left: AppSpacing.sm),
-                  child: Text(
-                    '${verdict.symbol}${review.countOf(verdict)}',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                      color: practiceVerdictColor(verdict),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          if (review.decisions.isNotEmpty) ...[
-            const SizedBox(height: AppSpacing.sm),
-            const Text(
-              '押すと、その判断の場面に移動します',
-              style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Wrap(
-              spacing: AppSpacing.sm,
-              runSpacing: AppSpacing.xs,
-              children: [
-                for (final decision in review.decisions)
-                  _DecisionChip(
-                    decision: decision,
-                    selected: decision.eventIndex == currentEventIndex,
-                    onTap: () => onJump(decision),
-                  ),
-              ],
-            ),
-          ],
-          if (review.ungradedCount > 0)
-            Padding(
-              padding: const EdgeInsets.only(top: AppSpacing.sm),
-              child: Text(
-                '採点できなかった判断: ${review.ungradedCount}件'
-                '（以前の打ち方の AI と対戦した記録など）',
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: AppColors.textMuted,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _DecisionChip extends StatelessWidget {
-  const _DecisionChip({
-    required this.decision,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final ReviewedDecision decision;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final verdict = decision.chosen.verdict;
-    final color = practiceVerdictColor(verdict);
-    return ActionChip(
-      onPressed: onTap,
-      backgroundColor: selected
-          ? color.withValues(alpha: 0.18)
-          : AppColors.surface,
-      side: BorderSide(color: color.withValues(alpha: selected ? 0.8 : 0.4)),
-      label: Text(
-        '${verdict.symbol} ${decision.street.label} '
-        '${decision.chosen.option.label}',
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
     );
   }
 }

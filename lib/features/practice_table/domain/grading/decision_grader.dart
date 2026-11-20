@@ -59,7 +59,7 @@ class PracticeDecisionGrader {
     if (!state.isHeroTurn || choices == null) return null;
 
     final options = _optionsFor(choices);
-    if (_isOpeningDecision(state)) {
+    if (isOpeningDecision(state)) {
       final byTable = _gradeByRangeTable(state, options);
       if (byTable != null) return byTable;
     }
@@ -77,7 +77,7 @@ class PracticeDecisionGrader {
 
   /// プリフロップで、ヒーローがまだ一度も行動していない（= オープンするか
   /// 決める）場面か。
-  static bool _isOpeningDecision(PracticeHandState state) =>
+  static bool isOpeningDecision(PracticeHandState state) =>
       state.street == Street.preflop &&
       !state.actions.any((action) => action.actor == Actor.hero);
 

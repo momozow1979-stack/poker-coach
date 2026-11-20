@@ -10,10 +10,13 @@ import '../../../shared/widgets/learning_mode_bar.dart';
 import '../../../shared/widgets/poker_table_view.dart';
 import '../../hand_review/domain/hand_flow.dart' show Actor;
 import '../application/practice_providers.dart';
+import '../domain/grading/decision_grade.dart' show formatBb;
+import '../domain/grading/decision_reason.dart';
 import '../domain/practice_hand_state.dart';
 import 'practice_history_page.dart';
 import 'practice_replay_page.dart';
 import 'widgets/practice_feedback_panel.dart';
+import 'widgets/practice_hand_summary.dart';
 
 /// AI（ヴィラン）相手のリアルタイム練習画面。
 ///
@@ -106,6 +109,10 @@ class _PracticeBody extends ConsumerWidget {
                 const SizedBox(height: AppSpacing.md),
                 if (snapshot.isOpponentThinking) const _ThinkingIndicator(),
                 if (hand.isOver) _ResultBanner(hand: hand),
+                if (hand.isOver && snapshot.finishedRecord != null) ...[
+                  const SizedBox(height: AppSpacing.md),
+                  PracticeHandSummary(record: snapshot.finishedRecord!),
+                ],
               ],
             ),
           ),
@@ -121,7 +128,8 @@ class _PracticeBody extends ConsumerWidget {
         else if (snapshot.isGrading)
           const _GradingIndicator()
         else if (!hand.isOver && hand.isHeroTurn)
-          _ActionBar(hand: hand),
+          // 場面が変わったら（イベントが増えたら）選びかけの状態を捨てる。
+          _ActionBar(key: ValueKey(hand.actions.length), hand: hand),
         if (hand.isOver)
           Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
@@ -140,7 +148,7 @@ class _PracticeBody extends ConsumerWidget {
                             ),
                           ),
                     icon: const Icon(Icons.replay_rounded, size: 18),
-                    label: const Text('振り返る'),
+                    label: const Text('1手ずつ振り返る'),
                   ),
                 ),
                 const SizedBox(width: AppSpacing.md),
@@ -451,59 +459,230 @@ class _ResultBanner extends StatelessWidget {
   }
 }
 
-class _ActionBar extends ConsumerWidget {
-  const _ActionBar({required this.hand});
+/// ヒーローのアクションを、考える順番どおりに 3 段階で選ぶ。
+///
+/// 1. 何をするか（フォールド / チェック / コール / ベット / レイズ / オールイン）
+/// 2. ベット・レイズなら、いくら賭けるか
+/// 3. なぜそうするか（理由）
+///
+/// 額ごとのボタンを最初から並べると「どの額のボタンを押すか」になってしまい、
+/// 「まず行動を決め、次に額、そして理由」という思考の流れが身に付かないため。
+class _ActionBar extends ConsumerStatefulWidget {
+  const _ActionBar({super.key, required this.hand});
 
   final PracticeHandState hand;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final choices = hand.choices;
+  ConsumerState<_ActionBar> createState() => _ActionBarState();
+}
+
+class _ActionBarState extends ConsumerState<_ActionBar> {
+  PokerActionType? _action;
+  double? _size;
+
+  /// 額を選び終えた（または額が要らないアクションを選んだ）。
+  bool _sizeDone = false;
+
+  void _reset() => setState(() {
+    _action = null;
+    _size = null;
+    _sizeDone = false;
+  });
+
+  void _pickAction(PokerActionType action) {
+    final needsSize =
+        action == PokerActionType.bet || action == PokerActionType.raise;
+    setState(() {
+      _action = action;
+      _size = null;
+      _sizeDone = !needsSize;
+    });
+    if (!needsSize) _submitIfNoReason();
+  }
+
+  void _pickSize(double size) {
+    setState(() {
+      _size = size;
+      _sizeDone = true;
+    });
+    _submitIfNoReason();
+  }
+
+  /// 理由を聞かない場面（候補が無い）は、そのまま確定する。
+  void _submitIfNoReason() {
+    final action = _action!;
+    if (DecisionReason.optionsFor(widget.hand, action).isEmpty) {
+      _submit(null);
+    }
+  }
+
+  void _submit(DecisionReason? reason) {
+    final action = _action!;
+    final size = _size;
+    _reset();
+    ref
+        .read(practiceTableProvider.notifier)
+        .heroAct(action, sizeBb: size, reason: reason);
+  }
+
+  String get _chosenLabel {
+    final action = _action!;
+    return _size == null
+        ? action.description
+        : '${action.description} ${formatBb(_size!)}BB';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final choices = widget.hand.choices;
     if (choices == null) return const SizedBox.shrink();
-    final controller = ref.read(practiceTableProvider.notifier);
+
+    final action = _action;
+    final Widget step;
+    if (action == null) {
+      step = _ActionStep(choices: choices, onPick: _pickAction);
+    } else if (!_sizeDone) {
+      step = _StepFrame(
+        title: '${action.description}額を選ぶ',
+        onBack: _reset,
+        child: Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          alignment: WrapAlignment.center,
+          children: [
+            for (final size in choices.presetSizesBb)
+              _ActionButton(
+                action: action,
+                label: '${formatBb(size)}BB',
+                onPressed: () => _pickSize(size),
+              ),
+          ],
+        ),
+      );
+    } else {
+      final reasons = DecisionReason.optionsFor(widget.hand, action);
+      step = _StepFrame(
+        title: 'なぜ「$_chosenLabel」？',
+        onBack: _reset,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final reason in reasons)
+              Padding(
+                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                child: OutlinedButton(
+                  onPressed: () => _submit(reason),
+                  style: OutlinedButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: AppSpacing.md,
+                      vertical: AppSpacing.sm,
+                    ),
+                  ),
+                  child: Text(
+                    reason.label,
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+    }
 
     return Container(
       padding: const EdgeInsets.all(AppSpacing.md),
       decoration: const BoxDecoration(
         border: Border(top: BorderSide(color: AppColors.border)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (choices.facingBet)
-            Padding(
-              padding: const EdgeInsets.only(bottom: AppSpacing.sm),
-              child: Text('コール ${choices.toCallBb}BB'),
-            ),
-          Wrap(
-            spacing: AppSpacing.sm,
-            runSpacing: AppSpacing.sm,
-            alignment: WrapAlignment.center,
-            children: [
-              for (final action in choices.choices)
-                if (action == PokerActionType.bet ||
-                    action == PokerActionType.raise)
-                  for (final size in choices.presetSizesBb)
-                    _ActionButton(
-                      action: action,
-                      label: '${action.description} ${_formatBb(size)}',
-                      onPressed: () => controller.heroAct(action, sizeBb: size),
-                    )
-                else
-                  _ActionButton(
-                    action: action,
-                    label: action.description,
-                    onPressed: () => controller.heroAct(action),
-                  ),
-            ],
-          ),
-        ],
-      ),
+      child: step,
     );
   }
+}
 
-  static String _formatBb(double value) =>
-      value == value.roundToDouble() ? value.toInt().toString() : '$value';
+/// 1 段目: 何をするか。
+class _ActionStep extends StatelessWidget {
+  const _ActionStep({required this.choices, required this.onPick});
+
+  final PracticeActionChoices choices;
+  final ValueChanged<PokerActionType> onPick;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: AppSpacing.sm),
+          child: Text(
+            choices.facingBet
+                ? 'どうする？（コールに ${formatBb(choices.toCallBb)}BB 必要）'
+                : 'どうする？',
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+          ),
+        ),
+        Wrap(
+          spacing: AppSpacing.sm,
+          runSpacing: AppSpacing.sm,
+          alignment: WrapAlignment.center,
+          children: [
+            for (final action in choices.choices)
+              _ActionButton(
+                action: action,
+                label: action == PokerActionType.call
+                    ? 'コール ${formatBb(choices.toCallBb)}BB'
+                    : action.description,
+                onPressed: () => onPick(action),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// 2・3 段目の枠（見出しと「戻る」）。
+class _StepFrame extends StatelessWidget {
+  const _StepFrame({
+    required this.title,
+    required this.onBack,
+    required this.child,
+  });
+
+  final String title;
+  final VoidCallback onBack;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'アクションを選び直す',
+              onPressed: onBack,
+              icon: const Icon(Icons.arrow_back_rounded, size: 20),
+              visualDensity: VisualDensity.compact,
+            ),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: AppSpacing.xs),
+        child,
+      ],
+    );
+  }
 }
 
 class _ActionButton extends StatelessWidget {
