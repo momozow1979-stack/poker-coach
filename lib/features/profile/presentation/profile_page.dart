@@ -14,6 +14,7 @@ import '../../../shared/widgets/trend_chart.dart';
 import '../../auth/presentation/account_card.dart';
 import '../application/learning_providers.dart';
 import '../application/progress_providers.dart';
+import '../infrastructure/learning_sync_service.dart';
 import 'widgets/category_accuracy_list.dart';
 
 /// マイページ / 学習履歴。
@@ -26,6 +27,13 @@ class ProfilePage extends ConsumerWidget {
     final rank = ref.watch(growthRankProvider);
     final stats = ref.watch(learningStatsProvider);
     final reviews = ref.watch(handReviewHistoryProvider);
+    final sync = ref.watch(learningSyncControllerProvider);
+    final syncing = sync.phase == SyncPhase.syncing;
+    // まだ何も表示できる記録が無いのに同期中 = サーバーから読み込んでいる最中。
+    // ここで 0 を出すと「データが消えた」と見えるので、数字の代わりに「…」にする。
+    final waitingForServer =
+        syncing && stats.totalAnswered == 0 && reviews.isEmpty;
+    String shown(Object value) => waitingForServer ? '…' : '$value';
     final weak = stats.weakCategories();
     final strong = stats.strongCategories();
 
@@ -112,7 +120,11 @@ class ProfilePage extends ConsumerWidget {
                 ],
               ),
             ),
-            if (stats.totalAnswered == 0 && reviews.isEmpty) ...[
+            if (syncing) ...[
+              const SizedBox(height: AppSpacing.lg),
+              _SyncProgress(waitingForServer: waitingForServer),
+            ],
+            if (!syncing && stats.totalAnswered == 0 && reviews.isEmpty) ...[
               const SizedBox(height: AppSpacing.lg),
               AppCard(
                 child: EmptyState(
@@ -132,7 +144,7 @@ class ProfilePage extends ConsumerWidget {
                 Expanded(
                   child: StatTile(
                     label: '連続学習',
-                    value: '${stats.streakDays}',
+                    value: shown(stats.streakDays),
                     unit: '日',
                     icon: Icons.local_fire_department_rounded,
                     valueColor: AppColors.warning,
@@ -142,7 +154,7 @@ class ProfilePage extends ConsumerWidget {
                 Expanded(
                   child: StatTile(
                     label: '解いた問題',
-                    value: '${stats.totalAnswered}',
+                    value: shown(stats.totalAnswered),
                     unit: '問',
                     icon: Icons.quiz_outlined,
                   ),
@@ -155,7 +167,7 @@ class ProfilePage extends ConsumerWidget {
                 Expanded(
                   child: StatTile(
                     label: '総合正答率',
-                    value: '${(stats.accuracy * 100).round()}',
+                    value: shown((stats.accuracy * 100).round()),
                     unit: '%',
                     icon: Icons.percent_rounded,
                     valueColor: AppColors.accent,
@@ -165,7 +177,7 @@ class ProfilePage extends ConsumerWidget {
                 Expanded(
                   child: StatTile(
                     label: 'レビュー',
-                    value: '${reviews.length}',
+                    value: shown(reviews.length),
                     unit: '件',
                     icon: Icons.rate_review_outlined,
                   ),
@@ -178,7 +190,7 @@ class ProfilePage extends ConsumerWidget {
                 Expanded(
                   child: StatTile(
                     label: '直近7日の学習日',
-                    value: '${stats.activeDaysLast7}',
+                    value: shown(stats.activeDaysLast7),
                     unit: '日',
                     icon: Icons.calendar_today_rounded,
                   ),
@@ -187,7 +199,7 @@ class ProfilePage extends ConsumerWidget {
                 Expanded(
                   child: StatTile(
                     label: '直近30日の学習日',
-                    value: '${stats.activeDaysLast30}',
+                    value: shown(stats.activeDaysLast30),
                     unit: '日',
                     icon: Icons.calendar_month_rounded,
                   ),
@@ -338,5 +350,70 @@ class ProfilePage extends ConsumerWidget {
     if (name != null && name.trim().isNotEmpty) {
       await ref.read(profileStoreProvider.notifier).setNickname(name);
     }
+  }
+}
+
+/// 同期中の進行バー。
+///
+/// 送受信する件数は終わるまで分からないので、何%かは出せない。
+/// 「動いている」ことが分かる流れるバーにする。
+class _SyncProgress extends StatelessWidget {
+  const _SyncProgress({required this.waitingForServer});
+
+  /// まだ記録が 1 件も表示できていない（＝ログイン直後など）。
+  final bool waitingForServer;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.cloud_sync_rounded,
+                size: 18,
+                color: AppColors.info,
+              ),
+              const SizedBox(width: AppSpacing.sm),
+              Expanded(
+                child: Text(
+                  waitingForServer
+                      ? 'サーバーから学習の記録を読み込んでいます…'
+                      : '最新の記録をサーバーと確認しています…',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: AppSpacing.sm),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: const LinearProgressIndicator(
+              minHeight: 6,
+              color: AppColors.info,
+              backgroundColor: AppColors.surfaceHigh,
+            ),
+          ),
+          if (waitingForServer) ...[
+            const SizedBox(height: AppSpacing.sm),
+            const Text(
+              'ログイン直後や、しばらく使っていなかったあとは時間がかかることがあります。'
+              '記録は消えていないので、このままお待ちください。',
+              style: TextStyle(
+                fontSize: 12,
+                height: 1.6,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
