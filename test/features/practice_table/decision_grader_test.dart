@@ -87,7 +87,7 @@ void main() {
     });
 
     test('境界の手（mixed）は、レイズもフォールドも○', () {
-      final engine = _engine(['Kh', '4h', 'Ac', 'Kd']);
+      final engine = _engine(['Kh', '2h', 'Ac', 'Kd']);
       final grade = _grader.grade(engine.events)!;
 
       expect(grade.rangeAction, RangeAction.mixed);
