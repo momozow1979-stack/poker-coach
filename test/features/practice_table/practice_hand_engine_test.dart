@@ -86,6 +86,41 @@ void main() {
     });
   });
 
+  group('オールイン', () {
+    test('額を指定しないオールインは、手元のチップ全部を出す（コール扱いにしない）', () {
+      final engine = PracticeHandEngine(deck: _deck());
+      engine.apply(Actor.hero, PokerActionType.allIn);
+
+      final state = engine.state;
+      expect(state.heroStack, 0);
+      expect(state.actorToAct, Actor.villain);
+      expect(state.villainToCallBb, 99); // 100 揃えるのに BB の 1 を引いた額
+    });
+
+    test('オールインにコールされたら、残りのボードを最後まで配ってショーダウン', () {
+      final engine = PracticeHandEngine(deck: _deck());
+      engine.apply(Actor.hero, PokerActionType.allIn);
+      engine.apply(Actor.villain, PokerActionType.call);
+
+      final state = engine.state;
+      expect(state.isOver, isTrue);
+      expect(state.sawShowdown, isTrue);
+      expect(state.board.length, 5);
+      expect(state.winner, Actor.hero); // AA vs 72o
+      // デッドマネー 0.5(SB) + 双方 100。
+      expect(state.pot, 200.5);
+    });
+
+    test('スタックを超えるレイズは、実際に出せた額までしか相手に求めない', () {
+      final engine = PracticeHandEngine(deck: _deck());
+      engine.apply(Actor.hero, PokerActionType.raise, sizeBb: 300);
+
+      final state = engine.state;
+      expect(state.heroStack, 0);
+      expect(state.villainToCallBb, 99); // 300 ではなく実際の 100 にそろえる
+    });
+  });
+
   group('手番でない側が行動しようとするとエラー', () {
     test('プリフロップでいきなりヴィランを動かすと例外', () {
       final engine = PracticeHandEngine(deck: _deck());

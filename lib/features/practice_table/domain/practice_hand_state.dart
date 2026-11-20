@@ -192,8 +192,10 @@ class _ReplayEngine {
     _streetPut[Actor.villain] = 0;
     _actedThisStreet[Actor.hero] = 0;
     _actedThisStreet[Actor.villain] = 0;
-    // フロップ以降は BB(ヴィラン) が先。
-    _actorToAct = Actor.villain;
+    // フロップ以降は BB(ヴィラン) が先。ただし、どちらかがオールインで
+    // チップが残っていなければ、もう賭けは起きないので誰の番にもしない
+    // （エンジンが残りのボードを続けて配る）。
+    _actorToAct = heroStack <= 0 || villainStack <= 0 ? null : Actor.villain;
   }
 
   void applyAction(ActionOccurred event) {
@@ -216,9 +218,18 @@ class _ReplayEngine {
       case PokerActionType.bet:
       case PokerActionType.raise:
       case PokerActionType.allIn:
-        final target = event.sizeBb ?? currentBet;
+        // オールインは額を指定しない（手元のチップ全部）。以前は額が無いと
+        // 「今の賭け額にそろえる」= コールと同じ扱いになっていた。
+        final target =
+            event.sizeBb ??
+            (event.action == PokerActionType.allIn
+                ? (_streetPut[actor] ?? 0) + _stackOf(actor)
+                : currentBet);
         _commit(actor, target - (_streetPut[actor] ?? 0));
-        currentBet = target;
+        // スタックが足りずに指定額まで出せなかった場合は、実際に出した額を
+        // 揃えるべき額にする（出していない額を相手にコールさせない）。
+        final put = _streetPut[actor] ?? 0;
+        if (put > currentBet) currentBet = put;
     }
 
     final bothActed =
