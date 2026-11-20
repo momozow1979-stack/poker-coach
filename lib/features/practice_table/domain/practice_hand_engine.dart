@@ -89,16 +89,20 @@ class PracticeHandEngine {
       }
       return;
     }
-    if (!after.isAwaitingNextStreet) return;
-
-    final next = _nextStreet(after.street);
-    if (next == null) {
-      _finishAtShowdown(after);
-      return;
+    // オールインで誰もチップが残っていなければ、配った直後も誰の番にも
+    // ならないので、ショーダウンまで続けて配る。
+    var current = after;
+    while (current.isAwaitingNextStreet) {
+      final next = _nextStreet(current.street);
+      if (next == null) {
+        _finishAtShowdown(current);
+        return;
+      }
+      _events.add(
+        BoardDealt(street: next, cards: _deck.draw(_boardCountFor(next))),
+      );
+      current = state;
     }
-    _events.add(
-      BoardDealt(street: next, cards: _deck.draw(_boardCountFor(next))),
-    );
   }
 
   void _finishAtShowdown(PracticeHandState atRiver) {

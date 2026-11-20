@@ -12,6 +12,7 @@ import '../../hand_review/domain/hand_flow.dart' show Actor;
 import '../application/practice_providers.dart';
 import '../domain/practice_hand_state.dart';
 import 'practice_history_page.dart';
+import 'widgets/practice_feedback_panel.dart';
 
 /// AI（ヴィラン）相手のリアルタイム練習画面。
 ///
@@ -77,6 +78,8 @@ class _PracticeBody extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hand = snapshot.hand;
+    final controller = ref.read(practiceTableProvider.notifier);
+    final feedback = snapshot.feedback;
 
     return Column(
       children: [
@@ -85,6 +88,11 @@ class _PracticeBody extends ConsumerWidget {
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               children: [
+                _BeginnerModeSwitch(
+                  enabled: snapshot.beginnerMode,
+                  onChanged: controller.setBeginnerMode,
+                ),
+                const SizedBox(height: AppSpacing.md),
                 PokerTableView(
                   tableType: hand.tableType,
                   heroPosition: hand.heroPosition,
@@ -101,7 +109,18 @@ class _PracticeBody extends ConsumerWidget {
             ),
           ),
         ),
-        if (!hand.isOver && hand.isHeroTurn) _ActionBar(hand: hand),
+        if (feedback != null)
+          PracticeFeedbackPanel(
+            feedback: feedback,
+            heroCards: hand.heroCards,
+            board: hand.board,
+            onRetry: controller.retryDecision,
+            onConfirm: controller.confirmFeedback,
+          )
+        else if (snapshot.isGrading)
+          const _GradingIndicator()
+        else if (!hand.isOver && hand.isHeroTurn)
+          _ActionBar(hand: hand),
         if (hand.isOver)
           Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
@@ -278,6 +297,77 @@ class _DealtCardState extends State<_DealtCard> {
       card: widget.card,
       faceUp: _faceUp,
       width: widget.width,
+    );
+  }
+}
+
+/// 初心者モード（1 手ごとに○△×）の切り替え。
+class _BeginnerModeSwitch extends StatelessWidget {
+  const _BeginnerModeSwitch({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.only(left: AppSpacing.md),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.school_rounded, size: 20, color: AppColors.accent),
+          const SizedBox(width: AppSpacing.sm),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '初心者モード',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  '1手ごとに○△×と理由を表示。やり直しもできます',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(value: enabled, onChanged: onChanged),
+        ],
+      ),
+    );
+  }
+}
+
+class _GradingIndicator extends StatelessWidget {
+  const _GradingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(AppSpacing.lg),
+      decoration: const BoxDecoration(
+        border: Border(top: BorderSide(color: AppColors.border)),
+      ),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: AppSpacing.sm),
+          Text('採点中…', style: TextStyle(color: AppColors.textSecondary)),
+        ],
+      ),
     );
   }
 }

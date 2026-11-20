@@ -50,7 +50,13 @@
 - Riverpod 3 では `AsyncValue.valueOrNull` は存在しない。`AsyncValue.value` を使う。
 - ウィジェットテストで `scrollUntilVisible` は `.first` を含む finder だと失敗することがある。
   `find.byType(Scrollable).first` を手動でループしてドラッグする。
-- **Flutter Web は aria-label を出力しない。** Playwright で要素を掴むときはテキストではなく座標で操作する。
+- **Flutter Web はそのままでは要素のテキストを DOM に出さない。**
+  `document.querySelector('flt-semantics-placeholder').click()` でセマンティクスを有効にすると、
+  `flt-semantics[role="button"]` にボタンの文言が入る。Playwright ではその要素の
+  `getBoundingClientRect()` の中心を `page.mouse.click` で押せば、文言を手がかりに操作できる。
+- 練習テーブル（AI 対戦）の採点は `lib/features/practice_table/domain/grading/`。
+  相手 AI の打ち方を変えたら、採点も同じ打ち方で計算されるので、
+  `decision_grader_test.dart` の前提（どの手でベット・降りるか）を見直すこと。
 - **日本語フォントは Google Fonts のランタイム取得に頼らない。**
   このネットワーク環境ではブラウザから fonts.gstatic.com に到達できず、文字が豆腐（□）になる。
   Noto Sans JP を `assets/fonts/` に同梱済み（Regular 400 + Bold 700）。新しいフォントを足すときも同梱すること。
