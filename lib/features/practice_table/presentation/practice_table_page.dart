@@ -12,6 +12,7 @@ import '../../hand_review/domain/hand_flow.dart' show Actor;
 import '../application/practice_providers.dart';
 import '../domain/practice_hand_state.dart';
 import 'practice_history_page.dart';
+import 'practice_replay_page.dart';
 import 'widgets/practice_feedback_panel.dart';
 
 /// AI（ヴィラン）相手のリアルタイム練習画面。
@@ -124,13 +125,32 @@ class _PracticeBody extends ConsumerWidget {
         if (hand.isOver)
           Padding(
             padding: const EdgeInsets.all(AppSpacing.lg),
-            child: SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: () =>
-                    ref.read(practiceTableProvider.notifier).startNewHand(),
-                child: const Text('次のハンド'),
-              ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    // 保存が終わるまでは記録が無いので押せない（すぐ終わる）。
+                    onPressed: snapshot.finishedRecord == null
+                        ? null
+                        : () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => PracticeReplayPage(
+                                record: snapshot.finishedRecord!,
+                              ),
+                            ),
+                          ),
+                    icon: const Icon(Icons.replay_rounded, size: 18),
+                    label: const Text('振り返る'),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: controller.startNewHand,
+                    child: const Text('次のハンド'),
+                  ),
+                ),
+              ],
             ),
           ),
       ],
@@ -321,17 +341,19 @@ class _BeginnerModeSwitch extends StatelessWidget {
         children: [
           const Icon(Icons.school_rounded, size: 20, color: AppColors.accent),
           const SizedBox(width: AppSpacing.sm),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   '初心者モード',
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
                 ),
                 Text(
-                  '1手ごとに○△×と理由を表示。やり直しもできます',
-                  style: TextStyle(
+                  enabled
+                      ? '1手ごとに○△×と理由を表示。やり直しもできます'
+                      : 'オフ: 最後まで通してプレイし、終わってから振り返ります',
+                  style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.textSecondary,
                   ),
