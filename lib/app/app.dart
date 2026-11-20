@@ -65,6 +65,14 @@ class _MainAppState extends ConsumerState<_MainApp> {
   Widget build(BuildContext context) {
     // 認証状態の変化を受け取り続けるために、ここで生かしておく。
     ref.watch(accountProvider);
+    // Googleログインから戻ってきた時など、画面の外でアカウントが
+    // 切り替わったら、すぐにそのアカウントの履歴を取り直す
+    // （以前はアプリを開き直すまで、前のアカウントの表示のままだった）。
+    ref.listen(accountProvider, (previous, next) {
+      if (next != null && previous?.id != next.id) {
+        ref.read(learningSyncControllerProvider.notifier).syncNow();
+      }
+    });
 
     return MaterialApp.router(
       title: 'AI Poker Coach',

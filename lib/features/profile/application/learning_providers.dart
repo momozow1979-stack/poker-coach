@@ -100,7 +100,15 @@ final learningStoreProvider = NotifierProvider<LearningStore, LearningRecord>(
 class LearningSyncController extends Notifier<SyncStatus> {
   Future<void> _queue = Future<void>.value();
   Timer? _retryTimer;
-  bool _syncing = false;
+
+  /// 実行中の同期（無ければ null）。
+  Future<void>? _inFlight;
+
+  /// 同期中に [syncNow] がもう一度呼ばれた（ログインでアカウントが
+  /// 切り替わった等）。今の同期が終わったら、もう 1 回やり直す。
+  /// 以前は「同期中なら何もしない」だったため、切り替え後の取り直しが
+  /// 黙って飛ばされることがあった。
+  bool _rerunRequested = false;
 
   /// 未送信ぶんの再送間隔。
   static const retryInterval = Duration(seconds: 60);
@@ -147,32 +155,47 @@ class LearningSyncController extends Notifier<SyncStatus> {
   }
 
   /// 未送信ぶんを送り、サーバー側の履歴を取り込む。
-  Future<void> syncNow() async {
-    if (!ref.mounted) return;
+  ///
+  /// 同期中に呼ばれたら、今の同期のあとにもう 1 回同期し、
+  /// 両方が終わってから完了する（呼び出し側は「呼んだ時点のアカウント」の
+  /// 履歴が取り込まれたあとに続きを実行できる）。
+  Future<void> syncNow() {
+    if (!ref.mounted) return Future<void>.value();
     if (!_service.isRemoteEnabled) {
       state = state.copyWith(
         phase: SyncPhase.offline,
         message: 'サーバーに接続していないため、この端末にだけ保存しています。',
       );
-      return;
+      return Future<void>.value();
     }
-    if (_syncing) return;
-    _syncing = true;
+    final running = _inFlight;
+    if (running != null) {
+      _rerunRequested = true;
+      return running;
+    }
+    final run = _syncUntilSettled().whenComplete(() => _inFlight = null);
+    _inFlight = run;
+    return run;
+  }
+
+  Future<void> _syncUntilSettled() async {
+    do {
+      _rerunRequested = false;
+      await _syncOnce();
+    } while (_rerunRequested && ref.mounted);
+    if (ref.mounted) _scheduleRetryIfNeeded();
+  }
+
+  Future<void> _syncOnce() async {
     _retryTimer?.cancel();
     state = state.copyWith(phase: SyncPhase.syncing, clearMessage: true);
-
-    try {
-      await _enqueue(() async {
-        final outcome = await _service.synchronize();
-        if (!ref.mounted) return;
-        ref.read(learningStoreProvider.notifier).replace(outcome.record);
-        state = outcome.status;
-      });
-      await _refreshProfile();
-    } finally {
-      _syncing = false;
-    }
-    if (ref.mounted) _scheduleRetryIfNeeded();
+    await _enqueue(() async {
+      final outcome = await _service.synchronize();
+      if (!ref.mounted) return;
+      ref.read(learningStoreProvider.notifier).replace(outcome.record);
+      state = outcome.status;
+    });
+    await _refreshProfile();
   }
 
   Future<void> _refreshProfile() async {
