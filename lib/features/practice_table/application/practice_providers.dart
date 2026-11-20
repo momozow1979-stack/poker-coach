@@ -9,6 +9,7 @@ import '../../profile/application/learning_providers.dart'
 import '../domain/grading/decision_grade.dart';
 import '../domain/grading/decision_grader.dart';
 import '../domain/grading/grade_explainer.dart';
+import '../domain/grading/hand_reviewer.dart';
 import '../domain/practice_deck.dart';
 import '../domain/practice_hand_engine.dart';
 import '../domain/practice_hand_record.dart';
@@ -32,6 +33,26 @@ final practiceHistoryProvider = FutureProvider<List<PracticeHandRecord>>(
   (ref) => ref.watch(practiceHandRepositoryProvider).recent(),
 );
 
+/// 対戦相手の AI。プレイ・初心者モードの判定・振り返りの採点が
+/// 必ず同じ打ち方を使うよう、ここ 1 か所で決める。
+final practiceOpponentProvider = Provider<PracticeOpponent>(
+  (ref) => const SimplePracticeOpponent(),
+);
+
+final practiceGraderProvider = Provider<PracticeDecisionGrader>(
+  (ref) =>
+      PracticeDecisionGrader(opponent: ref.watch(practiceOpponentProvider)),
+);
+
+/// 終わったハンドの振り返り（ヒーローの判断すべての採点）。
+final practiceHandReviewProvider = FutureProvider.autoDispose
+    .family<PracticeHandReview, PracticeHandRecord>(
+      (ref, record) => PracticeHandReviewer.review(
+        record.events,
+        ref.watch(practiceGraderProvider),
+      ),
+    );
+
 /// 初心者モードで、選んだアクションに出す判定。
 class PracticeFeedback {
   const PracticeFeedback({
@@ -54,6 +75,7 @@ class PracticeTableSnapshot {
     this.beginnerMode = true,
     this.isGrading = false,
     this.feedback,
+    this.finishedRecord,
   });
 
   final PracticeHandState hand;
@@ -69,6 +91,10 @@ class PracticeTableSnapshot {
 
   /// 初心者モードで、選んだアクションへの判定（まだ確定していない）。
   final PracticeFeedback? feedback;
+
+  /// ハンドが終わって保存された記録。振り返り画面に渡す。保存が終わる
+  /// までは null。
+  final PracticeHandRecord? finishedRecord;
 }
 
 /// 1 ハンドの進行を、AI の応手も含めて管理する。
@@ -77,15 +103,16 @@ class PracticeTableSnapshot {
 /// AI の手番を進める・ストリートを送る・履歴を保存する、といった
 /// 段取りはすべてここに閉じる。
 class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
-  static const _opponent = SimplePracticeOpponent();
+  PracticeOpponent get _opponent => ref.read(practiceOpponentProvider);
 
   /// 採点は、実際に対戦している AI と同じ打ち方で計算する。
-  static const _grader = PracticeDecisionGrader(opponent: _opponent);
+  PracticeDecisionGrader get _grader => ref.read(practiceGraderProvider);
 
   PracticeHandEngine? _engine;
   bool _beginnerMode = true;
   bool _grading = false;
   PracticeFeedback? _feedback;
+  PracticeHandRecord? _finishedRecord;
 
   /// 同じ判断の場面で何度やり直しても計算し直さないよう、
   /// イベント数をキーに覚えておく（新しいハンドで捨てる）。
@@ -101,6 +128,7 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
     _engine = engine;
     _feedback = null;
     _grading = false;
+    _finishedRecord = null;
     _gradeCache.clear();
     _publish(engine, thinking: false);
     unawaited(_driveOpponentIfNeeded(engine));
@@ -214,17 +242,20 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
     PracticeHandState hand,
   ) async {
     final repository = ref.read(practiceHandRepositoryProvider);
-    await repository.save(
-      PracticeHandRecord(
-        id: '${DateTime.now().microsecondsSinceEpoch}',
-        createdAt: DateTime.now(),
-        events: engine.events,
-        endedByFold: hand.endedByFold,
-        winner: hand.winner,
-        finalPotBb: hand.pot,
-      ),
+    final record = PracticeHandRecord(
+      id: '${DateTime.now().microsecondsSinceEpoch}',
+      createdAt: DateTime.now(),
+      events: engine.events,
+      endedByFold: hand.endedByFold,
+      winner: hand.winner,
+      finalPotBb: hand.pot,
     );
+    await repository.save(record);
     ref.invalidate(practiceHistoryProvider);
+    // 保存している間に新しいハンドが始まっていたら、古い記録は出さない。
+    if (!identical(_engine, engine)) return;
+    _finishedRecord = record;
+    _publish(engine, thinking: false);
   }
 
   void _publish(PracticeHandEngine engine, {required bool thinking}) {
@@ -234,6 +265,7 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
       beginnerMode: _beginnerMode,
       isGrading: _grading,
       feedback: _feedback,
+      finishedRecord: _finishedRecord,
     );
   }
 }
