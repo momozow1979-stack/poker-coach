@@ -5,11 +5,12 @@ import '../../app/router.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_spacing.dart';
 
-/// 学習タブの3つの入り口。
+/// 学習タブの入り口。
 enum LearningMode {
   quiz('座学', Icons.menu_book_rounded),
   trainer('ハンドトレーナー', Icons.route_rounded),
-  practice('AI相手に練習', Icons.smart_toy_outlined);
+  practice('AI相手に練習', Icons.smart_toy_outlined),
+  drill('ドリル', Icons.bolt_rounded);
 
   const LearningMode(this.label, this.icon);
 
@@ -67,6 +68,8 @@ class _ModeButton extends StatelessWidget {
         context.go(AppRoutes.trainer);
       case LearningMode.practice:
         context.go(AppRoutes.practiceTable);
+      case LearningMode.drill:
+        context.go(AppRoutes.drills);
     }
   }
 

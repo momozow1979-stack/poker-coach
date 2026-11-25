@@ -20,6 +20,10 @@ import '../features/range_chart/presentation/position_range_drill_page.dart';
 import '../features/range_chart/presentation/range_drill_page.dart';
 import '../features/range_chart/presentation/range_page.dart';
 import '../features/settings/presentation/settings_page.dart';
+import '../features/drills/presentation/bluff_drill_page.dart';
+import '../features/drills/presentation/drill_hub_page.dart';
+import '../features/drills/presentation/equity_quiz_page.dart';
+import '../features/drills/presentation/preflop_drill_page.dart';
 import 'app_shell.dart';
 
 /// 画面のパス定義。
@@ -48,6 +52,18 @@ abstract final class AppRoutes {
 
   /// AI 相手のリアルタイム練習（学習タブの下）。
   static const practiceTable = '/quiz/practice';
+
+  /// ドリル（短い問題をテンポよく繰り返す練習）の入口。
+  static const drills = '/quiz/drills';
+
+  /// プリフロップ連続ドリル。
+  static const preflopDrill = '/quiz/drills/preflop';
+
+  /// 勝率クイズ。
+  static const equityQuiz = '/quiz/drills/equity';
+
+  /// ブラフ練習。
+  static const bluffDrill = '/quiz/drills/bluff';
 
   /// カテゴリを指定した復習クイズ。
   static String categoryQuiz(String categoryId) => '/quiz/category/$categoryId';
@@ -133,6 +149,24 @@ final routerProvider = Provider<GoRouter>((ref) {
                   GoRoute(
                     path: 'practice',
                     builder: (context, state) => const PracticeTablePage(),
+                  ),
+                  GoRoute(
+                    path: 'drills',
+                    builder: (context, state) => const DrillHubPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'preflop',
+                        builder: (context, state) => const PreflopDrillPage(),
+                      ),
+                      GoRoute(
+                        path: 'equity',
+                        builder: (context, state) => const EquityQuizPage(),
+                      ),
+                      GoRoute(
+                        path: 'bluff',
+                        builder: (context, state) => const BluffDrillPage(),
+                      ),
+                    ],
                   ),
                 ],
               ),

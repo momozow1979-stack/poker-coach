@@ -93,6 +93,15 @@ class HandRead {
     final isPocketPair =
         hole.length == 2 && hole[0].rank.strength == hole[1].rank.strength;
 
+    // ボードに出ているペアは誰でも使えるので、自分の役ではない。
+    // 「7 のトップペア」と言うと 7 を持っているように読めてしまう。
+    if (!hole.any((card) => card.rank.strength == paired)) {
+      final high = hole
+          .map((card) => card.rank)
+          .reduce((a, b) => a.strength >= b.strength ? a : b);
+      return 'ボードの $symbol のペアだけ（手札は ${high.symbol}ハイ）';
+    }
+
     final String position;
     if (isPocketPair && hole[0].rank.strength == paired) {
       position = boardRanks.isEmpty || paired > boardRanks.first
