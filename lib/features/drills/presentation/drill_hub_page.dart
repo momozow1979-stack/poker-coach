@@ -54,6 +54,14 @@ enum DrillKind {
         '答えは全通りを数えた正確な値。アウツの数え方も身に付きます。',
     icon: Icons.percent_rounded,
     route: AppRoutes.equityQuiz,
+  ),
+  bluff(
+    title: 'ブラフ練習',
+    description:
+        '相手がチェックしてきた、自分の手が弱い場面。そもそもブラフするか、'
+        'するならいくら賭けるかを選び、相手が降りる割合と必要な割合で答え合わせ。',
+    icon: Icons.theater_comedy_rounded,
+    route: AppRoutes.bluffDrill,
   );
 
   const DrillKind({

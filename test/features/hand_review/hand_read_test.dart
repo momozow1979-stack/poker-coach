@@ -6,6 +6,14 @@ List<PlayingCard> cards(String value) => PlayingCard.parseAll(value.split(' '));
 
 void main() {
   group('手の呼び名', () {
+    test('ボードだけのペアは、自分のペアとして呼ばない', () {
+      final read = HandRead.of(
+        PlayingCard.parseAll(['5d', '8c']),
+        PlayingCard.parseAll(['2c', '3c', '6d', '7s', '7d']),
+      );
+      expect(read.label, 'ボードの 7 のペアだけ（手札は 8ハイ）');
+    });
+
     test('トップペアとキッカーを言い当てる', () {
       final read = HandRead.of(cards('Ah Qs'), cards('Ad 7c 2s'));
       expect(read.label, 'A のトップペア（キッカー Q）');
