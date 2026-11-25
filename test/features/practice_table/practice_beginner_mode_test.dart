@@ -103,7 +103,7 @@ void main() {
 
   testWidgets('通してプレイすると、終わった時点で総合評価が出て、1手ずつ振り返れる', (tester) async {
     await _pumpPage(tester);
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(Switch).first);
     await tester.pump();
     expect(find.textContaining('終わってから振り返ります'), findsOneWidget);
 
@@ -143,7 +143,7 @@ void main() {
   testWidgets('初心者モードを切ると、選んだアクションがそのまま確定する', (tester) async {
     await _pumpPage(tester);
 
-    await tester.tap(find.byType(Switch));
+    await tester.tap(find.byType(Switch).first);
     await tester.pump();
     await _open(tester);
     await tester.pump(const Duration(seconds: 1));

@@ -1,4 +1,5 @@
 import '../../../shared/models/hand_strength.dart';
+import '../../../shared/models/playing_card.dart';
 import '../../../shared/models/poker_action.dart';
 import '../../../shared/models/starting_hand.dart';
 import '../../../shared/models/street.dart';
@@ -30,7 +31,10 @@ abstract interface class PracticeOpponent {
 /// 強さだけで判断する。ブラフは打たない（v1 の割り切り。挙動が読みやすく、
 /// 説明もしやすいのを優先した）。
 class SimplePracticeOpponent implements PracticeOpponent {
-  const SimplePracticeOpponent();
+  const SimplePracticeOpponent({this.style = PracticeOpponentStyle.standard});
+
+  /// 打ち方の型。「育つ相手」では、あなたの多いミスを突く型に切り替わる。
+  final PracticeOpponentStyle style;
 
   /// プリフロップでヒーローのオープンに対して 3bet するレンジ。
   static final Set<String> _threeBetRange = RangeNotation.expand('QQ+,AKs,AKo');
@@ -96,16 +100,29 @@ class SimplePracticeOpponent implements PracticeOpponent {
       return _betOrRaise(choices, fraction: 0.66);
     }
     // 中程度（ツーペア・ワンペア）: 賭けられたら受けるが、自分からは
-    // 小さめにしか賭けない。
+    // 小さめにしか賭けない（「バリュー多め」の型は大きめに賭ける）。
     if (power >= HandCategory.onePair.power) {
       if (choices.facingBet) {
         return const PracticeOpponentDecision(PokerActionType.call);
       }
-      return _betOrRaise(choices, fraction: 0.33);
+      return _betOrRaise(
+        choices,
+        fraction: style == PracticeOpponentStyle.valueHeavy ? 0.66 : 0.33,
+      );
     }
-    // 弱い役: 賭けられたら降りる。賭けられていなければチェック。
+    // 弱い役（ペア無し）。
+    final hasAce = state.villainCards.any((card) => card.rank == CardRank.ace);
     if (choices.facingBet) {
+      // 「受けすぎ」の型は、A ハイでも受ける。
+      if (style == PracticeOpponentStyle.callingStation && hasAce) {
+        return const PracticeOpponentDecision(PokerActionType.call);
+      }
       return const PracticeOpponentDecision(PokerActionType.fold);
+    }
+    // 「ブラフ多め」の型は、A の無いペア無しの手で小さく賭ける
+    // （A ハイはショーダウンで勝てることがあるのでチェック）。
+    if (style == PracticeOpponentStyle.bluffer && !hasAce) {
+      return _betOrRaise(choices, fraction: 0.33);
     }
     return const PracticeOpponentDecision(PokerActionType.check);
   }
@@ -131,4 +148,35 @@ class SimplePracticeOpponent implements PracticeOpponent {
     );
     return PracticeOpponentDecision(action, sizeBb: closest);
   }
+}
+
+/// 練習相手の打ち方の型。
+///
+/// どれも「決まった打ち方」で、ヒーローの手札は見ない。採点はその型の
+/// 打ち方そのもので計算するので、型が変わればそれに合わせた損得になる。
+enum PracticeOpponentStyle {
+  standard('ふつう', 'ペア以上で小さく賭け、賭けられたらペア以上で受けます。ブラフはしません。'),
+  bluffer(
+    'ブラフ多め',
+    'ペアが無くても（A を持っていなければ）小さく賭けてきます。'
+        '降りすぎる人ほど損をする相手です。',
+  ),
+  valueHeavy(
+    'バリュー多め',
+    'ペア以上で大きく（ポットの 66%）賭けてきます。ブラフはしません。'
+        '受けすぎる人ほど損をする相手です。',
+  ),
+  callingStation(
+    '受けすぎ',
+    '賭けられると、ペアが無くても A ハイなら受けます。'
+        'ブラフを打ちすぎる人ほど損をする相手です。',
+  );
+
+  const PracticeOpponentStyle(this.label, this.description);
+
+  final String label;
+  final String description;
+
+  static PracticeOpponentStyle byName(String? name) =>
+      values.firstWhere((style) => style.name == name, orElse: () => standard);
 }

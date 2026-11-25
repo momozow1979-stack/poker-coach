@@ -17,11 +17,23 @@ import '../domain/practice_hand_record.dart';
 import '../domain/practice_hand_repository.dart';
 import '../domain/practice_hand_state.dart';
 import '../domain/practice_opponent.dart';
+import '../domain/tendency/practice_tendency.dart';
 import '../infrastructure/local_practice_hand_repository.dart';
+import '../infrastructure/local_practice_log_repository.dart';
 
 final practiceHandRepositoryProvider = Provider<PracticeHandRepository>(
   (ref) => LocalPracticeHandRepository(ref.watch(keyValueStoreProvider)),
 );
+
+final practiceLogRepositoryProvider = Provider<LocalPracticeLogRepository>(
+  (ref) => LocalPracticeLogRepository(ref.watch(keyValueStoreProvider)),
+);
+
+/// 練習の記録から見た打ち方の傾向。ハンドの記録が増えるたびに読み直す。
+final practiceTendencyProvider = FutureProvider<PracticeTendency>((ref) async {
+  final logs = await ref.watch(practiceLogRepositoryProvider).all();
+  return PracticeTendency.analyze(logs);
+});
 
 /// 新しいハンドを配る山札の作り方。テストでは配る札を固定するために
 /// 差し替える。
@@ -46,13 +58,34 @@ final practiceGraderProvider = Provider<PracticeDecisionGrader>(
 );
 
 /// 終わったハンドの振り返り（ヒーローの判断すべての採点）。
+///
+/// 採点は、そのハンドで実際に対戦した型の相手（[PracticeHandRecord.opponentStyle]）
+/// の打ち方で計算する。
 final practiceHandReviewProvider = FutureProvider.autoDispose
     .family<PracticeHandReview, PracticeHandRecord>(
       (ref, record) => PracticeHandReviewer.review(
         record.events,
-        ref.watch(practiceGraderProvider),
+        ref.watch(practiceGraderForStyleProvider(record.opponentStyle)),
         reasons: record.heroReasons,
       ),
+    );
+
+/// 型ごとの採点役。
+final practiceGraderForStyleProvider =
+    Provider.family<PracticeDecisionGrader, PracticeOpponentStyle>(
+      (ref, style) => style == PracticeOpponentStyle.standard
+          ? ref.watch(practiceGraderProvider)
+          : PracticeDecisionGrader(
+              opponent: SimplePracticeOpponent(style: style),
+            ),
+    );
+
+/// 型ごとの相手。
+final practiceOpponentForStyleProvider =
+    Provider.family<PracticeOpponent, PracticeOpponentStyle>(
+      (ref, style) => style == PracticeOpponentStyle.standard
+          ? ref.watch(practiceOpponentProvider)
+          : SimplePracticeOpponent(style: style),
     );
 
 /// 初心者モードで、選んだアクションに出す判定。
@@ -84,9 +117,21 @@ class PracticeTableSnapshot {
     this.isGrading = false,
     this.feedback,
     this.finishedRecord,
+    this.adaptiveOpponent = false,
+    this.opponentStyle = PracticeOpponentStyle.standard,
+    this.targetedLeak,
   });
 
   final PracticeHandState hand;
+
+  /// 「育つ相手」（あなたの多いミスを突く型に切り替わる相手）を使うか。
+  final bool adaptiveOpponent;
+
+  /// このハンドの相手の型。
+  final PracticeOpponentStyle opponentStyle;
+
+  /// 育つ相手が、どの傾向を突いているか（ふつうの型なら null）。
+  final PracticeLeak? targetedLeak;
 
   /// AI（ヴィラン）の手番で、考えている演出を出す間 true。
   final bool isOpponentThinking;
@@ -111,10 +156,16 @@ class PracticeTableSnapshot {
 /// AI の手番を進める・ストリートを送る・履歴を保存する、といった
 /// 段取りはすべてここに閉じる。
 class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
-  PracticeOpponent get _opponent => ref.read(practiceOpponentProvider);
+  PracticeOpponent get _opponent =>
+      ref.read(practiceOpponentForStyleProvider(_style));
 
   /// 採点は、実際に対戦している AI と同じ打ち方で計算する。
-  PracticeDecisionGrader get _grader => ref.read(practiceGraderProvider);
+  PracticeDecisionGrader get _grader =>
+      ref.read(practiceGraderForStyleProvider(_style));
+
+  bool _adaptive = false;
+  PracticeOpponentStyle _style = PracticeOpponentStyle.standard;
+  PracticeLeak? _targetedLeak;
 
   PracticeHandEngine? _engine;
   bool _beginnerMode = true;
@@ -130,9 +181,15 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
   final Map<int, PracticeDecisionGrade?> _gradeCache = {};
 
   @override
-  PracticeTableSnapshot? build() => null;
+  PracticeTableSnapshot? build() {
+    // 「育つ相手」が新しいハンドを配るときにすぐ使えるよう、傾向を
+    // 先に読み込んで保持しておく。
+    ref.listen(practiceTendencyProvider, (_, _) {});
+    return null;
+  }
 
   void startNewHand() {
+    _chooseStyle();
     final engine = PracticeHandEngine(
       deck: ref.read(practiceDeckFactoryProvider)(),
     );
@@ -144,6 +201,26 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
     _reasons.clear();
     _publish(engine, thinking: false);
     unawaited(_driveOpponentIfNeeded(engine));
+  }
+
+  /// 「育つ相手」を使うか。切り替えは次のハンドから効く（今のハンドの
+  /// 相手が途中で変わると、採点の前提が崩れるため）。
+  void setAdaptiveOpponent(bool enabled) {
+    _adaptive = enabled;
+    final engine = _engine;
+    if (engine != null) _publish(engine, thinking: false);
+  }
+
+  /// 新しいハンドの相手の型を決める。育つ相手なら、直近の記録から
+  /// 一番多い（突ける）ミスを突く型にする。
+  void _chooseStyle() {
+    final tendency = _adaptive
+        ? ref.read(practiceTendencyProvider).value
+        : null;
+    _style = tendency?.recommendedStyle ?? PracticeOpponentStyle.standard;
+    _targetedLeak = _style == PracticeOpponentStyle.standard
+        ? null
+        : tendency?.targetedLeak;
   }
 
   void setBeginnerMode(bool enabled) {
@@ -276,13 +353,34 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
       winner: hand.winner,
       finalPotBb: hand.pot,
       heroReasons: Map.of(_reasons),
+      opponentStyle: _style,
     );
     await repository.save(record);
     ref.invalidate(practiceHistoryProvider);
+    unawaited(_logDecisions(record));
     // 保存している間に新しいハンドが始まっていたら、古い記録は出さない。
     if (!identical(_engine, engine)) return;
     _finishedRecord = record;
     _publish(engine, thinking: false);
+  }
+
+  /// ハンドの判断を採点して、傾向分析用に残す（画面を待たせないよう裏で）。
+  Future<void> _logDecisions(PracticeHandRecord record) async {
+    try {
+      final review = await PracticeHandReviewer.review(
+        record.events,
+        ref.read(practiceGraderForStyleProvider(record.opponentStyle)),
+        reasons: record.heroReasons,
+      );
+      if (!ref.mounted) return;
+      await ref
+          .read(practiceLogRepositoryProvider)
+          .save(PracticeHandLog.fromReview(record, review));
+      if (!ref.mounted) return;
+      ref.invalidate(practiceTendencyProvider);
+    } catch (_) {
+      // 記録に失敗しても練習は続けられる（傾向の集計から漏れるだけ）。
+    }
   }
 
   void _publish(PracticeHandEngine engine, {required bool thinking}) {
@@ -293,6 +391,9 @@ class PracticeTableController extends Notifier<PracticeTableSnapshot?> {
       isGrading: _grading,
       feedback: _feedback,
       finishedRecord: _finishedRecord,
+      adaptiveOpponent: _adaptive,
+      opponentStyle: _style,
+      targetedLeak: _targetedLeak,
     );
   }
 }
