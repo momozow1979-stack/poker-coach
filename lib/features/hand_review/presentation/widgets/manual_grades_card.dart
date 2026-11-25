@@ -105,70 +105,78 @@ class _GradeTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(AppSpacing.radiusSm),
           border: Border.all(color: color.withValues(alpha: 0.3)),
         ),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-          childrenPadding: const EdgeInsets.fromLTRB(
-            AppSpacing.md,
-            0,
-            AppSpacing.md,
-            AppSpacing.sm,
-          ),
-          leading: Text(
-            verdict?.symbol ?? '－',
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              color: color,
+        // 背景色付きの箱の中に ListTile を直に置くと、タップの波紋が隠れる
+        // （Flutter のアサーションにもなる）ので、透明な Material を挟む。
+        child: Material(
+          type: MaterialType.transparency,
+          child: ExpansionTile(
+            tilePadding: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+            childrenPadding: const EdgeInsets.fromLTRB(
+              AppSpacing.md,
+              0,
+              AppSpacing.md,
+              AppSpacing.sm,
             ),
-          ),
-          title: Text(
-            '${grade.street.label}　${grade.actionLabel}',
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
-          ),
-          subtitle: Text(
-            grade.headline,
-            style: const TextStyle(fontSize: 12, height: 1.5),
-          ),
-          expandedCrossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final reason in grade.reasons)
-              Padding(
-                padding: const EdgeInsets.only(bottom: AppSpacing.xs),
-                child: Text(
-                  reason,
-                  style: const TextStyle(fontSize: 13, height: 1.6),
-                ),
+            leading: Text(
+              verdict?.symbol ?? '－',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+                color: color,
               ),
-            for (final (label, value) in grade.numbers)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(label, style: const TextStyle(fontSize: 12)),
-                    ),
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
+            ),
+            title: Text(
+              '${grade.street.label}　${grade.actionLabel}',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+            ),
+            subtitle: Text(
+              grade.headline,
+              style: const TextStyle(fontSize: 12, height: 1.5),
+            ),
+            expandedCrossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final reason in grade.reasons)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: AppSpacing.xs),
+                  child: Text(
+                    reason,
+                    style: const TextStyle(fontSize: 13, height: 1.6),
+                  ),
+                ),
+              for (final (label, value) in grade.numbers)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          label,
+                          style: const TextStyle(fontSize: 12),
+                        ),
                       ),
-                    ),
-                  ],
+                      Text(
+                        value,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            if (grade.ifChanged != null) ...[
-              const SizedBox(height: AppSpacing.xs),
-              Text(
-                'こうなら答えが変わる: ${grade.ifChanged}',
-                style: const TextStyle(
-                  fontSize: 12,
-                  height: 1.5,
-                  color: AppColors.info,
+              if (grade.ifChanged != null) ...[
+                const SizedBox(height: AppSpacing.xs),
+                Text(
+                  'こうなら答えが変わる: ${grade.ifChanged}',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.5,
+                    color: AppColors.info,
+                  ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
