@@ -16,6 +16,7 @@ import '../../../shared/widgets/tag_chip.dart';
 import '../../quiz/domain/quiz_category.dart';
 import '../application/hand_review_providers.dart';
 import '../domain/hand_review_record.dart';
+import 'widgets/manual_grades_card.dart';
 
 /// ハンドレビューの結果画面。仕様書 3-5 の表示順に合わせている。
 ///
@@ -127,7 +128,6 @@ class _ResultBody extends StatelessWidget {
                 potLabel: input.effectiveStackBb == null
                     ? null
                     : '${input.effectiveStackBb!.toInt()}BB',
-                height: 132,
               ),
               const SizedBox(height: AppSpacing.md),
               Text(
@@ -141,6 +141,8 @@ class _ResultBody extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: AppSpacing.lg),
+        ManualGradesCard(input: input),
         const SizedBox(height: AppSpacing.lg),
         _ListSection(
           title: '良かった点',
