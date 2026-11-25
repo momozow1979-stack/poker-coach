@@ -100,16 +100,116 @@ BET_FRACTIONS = (1 / 3, 1 / 2, 2 / 3, 1.5)  # 1/3, 1/2, 2/3 pot, overbet
 HAND_STRENGTH_BUCKET = os.environ.get("HAND_STRENGTH_BUCKET", "1") == "1"
 BOARD_TEXTURE_BUCKET = os.environ.get("BOARD_TEXTURE_BUCKET", "1") == "1"
 
-# このアプリの BTN オープン / BB コール（vs BTN）レンジ（純粋部分）。
-# BTN_OPEN は range_definitions.dart の BTN オープン（raise のみ、mixed は含まない）と一致させる。
-BTN_OPEN = (
-    "22+,A2s+,K5s+,Q8s+,J8s+,T8s+,97s+,86s+,76s,65s,54s,"
-    "A5o+,K8o+,Q9o+,J9o+,T9o"
-)
-BB_CALL = (
-    "22-88,A2s+,K2s+,Q5s+,J7s+,T7s+,96s+,85s+,75s+,64s+,53s+,"
-    "A2o+,K8o+,Q9o+,J9o+,T9o,98o"
-)
+# このアプリの各ポジションのオープン/コール（vs オープン）レンジ（純粋部分のみ。
+# `range_definitions.dart` の `notationByAction` と一致させ、`mixedGroups`
+# （境界ハンドの50%ミックス）は含めない——以前からの BTN/BB のみの運用と
+# 同じ割り切り。3bet ポット（`threeBet` レンジ）はこのサブゲームのモデルの
+# 対象外（スタック/ポット比・レイズサイズの前提が単発レイズポットと異なり、
+# 別のサブゲーム設計が必要）。
+#
+# `range_definitions.dart` 上は6MAX/9MAXで別々に定義されていても、
+# オープン側・コール側の純粋レンジ文字列が両方とも一致する組は、同一の
+# ゲームなので1回しか解かない（`btn_co`・`sb_btn` が該当）。
+MATCHUPS: dict[str, dict[str, str]] = {
+    "btn_bb": {
+        "oop_label": "BB (defender)",
+        "ip_label": "BTN (aggressor)",
+        "oop_range": (
+            "22-88,A2s+,K2s+,Q5s+,J7s+,T7s+,96s+,85s+,75s+,64s+,53s+,"
+            "A2o+,K8o+,Q9o+,J9o+,T9o,98o"
+        ),
+        "ip_range": (
+            "22+,A2s+,K5s+,Q8s+,J8s+,T8s+,97s+,86s+,76s,65s,54s,"
+            "A5o+,K8o+,Q9o+,J9o+,T9o"
+        ),
+        "matchup_label": "BTN open vs BB call (single-raised pot)",
+    },
+    "hj_utg_6max": {
+        "oop_label": "HJ (defender)",
+        "ip_label": "UTG (aggressor)",
+        "oop_range": "TT-77,AJs,KQs,KJs,QJs,JTs,T9s,98s,AQo",
+        "ip_range": "77+,ATs+,KQs,KJs,QJs,JTs,T9s,98s,AQo+,KQo",
+        "matchup_label": "UTG open vs HJ call, 6max (single-raised pot)",
+    },
+    "co_hj_6max": {
+        "oop_label": "CO (defender)",
+        "ip_label": "HJ (aggressor)",
+        "oop_range": "99-66,ATs,KQs,KJs,QJs,JTs,T9s,98s,87s,AJo,KQo",
+        "ip_range": "55+,ATs+,KTs+,QTs+,JTs,T9s,98s,87s,AJo+,KQo",
+        "matchup_label": "HJ open vs CO call, 6max (single-raised pot)",
+    },
+    "btn_co": {
+        "oop_label": "BTN (defender)",
+        "ip_label": "CO (aggressor)",
+        "oop_range": "88-55,ATs,A9s,KJs,KTs,QJs,QTs,JTs,T9s,98s,87s,AJo,KJo",
+        "ip_range": "44+,A8s+,KTs+,QTs+,J9s+,T9s,98s,87s,76s,ATo+,KJo+,QJo",
+        "matchup_label": (
+            "CO open vs BTN call, 6max/9max shared (single-raised pot)"
+        ),
+    },
+    "sb_btn": {
+        "oop_label": "SB (defender)",
+        "ip_label": "BTN (aggressor)",
+        "oop_range": (
+            "22-88,A2s+,K5s+,Q8s+,J8s+,T8s+,97s+,86s+,"
+            "A2o+,K9o+,Q9o+,J9o+,T9o"
+        ),
+        "ip_range": (
+            "22+,A2s+,K5s+,Q8s+,J8s+,T8s+,97s+,86s+,76s,65s,54s,"
+            "A5o+,K8o+,Q9o+,J9o+,T9o"
+        ),
+        "matchup_label": (
+            "BTN open vs SB call, 6max/9max shared (single-raised pot)"
+        ),
+    },
+    "utg1_utg_9max": {
+        "oop_label": "UTG+1 (defender)",
+        "ip_label": "UTG (aggressor)",
+        "oop_range": "TT-88,AJs,KQs,KJs,QJs",
+        "ip_range": "77+,ATs+,KQs,KJs,QJs,JTs,T9s,AQo+",
+        "matchup_label": "UTG open vs UTG+1 call, 9max (single-raised pot)",
+    },
+    "mp_utg1_9max": {
+        "oop_label": "MP (defender)",
+        "ip_label": "UTG+1 (aggressor)",
+        "oop_range": "TT-77,AJs,ATs,KQs,KJs,QJs,JTs",
+        "ip_range": "66+,ATs+,KTs+,QJs,JTs,T9s,98s,AQo+,KQo",
+        "matchup_label": "UTG+1 open vs MP call, 9max (single-raised pot)",
+    },
+    "lj_mp_9max": {
+        "oop_label": "LJ (defender)",
+        "ip_label": "MP (aggressor)",
+        "oop_range": "99-66,ATs,KQs,KJs,QJs,JTs,T9s,KQo",
+        "ip_range": "55+,ATs+,KTs+,QTs+,JTs,T9s,98s,87s,AJo+,KQo",
+        "matchup_label": "MP open vs LJ call, 9max (single-raised pot)",
+    },
+    "hj_lj_9max": {
+        "oop_label": "HJ (defender)",
+        "ip_label": "LJ (aggressor)",
+        "oop_range": "88-66,ATs,A9s,KJs,KTs,QJs,QTs,JTs,T9s,98s,KQo",
+        "ip_range": "55+,ATs+,KTs+,QTs+,JTs,T9s,98s,87s,AJo+,KQo",
+        "matchup_label": "LJ open vs HJ call, 9max (single-raised pot)",
+    },
+    "co_hj_9max": {
+        "oop_label": "CO (defender)",
+        "ip_label": "HJ (aggressor)",
+        "oop_range": "88-55,ATs,A9s,KJs,KTs,QJs,QTs,JTs,T9s,98s,87s,AJo,KQo",
+        "ip_range": "55+,ATs+,KTs+,QTs+,JTs,T9s,98s,87s,AJo+,KQo",
+        "matchup_label": "HJ open vs CO call, 9max (single-raised pot)",
+    },
+}
+
+MATCHUP_ID = os.environ.get("MATCHUP_ID", "btn_bb")
+if MATCHUP_ID not in MATCHUPS:
+    raise ValueError(
+        f"unknown MATCHUP_ID={MATCHUP_ID!r}, must be one of {list(MATCHUPS)}"
+    )
+_MATCHUP = MATCHUPS[MATCHUP_ID]
+
+# 後方互換のため、既存コード（ローカル検証スクリプト等）から参照されていた
+# 名前はそのまま残す。中身は MATCHUP_ID で選ばれたマッチアップのもの。
+BTN_OPEN = _MATCHUP["ip_range"]
+BB_CALL = _MATCHUP["oop_range"]
 
 BOARDS = [
     ("a_high_dry", ("As", "7d", "2c")),
@@ -346,8 +446,10 @@ def solve_board(spot_id: str, board_cards: tuple[str, ...]) -> dict:
     game, board_ids = _build_game(board_cards)
     solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
     print(
-        f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
-        f"ip(BTN)={len(game.villain_combos)} :: training {ITERATIONS:,}...",
+        f"[{MATCHUP_ID}/{spot_id}] {board_cards} "
+        f"oop({_MATCHUP['oop_label']})={len(game.hero_combos)} "
+        f"ip({_MATCHUP['ip_label']})={len(game.villain_combos)} "
+        f":: training {ITERATIONS:,}...",
         flush=True,
     )
     t0 = time.time()
@@ -409,9 +511,11 @@ def run_single_board_checkpointed(
         solver = CFRSolver(game, variant="cfr_plus", random_seed=1)
         done = 0
         print(
-            f"[{spot_id}] {board_cards} oop(BB)={len(game.hero_combos)} "
-            f"ip(BTN)={len(game.villain_combos)} :: training "
-            f"{target_iterations:,} (checkpointed every {checkpoint_every:,})...",
+            f"[{MATCHUP_ID}/{spot_id}] {board_cards} "
+            f"oop({_MATCHUP['oop_label']})={len(game.hero_combos)} "
+            f"ip({_MATCHUP['ip_label']})={len(game.villain_combos)} "
+            f":: training {target_iterations:,} "
+            f"(checkpointed every {checkpoint_every:,})...",
             flush=True,
         )
 
@@ -440,19 +544,21 @@ def run_single_board_checkpointed(
     print(f"[{spot_id}] ALL DONE, wrote {out_path}", flush=True)
 
 
-def _build_payload(spots: list[dict]) -> dict:
+def _build_payload(spots: list[dict], matchup_id: str = MATCHUP_ID) -> dict:
+    matchup = MATCHUPS[matchup_id]
     return {
-        "matchup": "BTN open vs BB call (single-raised pot)",
-        "oop_position": "BB (defender)",
-        "ip_position": "BTN (aggressor)",
-        "oop_range": BB_CALL,
-        "ip_range": BTN_OPEN,
+        "matchup_id": matchup_id,
+        "matchup": matchup["matchup_label"],
+        "oop_position": matchup["oop_label"],
+        "ip_position": matchup["ip_label"],
+        "oop_range": matchup["oop_range"],
+        "ip_range": matchup["ip_range"],
         "bet_fractions": list(BET_FRACTIONS),
         "max_wagers_per_round": MAX_WAGERS_PER_ROUND,
         "decision": (
-            "flop/turn/river; BB (out of position) acts first every "
-            "street, BTN (in position) acts last; 1 bet + 1 raise cap "
-            "per street, 4 pot-relative bet/raise sizes"
+            "flop/turn/river; the defender (out of position) acts first "
+            "every street, the aggressor (in position) acts last; 1 bet "
+            "+ 1 raise cap per street, 4 pot-relative bet/raise sizes"
         ),
         "note": (
             "approximate solve (CFR+, external sampling) at the stated "
@@ -540,8 +646,12 @@ def main() -> None:
         board_by_id = dict(BOARDS)
         if single_board_id not in board_by_id:
             raise ValueError(f"unknown SINGLE_BOARD_ID={single_board_id!r}, must be one of {list(board_by_id)}")
-        checkpoint_path = os.environ.get("CHECKPOINT_PATH", f"{single_board_id}.cfrsave")
-        out_path = os.environ.get("OUT_PATH", f"{single_board_id}.json")
+        checkpoint_path = os.environ.get(
+            "CHECKPOINT_PATH", f"{MATCHUP_ID}_{single_board_id}.cfrsave"
+        )
+        out_path = os.environ.get(
+            "OUT_PATH", f"{MATCHUP_ID}_{single_board_id}.json"
+        )
         checkpoint_every = int(os.environ.get("CHECKPOINT_EVERY", "200000"))
         run_single_board_checkpointed(
             single_board_id,
@@ -563,7 +673,7 @@ def main() -> None:
 
     # 以下は旧来の「1コンテナ内でProcessPoolExecutorを使い、SOLVER_WORKERS個の
     # OSプロセスで複数盤を同時に解く」モード(ローカル実行・小規模検証向けに残す)。
-    out_path = "solved_srp_btn_bb.json"
+    out_path = f"solved_srp_{MATCHUP_ID}.json"
     spots = _download_existing(out_path)
     done_ids = {s["id"] for s in spots}
     pending = [(spot_id, board) for spot_id, board in BOARDS if spot_id not in done_ids]

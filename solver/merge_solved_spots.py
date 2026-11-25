@@ -22,7 +22,7 @@ import json
 import os
 import sys
 
-from solve_srp_btn_bb import BOARDS, _build_payload
+from solve_srp_btn_bb import BOARDS, MATCHUP_ID, _build_payload
 
 
 def _list_and_download_parts(parts_prefix: str) -> dict[str, dict]:
@@ -62,9 +62,9 @@ def main() -> None:
 
     # BOARDSの順序で並べる(実行順ではなく、定義順に揃えて差分を読みやすくする)。
     spots = [spots_by_id[spot_id] for spot_id, _ in BOARDS]
-    payload = _build_payload(spots)
+    payload = _build_payload(spots, matchup_id=MATCHUP_ID)
 
-    local_path = "solved_srp_btn_bb.json"
+    local_path = f"solved_srp_{MATCHUP_ID}.json"
     with open(local_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     print(f"wrote {local_path} ({len(spots)} spots)")
