@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../range_chart/infrastructure/mock_range_repository.dart';
+import '../domain/equity_quiz.dart';
 import '../domain/preflop_drill.dart';
 
 /// ドリルの出題に使う乱数。テストでは種を固定して差し替える。
@@ -14,4 +15,9 @@ final preflopDrillGeneratorProvider = Provider<PreflopDrillGenerator>(
     ranges: const MockRangeRepository(),
     random: ref.watch(drillRandomProvider),
   ),
+);
+
+/// 勝率クイズの出題役。
+final equityQuizGeneratorProvider = Provider<EquityQuizGenerator>(
+  (ref) => EquityQuizGenerator(random: ref.watch(drillRandomProvider)),
 );

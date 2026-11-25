@@ -21,6 +21,7 @@ import '../features/range_chart/presentation/range_drill_page.dart';
 import '../features/range_chart/presentation/range_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/drills/presentation/drill_hub_page.dart';
+import '../features/drills/presentation/equity_quiz_page.dart';
 import '../features/drills/presentation/preflop_drill_page.dart';
 import 'app_shell.dart';
 
@@ -56,6 +57,9 @@ abstract final class AppRoutes {
 
   /// プリフロップ連続ドリル。
   static const preflopDrill = '/quiz/drills/preflop';
+
+  /// 勝率クイズ。
+  static const equityQuiz = '/quiz/drills/equity';
 
   /// カテゴリを指定した復習クイズ。
   static String categoryQuiz(String categoryId) => '/quiz/category/$categoryId';
@@ -149,6 +153,10 @@ final routerProvider = Provider<GoRouter>((ref) {
                       GoRoute(
                         path: 'preflop',
                         builder: (context, state) => const PreflopDrillPage(),
+                      ),
+                      GoRoute(
+                        path: 'equity',
+                        builder: (context, state) => const EquityQuizPage(),
                       ),
                     ],
                   ),

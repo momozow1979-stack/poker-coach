@@ -46,6 +46,14 @@ enum DrillKind {
         '境目の手を多めに出します。',
     icon: Icons.bolt_rounded,
     route: AppRoutes.preflopDrill,
+  ),
+  equity(
+    title: '勝率クイズ',
+    description:
+        '自分と相手の手札・ボードを見て、リバーまでの勝率を当てる。'
+        '答えは全通りを数えた正確な値。アウツの数え方も身に付きます。',
+    icon: Icons.percent_rounded,
+    route: AppRoutes.equityQuiz,
   );
 
   const DrillKind({
