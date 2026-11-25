@@ -15,10 +15,17 @@ import 'package:flutter_test/flutter_test.dart';
 /// 以前、チップが少なくなった場面で「すでに場に出ている額より小さいレイズ」が
 /// 出て、揃える額が変わらないまま同じやり取りが続く不具合があった。
 void main() {
-  test('画面の選択肢だけで打てば、どのハンドも有限の手数で終わる', () {
-    const opponent = SimplePracticeOpponent();
+  for (final style in PracticeOpponentStyle.values) {
+    test('画面の選択肢だけで打てば、どのハンドも有限の手数で終わる（相手: ${style.label}）', () {
+      _playMany(SimplePracticeOpponent(style: style), hands: 600);
+    });
+  }
+}
+
+void _playMany(PracticeOpponent opponent, {required int hands}) {
+  {
     final rng = Random(7);
-    for (var hand = 0; hand < 1500; hand++) {
+    for (var hand = 0; hand < hands; hand++) {
       final engine = PracticeHandEngine(deck: PracticeDeck(Random(hand)));
       var steps = 0;
       while (!engine.state.isOver) {
@@ -63,5 +70,5 @@ void main() {
         }
       }
     }
-  });
+  }
 }

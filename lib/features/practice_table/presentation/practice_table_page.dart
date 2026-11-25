@@ -15,6 +15,7 @@ import '../domain/grading/decision_reason.dart';
 import '../domain/practice_hand_state.dart';
 import 'practice_history_page.dart';
 import 'practice_replay_page.dart';
+import 'practice_tendency_page.dart';
 import 'widgets/practice_feedback_panel.dart';
 import 'widgets/practice_hand_summary.dart';
 
@@ -49,6 +50,13 @@ class _PracticeTablePageState extends ConsumerState<PracticeTablePage> {
       appBar: AppBar(
         title: const Text('AI相手に練習'),
         actions: [
+          IconButton(
+            tooltip: '打ち方の傾向',
+            icon: const Icon(Icons.insights_rounded),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const PracticeTendencyPage()),
+            ),
+          ),
           IconButton(
             tooltip: '履歴',
             icon: const Icon(Icons.history_rounded),
@@ -92,9 +100,22 @@ class _PracticeBody extends ConsumerWidget {
             padding: const EdgeInsets.all(AppSpacing.lg),
             child: Column(
               children: [
-                _BeginnerModeSwitch(
-                  enabled: snapshot.beginnerMode,
+                _SettingSwitch(
+                  icon: Icons.school_rounded,
+                  title: '初心者モード',
+                  subtitle: snapshot.beginnerMode
+                      ? '1手ごとに○△×と理由を表示。やり直しもできます'
+                      : 'オフ: 最後まで通してプレイし、終わってから振り返ります',
+                  value: snapshot.beginnerMode,
                   onChanged: controller.setBeginnerMode,
+                ),
+                const SizedBox(height: AppSpacing.sm),
+                _SettingSwitch(
+                  icon: Icons.trending_up_rounded,
+                  title: '育つ相手',
+                  subtitle: _opponentSubtitle(snapshot),
+                  value: snapshot.adaptiveOpponent,
+                  onChanged: controller.setAdaptiveOpponent,
                 ),
                 const SizedBox(height: AppSpacing.md),
                 PokerTableView(
@@ -167,6 +188,17 @@ class _PracticeBody extends ConsumerWidget {
 
   static String _formatBb(double value) =>
       value == value.roundToDouble() ? value.toInt().toString() : '$value';
+
+  static String _opponentSubtitle(PracticeTableSnapshot snapshot) {
+    final style = snapshot.opponentStyle;
+    final leak = snapshot.targetedLeak;
+    final now = leak == null
+        ? '今の相手: ${style.label}'
+        : '今の相手: ${style.label}（あなたの「${leak.label}」を突く）';
+    return snapshot.adaptiveOpponent
+        ? 'あなたの多いミスを突く相手に、次のハンドから切り替わります。$now'
+        : 'オフ: いつも同じ打ち方の相手。$now';
+  }
 
   /// チップがポットへ動くアニメーションを [PokerTableView] に演出させる
   /// もと。チェック / フォールドはチップが動かないので対象外にする。
@@ -329,11 +361,20 @@ class _DealtCardState extends State<_DealtCard> {
   }
 }
 
-/// 初心者モード（1 手ごとに○△×）の切り替え。
-class _BeginnerModeSwitch extends StatelessWidget {
-  const _BeginnerModeSwitch({required this.enabled, required this.onChanged});
+/// 練習の設定の切り替え（初心者モード・育つ相手）。
+class _SettingSwitch extends StatelessWidget {
+  const _SettingSwitch({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
 
-  final bool enabled;
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
   final ValueChanged<bool> onChanged;
 
   @override
@@ -347,29 +388,33 @@ class _BeginnerModeSwitch extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const Icon(Icons.school_rounded, size: 20, color: AppColors.accent),
+          Icon(icon, size: 20, color: AppColors.accent),
           const SizedBox(width: AppSpacing.sm),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '初心者モード',
-                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
-                ),
-                Text(
-                  enabled
-                      ? '1手ごとに○△×と理由を表示。やり直しもできます'
-                      : 'オフ: 最後まで通してプレイし、終わってから振り返ります',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: AppColors.textSecondary,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.xs),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
-                ),
-              ],
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-          Switch(value: enabled, onChanged: onChanged),
+          Switch(value: value, onChanged: onChanged),
         ],
       ),
     );

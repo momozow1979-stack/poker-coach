@@ -6,6 +6,7 @@ import '../../../shared/models/table_type.dart';
 import '../../hand_review/domain/hand_flow.dart' show Actor;
 import 'grading/decision_reason.dart';
 import 'practice_event.dart';
+import 'practice_opponent.dart';
 
 /// 保存済みの練習ハンド 1 件。イベント列をそのまま持つので、
 /// リプレイ画面はこれをそのまま [PracticeHandState.replay] に渡せる。
@@ -18,6 +19,7 @@ class PracticeHandRecord {
     required this.winner,
     required this.finalPotBb,
     this.heroReasons = const {},
+    this.opponentStyle = PracticeOpponentStyle.standard,
   });
 
   final String id;
@@ -33,6 +35,9 @@ class PracticeHandRecord {
   /// [events] の何番目か）。理由を聞かなかった判断と、理由の機能より前の
   /// 記録には無い。
   final Map<int, DecisionReason> heroReasons;
+
+  /// このハンドの相手の打ち方の型（振り返りの採点も同じ型で計算する）。
+  final PracticeOpponentStyle opponentStyle;
 
   /// 履歴一覧に出す短い見出し。
   String get title {
@@ -51,6 +56,8 @@ class PracticeHandRecord {
     'winner': winner?.name,
     'final_pot_bb': finalPotBb,
     'events': events.map(_eventToJson).toList(),
+    if (opponentStyle != PracticeOpponentStyle.standard)
+      'opponent_style': opponentStyle.name,
     if (heroReasons.isNotEmpty)
       'hero_reasons': {
         for (final entry in heroReasons.entries)
@@ -70,6 +77,9 @@ class PracticeHandRecord {
           _eventFromJson(raw as Map<String, dynamic>),
       ],
       heroReasons: _reasonsFromJson(json['hero_reasons']),
+      opponentStyle: PracticeOpponentStyle.byName(
+        json['opponent_style'] as String?,
+      ),
     );
   }
 
